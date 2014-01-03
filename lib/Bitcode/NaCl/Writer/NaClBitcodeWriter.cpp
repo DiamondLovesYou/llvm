@@ -316,25 +316,12 @@ static void WriteTypeTable(const NaClValueEnumerator &VE,
 }
 
 static unsigned getEncodedLinkage(const GlobalValue *GV) {
-  if(GV->hasDLLImportStorageClass())
-    return 5;
-  else if(GV->hasDLLExportStorageClass())
-    return 6;
-
   switch (GV->getLinkage()) {
   case GlobalValue::ExternalLinkage:                 return 0;
-  case GlobalValue::WeakAnyLinkage:                  return 1;
-  case GlobalValue::AppendingLinkage:                return 2;
   case GlobalValue::InternalLinkage:                 return 3;
-  case GlobalValue::LinkOnceAnyLinkage:              return 4;
-  case GlobalValue::ExternalWeakLinkage:             return 7;
-  case GlobalValue::CommonLinkage:                   return 8;
-  case GlobalValue::PrivateLinkage:                  return 9;
-  case GlobalValue::WeakODRLinkage:                  return 10;
-  case GlobalValue::LinkOnceODRLinkage:              return 11;
-  case GlobalValue::AvailableExternallyLinkage:      return 12;
+  default:
+    report_fatal_error("Invalid linkage");
   }
-  llvm_unreachable("Invalid linkage");
 }
 
 /// \brief Function to convert constant initializers for global

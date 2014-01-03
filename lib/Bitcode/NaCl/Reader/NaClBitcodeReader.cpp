@@ -57,28 +57,12 @@ static bool ConvertToString(ArrayRef<uint64_t> Record, unsigned Idx,
   return false;
 }
 
-static void SetDecodedLinkage(GlobalValue* Global, unsigned Val) {
+static GlobalValue::LinkageTypes GetDecodedLinkage(unsigned Val) {
   switch (Val) {
-  default: // Map unknown/new linkages to external
-  case 0:  Global->setLinkage(GlobalValue::ExternalLinkage); break;
-  case 1:  Global->setLinkage(GlobalValue::WeakAnyLinkage); break;
-  case 2:  Global->setLinkage(GlobalValue::AppendingLinkage); break;
-  case 3:  Global->setLinkage(GlobalValue::InternalLinkage); break;
-  case 4:  Global->setLinkage(GlobalValue::LinkOnceAnyLinkage); break;
-  case 5:  Global->setDLLStorageClass(GlobalValue::DLLImportStorageClass); break;
-  case 6:  Global->setDLLStorageClass(GlobalValue::DLLExportStorageClass); break;
-  case 7:  Global->setLinkage(GlobalValue::ExternalWeakLinkage); break;
-  case 8:  Global->setLinkage(GlobalValue::CommonLinkage); break;
-  case 9:  Global->setLinkage(GlobalValue::PrivateLinkage); break;
-  case 10: Global->setLinkage(GlobalValue::WeakODRLinkage); break;
-  case 11: Global->setLinkage(GlobalValue::LinkOnceODRLinkage); break;
-  case 12: Global->setLinkage(GlobalValue::AvailableExternallyLinkage); break;
-  case 13: Global->setLinkage(GlobalValue::PrivateLinkage); break;
-  case 14: Global->setLinkage(GlobalValue::PrivateLinkage); break;
-  case 15:
-    // Whoops. just use LinkOnceODRLinkage for now
-    Global->setLinkage(GlobalValue::LinkOnceODRLinkage);
-    break;
+  case 0:  return GlobalValue::ExternalLinkage;
+  case 3:  return GlobalValue::InternalLinkage;
+  default:
+    report_fatal_error("PNaCl bitcode contains invalid linkage type");
   }
 }
 
@@ -881,7 +865,7 @@ bool NaClBitcodeReader::ParseModule(bool Resume) {
 
       Func->setCallingConv(GetDecodedCallingConv(Record[1]));
       bool isProto = Record[2];
-      SetDecodedLinkage(Func, Record[3]);
+      Func->setLinkage(GetDecodedLinkage(Record[3]));
       ValueList.push_back(Func);
 
       // If this is a function with a body, remember the prototype we are
