@@ -1214,7 +1214,6 @@ bool NaClBitcodeReader::ParseFunctionBody(Function *F) {
       break;
     }
     case naclbitc::FUNC_CODE_INST_SWITCH: { // SWITCH: [opty, op0, op1, ...]
-      // New SwitchInst format with case ranges.
       if (Record.size() < 4)
         return Error("Invalid SWITCH record");
       Type *OpTy = getTypeByID(Record[0]);
