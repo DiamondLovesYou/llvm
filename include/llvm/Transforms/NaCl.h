@@ -40,6 +40,7 @@ ModulePass *createCanonicalizeMemIntrinsicsPass();
 ModulePass *createExpandArithWithOverflowPass();
 ModulePass *createExpandByValPass();
 ModulePass *createExpandCtorsPass();
+ModulePass *createExpandIndirectBrPass();
 ModulePass *createExpandSmallArgumentsPass();
 ModulePass *createExpandTlsConstantExprPass();
 ModulePass *createExpandTlsPass();
