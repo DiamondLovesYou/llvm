@@ -13482,7 +13482,6 @@ static SDValue getTargetVShiftByConstNode(unsigned Opc, SDLoc dl, MVT VT,
 
   assert((Opc == X86ISD::VSHLI || Opc == X86ISD::VSRLI || Opc == X86ISD::VSRAI)
          && "Unknown target vector shift-by-constant node");
-
   // Fold this packed vector shift into a build vector if SrcOp is a
   // vector of Constants or UNDEFs, and SrcOp valuetype is the same as VT.
   if (VT == SrcOp.getSimpleValueType() &&

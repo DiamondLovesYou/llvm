@@ -1,19 +1,11 @@
 ; RUN: pnacl-abicheck < %s | FileCheck %s
 ; RUN: pnacl-abicheck -pnaclabi-allow-debug-metadata < %s | \
 ; RUN:   FileCheck %s --check-prefix=DBG
-; RUN: pnacl-abicheck -pnaclabi-allow-dev-intrinsics < %s | \
-; RUN:   FileCheck %s --check-prefix=DEV
 ; XFAIL: *
 
 ; Test that only white-listed intrinsics are allowed.
 
 ; ===================================
-; Some "Dev" intrinsics which are disallowed by default.
-
-; CHECK: Function llvm.nacl.target.arch is a disallowed LLVM intrinsic
-; DEV-NOT: Function llvm.nacl.target.arch is a disallowed LLVM intrinsic
-declare i32 @llvm.nacl.target.arch()
-
 ; We need to force LLParser to leave a call to llvm.dbg.value && llvm.dbg.declare
 ; This was taken from 2010-05-03-OriginDIE.ll
 %struct.anon = type { i64, i32, i32, i32, [1 x i32] }
@@ -48,8 +40,6 @@ entry:
   store i64 %a16, i64* %a17, align 4, !dbg !7
   ret void, !dbg !7
 }
-
-; ===================================
 ; Debug info intrinsics, which are disallowed by default.
 ; It seems the IR parser adapts dbg.value && dbg.declare into metadata
 ; and promptly removes their respective declarations from the module.
@@ -124,22 +114,18 @@ declare i32 @llvm.nacl.setjmp(i8*)
 
 ; CHECK: Function llvm.adjust.trampoline is a disallowed LLVM intrinsic
 ; DBG: Function llvm.adjust.trampoline is a disallowed LLVM intrinsic
-; DEV: Function llvm.adjust.trampoline is a disallowed LLVM intrinsic
 declare i8* @llvm.adjust.trampoline(i8*)
 
 ; CHECK: Function llvm.init.trampoline is a disallowed LLVM intrinsic
 ; DBG: Function llvm.init.trampoline is a disallowed LLVM intrinsic
-; DEV: Function llvm.init.trampoline is a disallowed LLVM intrinsic
 declare void @llvm.init.trampoline(i8*, i8*, i8*)
 
 ; CHECK: Function llvm.x86.aesni.aeskeygenassist is a disallowed LLVM intrinsic
 ; DBG: Function llvm.x86.aesni.aeskeygenassist is a disallowed LLVM intrinsic
-; DEV: Function llvm.x86.aesni.aeskeygenassist is a disallowed LLVM intrinsic
 declare <2 x i64> @llvm.x86.aesni.aeskeygenassist(<2 x i64>, i8)
 
 ; CHECK: Function llvm.va_copy is a disallowed LLVM intrinsic
 ; DBG: Function llvm.va_copy is a disallowed LLVM intrinsic
-; DEV: Function llvm.va_copy is a disallowed LLVM intrinsic
 declare void @llvm.va_copy(i8*, i8*)
 
 ; CHECK: Function llvm.bswap.i1 is a disallowed LLVM intrinsic
