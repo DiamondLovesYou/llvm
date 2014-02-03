@@ -211,6 +211,15 @@ public:
   bool operator==(const NaClBitCodeAbbrev& rhs) const {
     return OperandList == rhs.OperandList;
   }
+
+  NaClBitCodeAbbrev *Copy() const {
+    NaClBitCodeAbbrev *AbbrevCopy = new NaClBitCodeAbbrev();
+    for (unsigned I = 0, IEnd = getNumOperandInfos();
+         I != IEnd; ++I) {
+      AbbrevCopy->Add(NaClBitCodeAbbrevOp(getOperandInfo(I)));
+    }
+    return AbbrevCopy;
+  }
 };
 
 /// \brief Returns number of bits needed to encode
