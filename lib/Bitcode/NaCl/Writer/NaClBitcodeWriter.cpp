@@ -813,6 +813,7 @@ static void WriteValueSymbolTable(const ValueSymbolTable &VST,
 
   for (ValueSymbolTable::const_iterator SI = VST.begin(), SE = VST.end();
        SI != SE; ++SI) {
+    if (VE.IsElidedCast(SI->getValue())) continue;
 
     const ValueName &Name = *SI;
 
@@ -889,8 +890,9 @@ static void WriteFunction(const Function &F, NaClValueEnumerator &VE,
         ++InstID;
     }
 
-  // Emit names for all the instructions etc.
-  WriteValueSymbolTable(F.getValueSymbolTable(), VE, Stream);
+  // Emit names for instructions etc.
+  if (PNaClAllowLocalSymbolTables)
+    WriteValueSymbolTable(F.getValueSymbolTable(), VE, Stream);
 
   VE.purgeFunction();
   Stream.ExitBlock();
