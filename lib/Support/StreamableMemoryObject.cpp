@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <cstring>
 
-
 using namespace llvm;
 
 namespace {
