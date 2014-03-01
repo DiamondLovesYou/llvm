@@ -697,12 +697,14 @@ static bool WriteInstruction(const Instruction &I, unsigned InstID,
       Vals64.push_back(SI.getNumCases());
       for (SwitchInst::ConstCaseIt i = SI.case_begin(), e = SI.case_end();
            i != e; ++i) {
-        const ConstantInt* CaseValue = i.getCaseValue();
-        unsigned Code, Abbrev; // will unused.
-
+        // The PNaCl bitcode format has vestigial support for case
+        // ranges, but we no longer support reading or writing them,
+        // so the next two fields always have the same values.
+        // See https://code.google.com/p/nativeclient/issues/detail?id=3758
         Vals64.push_back(1/*NumItems = 1*/);
         Vals64.push_back(true/*IsSingleNumber = true*/);
-        EmitAPInt(Vals64, Code, Abbrev, CaseValue->getValue());
+
+        emitSignedInt64(Vals64, i.getCaseValue()->getSExtValue());
         Vals64.push_back(VE.getValueID(i.getCaseSuccessor()));
       }
 

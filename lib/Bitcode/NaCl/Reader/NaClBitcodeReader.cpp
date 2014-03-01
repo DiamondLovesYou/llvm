@@ -1493,22 +1493,31 @@ bool NaClBitcodeReader::isMaterializable(const GlobalValue *GV) const {
 error_code NaClBitcodeReader::Materialize(GlobalValue *GV) {
   Function *F = dyn_cast<Function>(GV);
   // If it's not a function or is already material, ignore the request.
-  if (!F || !F->isMaterializable()) 
+  if (!F || !F->isMaterializable())
     return error_code::success();
 
   DenseMap<Function*, uint64_t>::iterator DFII = DeferredFunctionInfo.find(F);
   assert(DFII != DeferredFunctionInfo.end() && "Deferred function not found!");
   // If its position is recorded as 0, its body is somewhere in the stream
   // but we haven't seen it yet.
-  if (DFII->second == 0)
-    if (LazyStreamer && FindFunctionInStream(F, DFII)) 
-      return make_error_code(errc::no_stream_resources);
+  if (DFII->second == 0) {
+    if (FindFunctionInStream(F, DFII)) {
+      // Refactoring upstream in LLVM 3.4 means we can no longer
+      // return an error string here, so return a catch-all error
+      // code.
+      // TODO(mseaborn): Clean up the reader to return a more
+      // meaningful error_code here.
+      return make_error_code(errc::invalid_argument);
+    }
+  }
 
   // Move the bit stream to the saved position of the deferred function body.
   Stream.JumpToBit(DFII->second);
 
   if (ParseFunctionBody(F)) {
-    return make_error_code(errc::protocol_error);
+    // TODO(mseaborn): Clean up the reader to return a more meaningful
+    // error_code instead of a catch-all.
+    return make_error_code(errc::invalid_argument);
   }
 
   // Upgrade any old intrinsic calls in the function.
@@ -1552,10 +1561,12 @@ error_code NaClBitcodeReader::MaterializeModule(Module *M) {
   // Iterate over the module, deserializing any functions that are still on
   // disk.
   for (Module::iterator F = TheModule->begin(), E = TheModule->end();
-       F != E; ++F)
-    if (F->isMaterializable() &&
-        Materialize(F))
-      return make_error_code(errc::protocol_error);
+       F != E; ++F) {
+    if (F->isMaterializable()) {
+      if (error_code EC = Materialize(F))
+        return EC;
+    }
+  }
 
   // At this point, if there are any function bodies, the current bit is
   // pointing to the END_BLOCK record after them. Now make sure the rest

@@ -597,19 +597,8 @@ static void convertInstruction(Instruction *Inst, ConversionState &State) {
     for (SwitchInst::CaseIt I = Switch->case_begin(),
              E = Switch->case_end();
          I != E; ++I) {
-      // Build a new case from the ranges that map to the successor BB. Each
-      // range consists of a high and low value which are typed, so the ranges
-      // must be rebuilt and a new case constructed from them.
-      if(shouldConvert(I.getCaseValue())) {
-	Type* PromotedType = getPromotedType(I.getCaseValue()->getType());
-	const APInt Value = I.getCaseValue()->getValue().sext(ConditionType->getPrimitiveSizeInBits());
-	Constant* C = ConstantInt::get(PromotedType, Value);
-	NewInst->addCase(cast<ConstantInt>(C),
-			 I.getCaseSuccessor());
-      }
-      else {
-	NewInst->addCase(I.getCaseValue(), I.getCaseSuccessor());
-      }
+      NewInst->addCase(cast<ConstantInt>(convertConstant(I.getCaseValue())),
+                       I.getCaseSuccessor());
     }
     Switch->eraseFromParent();
   } else {
