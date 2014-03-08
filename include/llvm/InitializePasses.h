@@ -268,7 +268,8 @@ void initializeSLPVectorizerPass(PassRegistry&);
 void initializeBBVectorizePass(PassRegistry&);
 void initializeMachineFunctionPrinterPassPass(PassRegistry&);
 void initializeStackMapLivenessPass(PassRegistry&);
-// @LOCALMOD-BEGIN
+
+/// NaCl specific passes:
 void initializeAddPNaClExternalDeclsPass(PassRegistry&);
 void initializeCanonicalizeMemIntrinsicsPass(PassRegistry&);
 void initializeExpandArithWithOverflowPass(PassRegistry&);
@@ -303,7 +304,6 @@ void initializeRewriteLLVMIntrinsicsPass(PassRegistry&);
 void initializeRewritePNaClLibraryCallsPass(PassRegistry&);
 void initializeStripAttributesPass(PassRegistry&);
 void initializeStripMetadataPass(PassRegistry&);
-// @LOCALMOD-END
 }
 
 #endif

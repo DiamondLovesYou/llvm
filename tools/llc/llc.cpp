@@ -15,8 +15,8 @@
 
 
 #include "llvm/ADT/Triple.h"
-#include "llvm/Analysis/NaCl.h" // @LOCALMOD
-#include "llvm/Bitcode/NaCl/NaClReaderWriter.h"  // @LOCALMOD
+#include "llvm/Analysis/NaCl.h"
+#include "llvm/Bitcode/NaCl/NaClReaderWriter.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -33,7 +33,7 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Transforms/NaCl.h" // @LOCALMOD
+#include "llvm/Transforms/NaCl.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"

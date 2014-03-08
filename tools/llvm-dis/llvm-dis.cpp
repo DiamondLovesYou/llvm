@@ -18,13 +18,13 @@
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Bitcode/ReaderWriter.h"
-#include "llvm/Bitcode/NaCl/NaClReaderWriter.h"  // @LOCALMOD
+#include "llvm/Bitcode/NaCl/NaClReaderWriter.h"
 #include "llvm/DebugInfo.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IRReader/IRReader.h"  // @LOCALMOD
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/DataStream.h"
 #include "llvm/Support/FormattedStream.h"

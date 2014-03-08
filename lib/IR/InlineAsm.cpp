@@ -293,7 +293,6 @@ bool InlineAsm::Verify(FunctionType *Ty, StringRef ConstStr) {
   return true;
 }
 
-// @LOCALMOD-START
 bool InlineAsm::isAsmMemory() const {
   bool retVoid = getFunctionType()->getReturnType()->isVoidTy();
   bool noArgs = getFunctionType()->getNumParams() == 0 &&
@@ -307,4 +306,3 @@ bool InlineAsm::isAsmMemory() const {
 
   return retVoid && noArgs && hasSideEffects() && isEmptyAsm && touchesMemory;
 }
-// @LOCALMOD-END

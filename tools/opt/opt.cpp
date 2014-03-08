@@ -49,7 +49,7 @@
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
-#include "llvm/Transforms/NaCl.h"  // @LOCALMOD
+#include "llvm/Transforms/NaCl.h"
 #include <algorithm>
 #include <memory>
 using namespace llvm;
@@ -142,7 +142,6 @@ static cl::opt<bool>
 OptLevelO3("O3",
            cl::desc("Optimization level 3. Similar to clang -O3"));
 
-// @LOCALMOD-BEGIN
 static cl::opt<bool>
 PNaClABISimplifyPreOpt(
     "pnacl-abi-simplify-preopt",
@@ -152,7 +151,6 @@ static cl::opt<bool>
 PNaClABISimplifyPostOpt(
     "pnacl-abi-simplify-postopt",
     cl::desc("PNaCl ABI simplifications for after optimizations"));
-// @LOCALMOD-END
 
 static cl::opt<std::string>
 TargetTriple("mtriple", cl::desc("Override target triple for module"));
@@ -446,7 +444,7 @@ int main(int argc, char **argv) {
   initializeInstCombine(Registry);
   initializeInstrumentation(Registry);
   initializeTarget(Registry);
-  // @LOCALMOD-BEGIN
+
   initializeAddPNaClExternalDeclsPass(Registry);
   initializeCanonicalizeMemIntrinsicsPass(Registry);
   initializeExpandArithWithOverflowPass(Registry);
@@ -480,7 +478,6 @@ int main(int argc, char **argv) {
   initializeRewritePNaClLibraryCallsPass(Registry);
   initializeStripAttributesPass(Registry);
   initializeStripMetadataPass(Registry);
-  // @LOCALMOD-END
 
   cl::ParseCommandLineOptions(argc, argv,
     "llvm .bc -> .bc modular optimizer and analysis printer\n");
@@ -660,7 +657,6 @@ int main(int argc, char **argv) {
       OptLevelO3 = false;
     }
 
-    // @LOCALMOD-BEGIN
     if (PNaClABISimplifyPreOpt &&
         PNaClABISimplifyPreOpt.getPosition() < PassList.getPosition(i)) {
       PNaClABISimplifyAddPreOptPasses(Passes);
@@ -672,7 +668,6 @@ int main(int argc, char **argv) {
       PNaClABISimplifyAddPostOptPasses(Passes);
       PNaClABISimplifyPostOpt = false;
     }
-    // @LOCALMOD-END
 
     const PassInfo *PassInf = PassList[i];
     Pass *P = 0;
@@ -748,13 +743,11 @@ int main(int argc, char **argv) {
     FPasses->doFinalization();
   }
 
-  // @LOCALMOD-BEGIN
   if (PNaClABISimplifyPreOpt)
     PNaClABISimplifyAddPreOptPasses(Passes);
 
   if (PNaClABISimplifyPostOpt)
     PNaClABISimplifyAddPostOptPasses(Passes);
-  // @LOCALMOD-END
 
   // Check that the module is well formed on completion of optimization
   if (!NoVerify && !VerifyEach)

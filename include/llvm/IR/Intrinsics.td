@@ -511,7 +511,6 @@ def int_convertus  : Intrinsic<[llvm_anyint_ty],
 def int_convertuu  : Intrinsic<[llvm_anyint_ty],
                                [llvm_anyint_ty, llvm_i32_ty, llvm_i32_ty]>;
 
-// @LOCALMOD-BEGIN
 //===----------------------- Native Client Intrinsics ---------------------===//
 // NaCl-specific setjmp/longjmp intrinsics.
 // See https://code.google.com/p/nativeclient/issues/detail?id=3429
@@ -569,7 +568,6 @@ def int_nacl_atomic_fence_all : Intrinsic<[], [],
 def int_nacl_atomic_is_lock_free : Intrinsic<[llvm_i1_ty],
     [llvm_i32_ty, llvm_ptr_ty], [IntrNoMem]>,
     GCCBuiltin<"__nacl_atomic_is_lock_free">;
-// @LOCALMOD-END
 
 //===----------------------------------------------------------------------===//
 // Target-specific intrinsics
