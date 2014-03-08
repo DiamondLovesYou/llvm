@@ -23,7 +23,7 @@ Instruction *llvm::PhiSafeInsertPt(Use *U) {
     // We cannot insert instructions before a PHI node, so insert
     // before the incoming block's terminator.  This could be
     // suboptimal if the terminator is a conditional.
-    InsertPt = PN->getIncomingBlock(*U)->getTerminator();
+    InsertPt = PN->getIncomingBlock(*U)->getFirstInsertionPt();
   }
   return InsertPt;
 }
