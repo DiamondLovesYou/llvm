@@ -140,8 +140,8 @@ int main(int argc, char **argv) {
 
   // Use the bitcode streaming interface
   DataStreamer *streamer(getDataFileStreamer(InputFilename, &ErrorMessage));
-  OwningPtr<StreamingMemoryObject> Buffer;  // @LOCALMOD
   if (streamer) {
+    std::unique_ptr<StreamingMemoryObject> Buffer(new StreamingMemoryObject(streamer));
     std::string DisplayFilename;
     if (InputFilename == "-")
       DisplayFilename = "<stdin>";
@@ -150,13 +150,14 @@ int main(int argc, char **argv) {
 
     switch (InputFileFormat) {
       case LLVMFormat:
+        // The Module's BitcodeReader's BitstreamReader takes ownership
+        // of the StreamingMemoryObject.
         M.reset(getStreamedBitcodeModule(
-            DisplayFilename, streamer, Context, &ErrorMessage));
+            DisplayFilename, Buffer.release(), Context, &ErrorMessage));
         break;
       case PNaClFormat:
-        Buffer.reset(new StreamingMemoryObject(streamer));
         M.reset(getNaClStreamedBitcodeModule(
-            DisplayFilename, Buffer.get(), Context, &ErrorMessage));
+            DisplayFilename, Buffer.release(), Context, &ErrorMessage));
         break;
       default:
         ErrorMessage = "Don't understand specified bitcode format";

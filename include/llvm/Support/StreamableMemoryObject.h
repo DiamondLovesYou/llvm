@@ -98,13 +98,14 @@ class StreamableMemoryObject : public MemoryObject {
   virtual bool isObjectEnd(uint64_t address) const = 0;
 };
 
+
 /// StreamingMemoryObject - interface to data which is actually streamed from
 /// a DataStreamer. In addition to inherited members, it has the
 /// dropLeadingBytes and setKnownObjectSize methods which are not applicable
 /// to non-streamed objects.
 class StreamingMemoryObject : public StreamableMemoryObject {
-public:
-  StreamingMemoryObject(DataStreamer *streamer);
+ public:
+  /// Drop s bytes from the front of the stream, pushing the positions of the
   uint64_t getBase() const override { return 0; }
   uint64_t getExtent() const override;
   int readByte(uint64_t address, uint8_t *ptr) const override;
@@ -125,12 +126,12 @@ public:
   /// remaining bytes down by s. This is used to skip past the bitcode header,
   /// since we don't know a priori if it's present, and we can't put bytes
   /// back into the stream once we've read them.
-  bool dropLeadingBytes(size_t s);
+  virtual bool dropLeadingBytes(size_t s);
 
   /// If the data object size is known in advance, many of the operations can
   /// be made more efficient, so this method should be called before reading
   /// starts (although it can be called anytime).
-  void setKnownObjectSize(size_t size);
+  virtual void setKnownObjectSize(size_t size);
 
 private:
   const static uint32_t kChunkSize = 4096 * 4;
@@ -166,8 +167,10 @@ private:
     return true;
   }
 
-  StreamingMemoryObject(const StreamingMemoryObject&) LLVM_DELETED_FUNCTION;
-  void operator=(const StreamingMemoryObject&) LLVM_DELETED_FUNCTION;
+  StreamingMemoryObjectImpl(
+      const StreamingMemoryObjectImpl&) LLVM_DELETED_FUNCTION;
+  void operator=(
+      const StreamingMemoryObjectImpl&) LLVM_DELETED_FUNCTION;
 };
 
 StreamableMemoryObject *getNonStreamedMemoryObject(

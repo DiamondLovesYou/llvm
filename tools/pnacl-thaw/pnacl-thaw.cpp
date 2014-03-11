@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
 
   // Use the bitcode streaming interface
   DataStreamer *streamer = getDataFileStreamer(InputFilename, &ErrorMessage);
-  StreamingMemoryObject *Buffer = new StreamingMemoryObject(streamer);
+  std::unique_ptr<StreamingMemoryObject> Buffer(new StreamingMemoryObject(streamer));
   if (streamer) {
     std::string DisplayFilename;
     if (InputFilename == "-")
@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
     else
       DisplayFilename = InputFilename;
     M.reset(getNaClStreamedBitcodeModule(
-        DisplayFilename, Buffer, Context,
+        DisplayFilename, Buffer.release(), Context,
         &ErrorMessage, /*AcceptSupportedOnly=*/false));
 
     error_code result = M->materializeAll();

@@ -24,6 +24,7 @@
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/StreamableMemoryObject.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 using namespace llvm;
@@ -68,13 +69,14 @@ int main(int argc, char **argv) {
 
   // Use the bitcode streaming interface
   DataStreamer *streamer = getDataFileStreamer(InputFilename, &ErrorMessage);
+  std::unique_ptr<StreamingMemoryObject> Buffer(new StreamingMemoryObject(streamer));
   if (streamer) {
     std::string DisplayFilename;
     if (InputFilename == "-")
       DisplayFilename = "<stdin>";
     else
       DisplayFilename = InputFilename;
-    M.reset(getStreamedBitcodeModule(DisplayFilename, streamer, Context,
+    M.reset(getStreamedBitcodeModule(DisplayFilename, Buffer.release(), Context,
                                      &ErrorMessage));
     error_code result = M->materializeAll();
     if(M.get() != 0 && result)
