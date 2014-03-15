@@ -278,10 +278,7 @@ Type* PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
     return FunctionType::get(RetT, ArgTs, FT->isVarArg());
   } else if(PointerType* PT = dyn_cast<PointerType>(T)) {
     Type* InnerInnerTy = PT->getElementType();
-    if(shouldPromote(InnerInnerTy))
-      return PointerType::get(getPromotedType(InnerInnerTy), 0);
-    else
-      return T;
+    return PointerType::get(getPromotedType(InnerInnerTy), 0);
   } else if(StructType* ST = dyn_cast<StructType>(T)) {
     if(ST->getNumElements() == 0)
       return T;
@@ -304,18 +301,13 @@ Type* PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
       ArgTs.push_back(getPromotedType(*i));
     }
     Struct->setBody(ArgTs);
-  
-    m_promoted_types.erase(T);
 
     return Struct;
   } else if(ArrayType* AT = dyn_cast<ArrayType>(T)) {
     if(AT->getNumElements() == 1)
       return getPromotedType(AT->getElementType());
 
-    if(shouldPromote(AT->getElementType()))
-      return ArrayType::get(getPromotedType(AT->getElementType()), AT->getNumElements());
-    else
-      return T;
+    return ArrayType::get(getPromotedType(AT->getElementType()), AT->getNumElements());
   } else {
     return T;
   }
@@ -573,7 +565,9 @@ Value* PromoteSimpleStructs::ConversionState::convertEVOrIVInstruction(Instructi
                                                 "",
                                                 I),
                        I);
-    else if(isa<InsertValueInst>(I))
+    else if(isa<InsertValueInst>(I)) {
+      // make sure AggOp has our expected resultant type: 
+      AggOp->mutateType(PromotedTy);
       NewI =
         CopyDebug(InsertValueInst::Create(AggOp,
                                           get(cast<InsertValueInst>(I)->getInsertedValueOperand()),
@@ -581,6 +575,7 @@ Value* PromoteSimpleStructs::ConversionState::convertEVOrIVInstruction(Instructi
                                           "",
                                           I),
                   I);
+    }
 
     recordConverted(NewI);
     Converted = NewI;
@@ -725,20 +720,7 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
   Constant*& NewC = ci.first->second;
 
   OriginalT = C->getType();
-  if(!shouldPromote(C->getType())) {
-    // constant expression still need their operands patched
-    if(!isa<ConstantExpr>(C)   &&
-       !isa<ConstantStruct>(C) &&
-       !isa<ConstantArray>(C)  &&
-       !isa<GlobalValue>(C)) {
-      // we still need to record the 'original' type:
-      recordOriginalType(C, C->getType());
-      NewC = C;
-      return C;
-    } else
-      NewT = OriginalT;
-  } else
-    NewT = getPromotedType(OriginalT);
+  NewT = getPromotedType(OriginalT);
 
   if(isa<GlobalValue>(C)) {
     NewC = getPromoted(cast<GlobalValue>(C));
@@ -840,7 +822,7 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
       NewC = getPromotedConstant(C->getAggregateElement((unsigned)0));
     else if(isa<ConstantAggregateZero>(C)) {
       if(isAggregateType(NewT) || isa<VectorType>(NewT)) {
-        NewC = C;
+        NewC = ConstantAggregateZero::get(NewT);
       } else if(isa<PointerType>(NewT)) {
         NewC = ConstantPointerNull::get(cast<PointerType>(NewT));
       } else if(NewT->isIntegerTy()) {
@@ -885,6 +867,8 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
     NewC = C;
   } else if(isa<ConstantPointerNull>(C)) {
     NewC = ConstantPointerNull::get(cast<PointerType>(NewT));
+  } else if(isa<ConstantAggregateZero>(C)) {
+    NewC = ConstantAggregateZero::get(NewT);
   } else {
     NewC = C;
   }
@@ -899,23 +883,14 @@ void PromoteSimpleStructs::promoteGlobal(GlobalVariable* G) {
   std::pair<iterator, bool> result = m_promoted.insert(G);
   if(!result.second)
     return;
-
-  Type* OriginalTy = G->getType();
-  Type* NewTy = getPromotedType(OriginalTy);
+  
+  PointerType* OriginalTy = G->getType();
+  PointerType* NewTy = cast<PointerType>(getPromotedType(OriginalTy));
   mutateAndReplace(G, G, OriginalTy, NewTy);
   if(G->hasInitializer()) {
     Constant* Old = G->getInitializer();
     Constant* Initer = getPromotedConstant(Old);
     G->setInitializer(Initer);
-  }
-  
-  // sometimes we can't reach all the uses of a GV.
-  // don't ask me how such a Constant would ever be unreachable
-  // but asserts are thrown later.
-  const Value::use_iterator end = G->use_end();
-  for(Value::use_iterator i = G->use_begin(); i != end; ++i) {
-    if(isa<Constant>(*i))
-      m_delayed.push(cast<Constant>(*i));
   }
 }
 
@@ -985,8 +960,6 @@ bool PromoteSimpleStructs::runOnModule(Module& M) {
   m_promoted_types.clear();
   m_promoted.clear();
   m_promoted_consts.clear();
-  while(!m_delayed.empty())
-    m_delayed.pop();
   return true;
 }
 

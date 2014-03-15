@@ -48,6 +48,7 @@ ModulePass *createFlattenGlobalsPass();
 ModulePass *createGlobalCleanupPass();
 ModulePass *createPNaClSjLjEHPass();
 ModulePass *createPromoteSimpleStructsPass();
+ModulePass *createReplaceVectorsWithArraysPass();
 ModulePass *createReplacePtrsWithIntsPass();
 ModulePass *createResolveAliasesPass();
 ModulePass *createRewriteAtomicsPass();

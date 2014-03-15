@@ -60,6 +60,7 @@ void llvm::PNaClABISimplifyAddPreOptPasses(PassManagerBase &PM, const bool Build
   // This small collection of passes is targeted toward Rust generated IR
   // solely for the purpose of helping later NaCl transformations handle the
   // high number of structures Rust outputs.
+  PM.add(createReplaceVectorsWithArraysPass());
   PM.add(createPromoteSimpleStructsPass());
   PM.add(createPromoteReturnedStructsPass());
   PM.add(createPromoteStructureArgsPass());

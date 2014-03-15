@@ -469,6 +469,7 @@ int main(int argc, char **argv) {
   initializePromoteReturnedStructsPass(Registry);
   initializePromoteStructureArgsPass(Registry);
   initializeReplaceAggregatesWithIntsPass(Registry);
+  initializeReplaceVectorsWithArraysPass(Registry);
   initializeRemoveAsmMemoryPass(Registry);
   initializeReplacePtrsWithIntsPass(Registry);
   initializeResolveAliasesPass(Registry);

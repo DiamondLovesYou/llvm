@@ -297,6 +297,7 @@ void initializePromoteStructureArgsPass(PassRegistry&);
 void initializeReplaceAggregatesWithIntsPass(PassRegistry&);
 void initializeRemoveAsmMemoryPass(PassRegistry&);
 void initializeReplacePtrsWithIntsPass(PassRegistry&);
+void initializeReplaceVectorsWithArraysPass(PassRegistry&);
 void initializeResolveAliasesPass(PassRegistry&);
 void initializeResolvePNaClIntrinsicsPass(PassRegistry&);
 void initializeRewriteAtomicsPass(PassRegistry&);
