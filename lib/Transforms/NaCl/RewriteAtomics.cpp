@@ -94,11 +94,12 @@ private:
   void checkSizeMatchesType(const Instruction &I, unsigned BitSize,
                             const Type *T) const;
 
-  /// Verify that loads and stores are at least naturally aligned. Use
-  /// byte alignment because converting to bits could truncate the
-  /// value.
-  void checkAlignment(const Instruction &I, unsigned ByteAlignment,
-                      unsigned ByteSize) const;
+    /// Verify that loads and stores are at least naturally aligned. Use
+    /// byte alignment because converting to bits could truncate the
+    /// value.
+    template <class Inst>
+    void fixAlignment(Inst &I, unsigned ByteAlignment,
+		      unsigned ByteSize) const;
 
     /// Create a cast before Instruction \p I from \p Src to \p Dst with \p Name.
     inline CastInst *createCast(Instruction &I,
@@ -293,14 +294,12 @@ void RewriteAtomics::checkSizeMatchesType(const Instruction &I, unsigned BitSize
   report_fatal_error("unsupported atomic type " + ToStr(*T) + " of size " +
                      Twine(BitSize) + " bits in: " + ToStr(I));
 }
-
-void RewriteAtomics::checkAlignment(const Instruction &I, unsigned ByteAlignment,
-                                   unsigned ByteSize) const {
+// If the requested alignment is less than the natural alignment, remove the alignment.
+template <class Inst>
+void RewriteAtomics::fixAlignment(Inst &I, unsigned ByteAlignment,
+				  unsigned ByteSize) const {
   if (ByteAlignment < ByteSize)
-    report_fatal_error("atomic load/store must be at least naturally aligned, "
-                       "got " +
-                       Twine(ByteAlignment) + ", bytes expected at least " +
-                       Twine(ByteSize) + " bytes, in: " + ToStr(I));
+    I.setAlignment(0);
 }
 
 template <class CastInsertion>
@@ -343,7 +342,7 @@ void RewriteAtomics::visitLoadInst(LoadInst &I) {
   if (I.isSimple())
     return;
   PointerHelper<LoadInst> PH(this, I, &I);
-  checkAlignment(I, I.getAlignment(), PH.BitSize / CHAR_BIT);
+  fixAlignment(I, I.getAlignment(), PH.BitSize / CHAR_BIT);
   Value *Args[] = { PH.P, freezeMemoryOrder(I) };
   replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_load,
                                       PH.OriginalPET, PH.PET, Args);
@@ -356,7 +355,7 @@ void RewriteAtomics::visitStoreInst(StoreInst &I) {
   if (I.isSimple())
     return;
   PointerHelper<StoreInst> PH(this, I, &I);
-  checkAlignment(I, I.getAlignment(), PH.BitSize / CHAR_BIT);
+  fixAlignment(I, I.getAlignment(), PH.BitSize / CHAR_BIT);
   Value *V = I.getValueOperand();
   if (!V->getType()->isIntegerTy()) {
     // The store isn't of an integer type. We define atomics in terms of
