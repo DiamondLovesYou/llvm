@@ -124,3 +124,20 @@ define i32 @extract_from_constant() {
 }
 ; CHECK-LABEL: define i32 @extract_from_constant() {
 ; CHECK-NEXT: ret i32 888
+
+; Large arrays need to be split-up.
+define internal void @_ZN3mem4init20hacc73d978ac3790bVid9v0.10.preE(i32) {
+; CHECK-LABEL: define internal void @_ZN3mem4init20hacc73d978ac3790bVid9v0.10.preE(i32) {
+entry-block:
+  %.asptr = inttoptr i32 %0 to i16*
+  store i16 0, i16* %.asptr, align 1
+  %gep = add i32 %0, 8
+  %gep.asptr = inttoptr i32 %gep to i64*
+  store i64 0, i64* %gep.asptr, align 1
+  %gep3 = add i32 %0, 16
+  %gep3.asptr = inttoptr i32 %gep3 to [112 x i8]*
+; CHECK-NOT: %gep3.asptr = inttoptr i32 %gep3 to [112 x i8]*
+  store [112 x i8] zeroinitializer, [112 x i8]* %gep3.asptr, align 1
+; CHECK-NOT: store [112 x i8] zeroinitializer, [112 x i8]* %gep3.asptr, align 1
+  ret void
+}

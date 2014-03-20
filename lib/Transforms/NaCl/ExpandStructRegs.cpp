@@ -146,11 +146,10 @@ static void ProcessLoadOrStoreAttrs(InstType *Dest, InstType *Src) {
   // behaviour.
   Dest->setAlignment(1);
 }
-
-static void SplitUpStore(StoreInst *Store) {
-  StructType *STy = cast<StructType>(Store->getValueOperand()->getType());
+template <class T>
+static void SplitUpStore(StoreInst *Store, T* Ty) {
   // Create a separate store instruction for each struct field.
-  for (unsigned Index = 0; Index < STy->getNumElements(); ++Index) {
+  for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
     SmallVector<Value *, 2> Indexes;
     Indexes.push_back(ConstantInt::get(Store->getContext(), APInt(32, 0)));
     Indexes.push_back(ConstantInt::get(Store->getContext(), APInt(32, Index)));
@@ -168,13 +167,12 @@ static void SplitUpStore(StoreInst *Store) {
   }
   Store->eraseFromParent();
 }
-
-static void SplitUpLoad(LoadInst *Load) {
-  StructType *STy = cast<StructType>(Load->getType());
-  Value *NewStruct = UndefValue::get(STy);
+template <class T>
+static void SplitUpLoad(LoadInst *Load, T* Ty) {
+  Value *NewStruct = UndefValue::get(Ty);
 
   // Create a separate load instruction for each struct field.
-  for (unsigned Index = 0; Index < STy->getNumElements(); ++Index) {
+  for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
     SmallVector<Value *, 2> Indexes;
     Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, 0)));
     Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, Index)));
@@ -211,6 +209,22 @@ static void ExpandExtractValue(ExtractValueInst *EV) {
     } else if (Constant *C = dyn_cast<Constant>(StructVal)) {
       ResultField = ConstantExpr::getExtractValue(C, EV->getIndices());
       break;
+    } else if(isa<LoadInst>(StructVal) &&
+	      isa<ArrayType>(StructVal->getType()) &&
+	      EV->getIndices().size() == 1) {
+      LoadInst* Load = cast<LoadInst>(StructVal);
+      Value* Operand = Load->getPointerOperand();
+      SmallVector<Value*, 2> Indexes;
+      Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, 0)));
+      Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, EV->getIndices()[0])));
+      GetElementPtrInst *GEPi = CopyDebug(GetElementPtrInst::Create(Operand,
+								    Indexes,
+								    Load->getName() + ".index",
+								    Load),
+					  Load);
+      LoadInst *NewLoad = new LoadInst(GEPi, Load->getName() + ".field", Load);
+      ProcessLoadOrStoreAttrs(NewLoad, Load);
+      ResultField = NewLoad;
     } else {
       errs() << "Value: " << *StructVal << "\n";
       report_fatal_error("Unrecognized struct value");
@@ -235,14 +249,20 @@ bool ExpandStructRegs::runOnFunction(Function &Func) {
       Instruction *Inst = Iter++;
       if (StoreInst *Store = dyn_cast<StoreInst>(Inst)) {
         if (Store->getValueOperand()->getType()->isStructTy()) {
-          SplitUpStore(Store);
+          SplitUpStore(Store, cast<StructType>(Store->getValueOperand()->getType()));
+          Changed = true;
+	} else if(Store->getValueOperand()->getType()->isArrayTy()) {
+	  SplitUpStore(Store, cast<ArrayType>(Store->getValueOperand()->getType()));
           Changed = true;
         }
       } else if (LoadInst *Load = dyn_cast<LoadInst>(Inst)) {
         if (Load->getType()->isStructTy()) {
-          SplitUpLoad(Load);
+          SplitUpLoad(Load, cast<StructType>(Load->getType()));
           Changed = true;
-        }
+        } else if(Load->getType()->isArrayTy()) {
+	  SplitUpLoad(Load, cast<ArrayType>(Load->getType()));
+	  Changed = true;
+	}
       } else if (PHINode *Phi = dyn_cast<PHINode>(Inst)) {
         if (Phi->getType()->isStructTy()) {
           SplitUpPHINode(Phi);
