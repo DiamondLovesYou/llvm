@@ -46,11 +46,6 @@ public:
   typedef std::map<Constant*, Constant*>::iterator const_iterator;
   std::map<Constant*, Constant*> m_consts;
 
-  // we can't move the return type of functions like malloc PPP_GetInterface etc.
-  bool isProtected(Function* F) {
-    return !F->getName().startswith("_ZN");
-  }
-
   // Rust uses {}* as void pointers.
   bool isVoidPtrTy(Type* Ty) {
     return Ty->isPointerTy() &&
@@ -183,9 +178,8 @@ void PromoteReturnedStructs::promoteFunction(Function* F) {
   if(F->isIntrinsic())
     return;
 
-  Type* RetTy = F->getReturnType();  
-  const bool IsProtected = isProtected(F);
-  const bool ShouldPromote = !IsProtected && shouldPromote(RetTy);
+  Type* RetTy = F->getReturnType();
+  const bool ShouldPromote = shouldPromote(RetTy);
 
   Argument* RetArg = NULL;
   if(ShouldPromote) {
@@ -303,7 +297,7 @@ void PromoteReturnedStructs::promoteFunction(Function* F) {
   }
 }
 void PromoteReturnedStructs::promoteGlobalVariable(GlobalVariable* G) {
-  Type* OriginalTy = G->getType();
+  PointerType* OriginalTy = G->getType();
   Type* PromotedTy = promoteType(OriginalTy);
   G->mutateType(PromotedTy);
   if(G->hasInitializer()) {
@@ -398,9 +392,9 @@ Value* PromoteReturnedStructs::promoteOperand(Value* V) {
 void PromoteReturnedStructs::promoteGlobal(GlobalValue* V) {
   if(m_globals.insert(V).second) {
     if(isa<Function>(V)) {
+      ++ActualPromotedFunctions1;
       Function* F = cast<Function>(V);
       promoteFunction(F);
-      ++ActualPromotedFunctions1;
     } else if(isa<GlobalVariable>(V)) {
       GlobalVariable* G = cast<GlobalVariable>(V);
       promoteGlobalVariable(G);
@@ -415,15 +409,23 @@ void PromoteReturnedStructs::promoteCallInst(T* Inst) {
     Function* F = cast<Function>(Called);
     if(F->isIntrinsic())
       return;
-    else if(isProtected(F) || isVoidPtrTy(Inst->getType())) {
+    else if(isVoidPtrTy(Inst->getType())) {
       promoteCallArgs(Inst);
       return;
+    } else {
+      promoteGlobal(F);
     }
-  }
-
-  if(isa<GlobalValue>(Called)) {
-    GlobalValue* G = cast<GlobalValue>(Called);
-    promoteGlobal(G);
+  } else {
+    Called = promoteOperand(Called);
+    if(isa<Constant>(Called)) {
+      Constant* C = cast<Constant>(Called);
+      Called = promoteConstant(C);
+    } else if(isa<User>(Called)) {
+      promoteOperands(cast<User>(Called));
+      Type* Ty = Called->getType();
+      Type* NewTy = promoteType(Ty);
+      Called->mutateType(NewTy);
+    }
   }
   FunctionType* FTy = cast<FunctionType>(Called->getType()->getContainedType(0));
   Type* InstTy = Inst->getType();
