@@ -58,7 +58,10 @@ struct PromoteSimpleStructs : public ModulePass {
                                     Type* PromotedTy,
                                     Value* AggOp,
                                     Type* AggOpOriginalTy);
-    template <class T> void convertCall(T* Call);
+    template <class T>
+    T* convertCall(T* Call,
+		   Type* OriginalTy,
+		   Type* PromotedTy);
     void possiblyConvertUsers(Instruction* Inst, Value* Replacement, Type* OriginalTy);
 
     ConversionState() {}
@@ -93,7 +96,6 @@ struct PromoteSimpleStructs : public ModulePass {
   std::map<Type*, Type*> m_promoted_types;
   std::map<Constant*, Constant*> m_promoted_consts;
   std::map<Value*, Type*> m_original_types;
-  std::stack<Constant*> m_delayed;
 
 #ifndef NDEBUG
   void debug_print_all_original_types();
@@ -628,22 +630,71 @@ Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPt
     assert(0 && "Invalid GEPi");
     errs() << "GEPi: " << ToStr(*Inst) << "\n";
     report_fatal_error("Invalid GEPi");
-    /*Inst->mutateType(PointerOp->getType());
-    possiblyConvertUsers(Inst, PointerOp, Inst->getType());
-    Inst->replaceAllUsesWith(PointerOp);
-    Inst->eraseFromParent();
-    Converted = PointerOp;*/
   }
   return Converted;
 }
 template <class T>
-void PromoteSimpleStructs::ConversionState::convertCall(T* Call) {
+T* PromoteSimpleStructs::ConversionState::convertCall(T* Call,
+						      Type* OriginalTy,
+						      Type* PromotedTy) {
+  Value* OldCalled = Call->getCalledValue();
+  Value* NewCalled = get(OldCalled);
+  T* NewCall = Call;
+  
+  std::vector<Value*> Args;
   const unsigned end = Call->getNumArgOperands();
+  Args.reserve(end);
   for(unsigned i = 0; i < end; ++i) {
     Value* V = Call->getArgOperand(i);
     Value* NewV = get(V);
-    Call->setArgOperand(i, NewV);
+    Args.push_back(NewV);
   }
+
+  if(OldCalled != NewCalled) {
+    Value* BaseCall = NULL;
+    if(isa<InvokeInst>(Call)) {
+      InvokeInst* Inst = cast<InvokeInst>(Call);
+      BaseCall = CopyDebug(InvokeInst::Create(NewCalled,
+                                              Inst->getNormalDest(),
+                                              Inst->getUnwindDest(),
+                                              Args,
+                                              "",
+                                              Call),
+                           Call);
+    } else if(isa<CallInst>(Call)) {
+      CallInst* OldCall = cast<CallInst>(Call);
+      CallInst* NewCall = CopyDebug(CallInst::Create(NewCalled,
+						     Args,
+						     "",
+						     Call),
+				    Call);
+      if(OldCall->canReturnTwice())
+        NewCall->setCanReturnTwice();
+      if(OldCall->cannotDuplicate())
+        NewCall->setCannotDuplicate();
+      BaseCall = NewCall;
+    }
+    NewCall = cast<T>(BaseCall);
+    if(Call->doesNotThrow())
+      NewCall->setDoesNotThrow();
+    if(Call->isNoInline())
+      NewCall->setIsNoInline();
+    if(Call->doesNotAccessMemory())
+      NewCall->setDoesNotAccessMemory();
+    if(Call->doesNotReturn())
+      NewCall->setDoesNotReturn();
+    if(Call->onlyReadsMemory())
+      NewCall->setOnlyReadsMemory();
+
+    recordConverted(NewCall);
+  } else {
+    for(unsigned i = 0; i < end; ++i) {
+      Value* V = Args[i];
+      Call->setArgOperand(i, V);
+    }
+  }
+  m_p->mutateAndReplace(Call, NewCall, OriginalTy, PromotedTy);
+  return NewCall;
 }
 Value* PromoteSimpleStructs::ConversionState::convertInstruction(Instruction* I) {
   recordConverted(I);
@@ -686,15 +737,13 @@ Value* PromoteSimpleStructs::ConversionState::convertInstruction(Instruction* I)
     }
     Converted = Phi;
   } else if(isa<CallInst>(I) || isa<InvokeInst>(I)) {
-    m_p->mutateAndReplace(I, I, OriginalType, PromotedType);
     if(isa<CallInst>(I)) {
       CallInst* Call = cast<CallInst>(I);
-      convertCall(Call);
+      Converted = convertCall(Call, OriginalType, PromotedType);
     } else if(isa<InvokeInst>(I)) {
       InvokeInst* Invoke = cast<InvokeInst>(I);
-      convertCall(Invoke);
+      Converted = convertCall(Invoke, OriginalType, PromotedType);
     }
-    Converted = I;
   } else {
     m_p->mutateAndReplace(I, I, OriginalType, PromotedType);
     convertOperands(I);

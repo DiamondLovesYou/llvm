@@ -164,7 +164,8 @@ void ReplaceVectorsWithArrays::promoteFunction(Function* F) {
       Type* Ty = j->getType();
       if(!shouldPromote(Ty) &&
 	 !(isa<PointerType>(Ty) &&
-	   shouldPromote(Ty->getContainedType(0)))) {
+	   shouldPromote(Ty->getContainedType(0))) &&
+	 !isa<ExtractElementInst>(j)) {
 	promoteOperands(j);
 	promoteOperand(j++);
 	continue;
@@ -176,10 +177,6 @@ void ReplaceVectorsWithArrays::promoteFunction(Function* F) {
 
 	Value* Left = promoteOperand(j->getOperand(0));
 	Value* Right = promoteOperand(j->getOperand(1));
-
-	const bool NoUnsignedWrap = BinOp->hasNoUnsignedWrap();
-	const bool NoSignedWrap   = BinOp->hasNoSignedWrap();
-	const bool Exact          = BinOp->isExact();
 
 	Value* V = UndefValue::get(Ty);
 	for(size_t k = 0; k < Ty->getNumElements(); ++k) {
@@ -198,9 +195,6 @@ void ReplaceVectorsWithArrays::promoteFunction(Function* F) {
 	  BinaryOperator* BinOp2 =
 	    CopyDebug(BinaryOperator::Create(Op, LV, RV, "", BinOp),
 		      BinOp);
-	  BinOp2->setHasNoUnsignedWrap(NoUnsignedWrap);
-	  BinOp2->setHasNoSignedWrap(NoSignedWrap);
-	  BinOp2->setIsExact(Exact);
 
 	  V = CopyDebug(InsertValueInst::Create(V,
 						BinOp2,
@@ -268,13 +262,19 @@ void ReplaceVectorsWithArrays::promoteFunction(Function* F) {
 	AllocaInst* Storage =
 	  CopyDebug(new AllocaInst(NewTy, NULL, "", F->getEntryBlock().getFirstNonPHI()),
 		    Insert);
-	CopyDebug(new StoreInst(Op0, Storage, "", Insert),
+	StoreInst* Store = CopyDebug(new StoreInst(Op0, Storage, "", Insert),
 		  Insert);
+	Store->setAlignment(0);
+	Store->setOrdering(NotAtomic);
+	Store->setVolatile(false);
 	GetElementPtrInst* GEPi =
 	  CopyDebug(GetElementPtrInst::Create(Storage, Idxs, "", Insert),
 		    Insert);
-	CopyDebug(new StoreInst(Op1, GEPi, "", Insert),
+	Store = CopyDebug(new StoreInst(Op1, GEPi, "", Insert),
 		  Insert);
+	Store->setAlignment(0);
+	Store->setOrdering(NotAtomic);
+	Store->setVolatile(false);
 	LoadInst* Load =
 	  CopyDebug(new LoadInst(Storage, "", Insert),
 		    Insert);
@@ -288,18 +288,22 @@ void ReplaceVectorsWithArrays::promoteFunction(Function* F) {
 	std::vector<Value*> Idxs;
 	Idxs.push_back(Idx0);
 	Idxs.push_back(promoteOperand(Extract->getIndexOperand()));
-	
+	Value* Operand = promoteOperand(Extract->getVectorOperand());
+	Type* NewVecType = Operand->getType();
 	AllocaInst* Storage =
-	  CopyDebug(new AllocaInst(Extract->getVectorOperandType(),
+	  CopyDebug(new AllocaInst(NewVecType,
 				   NULL,
 				   "",
 				   F->getEntryBlock().getFirstNonPHI()),
 		    Extract);
-	CopyDebug(new StoreInst(promoteOperand(Extract->getVectorOperand()),
-				Storage,
-				"",
-				Extract),
-		  Extract);
+	StoreInst* Store = CopyDebug(new StoreInst(Operand,
+						   Storage,
+						   "",
+						   Extract),
+				     Extract);
+	Store->setAlignment(0);
+	Store->setOrdering(NotAtomic);
+	Store->setVolatile(false);
 	GetElementPtrInst* GEPi =
 	  CopyDebug(GetElementPtrInst::Create(Storage, Idxs, "", Extract),
 		    Extract);
@@ -345,6 +349,41 @@ void ReplaceVectorsWithArrays::promoteFunction(Function* F) {
 	Shuffle->mutateType(V->getType());
 	Shuffle->replaceAllUsesWith(V);
 	Shuffle->eraseFromParent();
+	continue;
+      } else if(isa<CastInst>(j) && !isa<PointerType>(j->getType())) {
+	CastInst* Cast = cast<CastInst>(j);
+	Instruction::CastOps Opcode = Cast->getOpcode();
+	Value* Operand = promoteOperand(Cast->getOperand(0));
+	VectorType* OldTy = cast<VectorType>(Cast->getType());
+	ArrayType* NewTy = cast<ArrayType>(promoteType(OldTy));
+
+	Value* V = UndefValue::get(NewTy);
+	for(size_t k = 0; k < OldTy->getNumElements(); ++k) {
+	  Value* V2 =
+	    CopyDebug(ExtractValueInst::Create(Operand,
+					       std::vector<unsigned>(1, k),
+					       "",
+					       Cast),
+		      Cast);
+
+	  Value* Result =
+	    CopyDebug(CastInst::Create(Opcode,
+				       V2,
+				       NewTy->getElementType(),
+				       "",
+				       Cast),
+		      Cast);
+	  V = CopyDebug(InsertValueInst::Create(V,
+						Result,
+						std::vector<unsigned>(1, k),
+						"",
+						Cast),
+			Cast);
+	}
+	++j;
+	Cast->mutateType(V->getType());
+	Cast->replaceAllUsesWith(V);
+	Cast->eraseFromParent();
 	continue;
       } else {
 	promoteOperands(j);
