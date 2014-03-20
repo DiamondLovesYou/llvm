@@ -127,9 +127,8 @@ Type* PromoteReturnedStructs::promoteType(Type* Ty, const bool InRetPos) {
     else
       NewSTy = StructType::create(Ty->getContext());
 
-    NewTy = NewSTy;
-    m_types[Ty] = NewTy;
-    m_types[NewTy] = NewTy;
+    m_types[Ty] = NewSTy;
+    m_types[NewSTy] = NewSTy;
 
     std::vector<Type*> Types;
     Types.reserve(STy->getNumElements());
@@ -140,7 +139,7 @@ Type* PromoteReturnedStructs::promoteType(Type* Ty, const bool InRetPos) {
       Types.push_back(NewTy2);
     }
     NewSTy->setBody(Types, STy->isPacked());
-    return NewTy;
+    return NewSTy;
   } else if(isa<FunctionType>(Ty)) {
     FunctionType* FTy = cast<FunctionType>(Ty);
     Type* RetTy = FTy->getReturnType();
@@ -234,18 +233,26 @@ void PromoteReturnedStructs::promoteFunction(Function* F) {
     F->setAttributes(NewAttrs);
     F->addAttribute(1, Attribute::StructRet);
   } else {
-    std::vector<Type*> Args;
-    Args.reserve(F->getFunctionType()->getNumParams());
+    ty_iterator i = m_types.find(F->getType());
+    if(i == m_types.end()) {
+      std::vector<Type*> Args;
+      Args.reserve(F->getFunctionType()->getNumParams());
 
-    for(unsigned j = 0; j < F->getFunctionType()->getNumParams(); ++j) {
-      Type* OldTy2 = F->getFunctionType()->getParamType(j);
-      Type* NewTy2 = promoteType(OldTy2);
-      Args.push_back(NewTy2);
+      for(unsigned j = 0; j < F->getFunctionType()->getNumParams(); ++j) {
+	Type* OldTy2 = F->getFunctionType()->getParamType(j);
+	Type* NewTy2 = promoteType(OldTy2);
+	Args.push_back(NewTy2);
+      }
+
+      FunctionType* FTy = FunctionType::get(promoteType(F->getReturnType(), true),
+					    Args, F->isVarArg());
+      m_types[F->getFunctionType()] = FTy;
+      PointerType* FTyPtr = FTy->getPointerTo();
+      m_types[F->getType()] = FTyPtr;
+      F->mutateType(FTyPtr);
+    } else {
+      F->mutateType(i->second);
     }
-
-    FunctionType* FTy = FunctionType::get(promoteType(F->getReturnType(), true),
-                                          Args, F->isVarArg());
-    F->mutateType(FTy->getPointerTo());
   }
 
   const Function::arg_iterator arg_end = F->arg_end();
@@ -326,6 +333,8 @@ Constant* PromoteReturnedStructs::promoteConstant(Constant* C) {
      isa<ConstantArray>(C)) {
     std::vector<Constant*> Consts;
     Consts.reserve(C->getNumOperands());
+    Type* Ty = C->getType();
+    Type* NewTy = promoteType(Ty);
     const User::value_op_iterator end = C->value_op_end();
     for(User::value_op_iterator i = C->value_op_begin(); i != end; ++i) {
       Constant* OldC2 = cast<Constant>(*i);
@@ -341,9 +350,6 @@ Constant* PromoteReturnedStructs::promoteConstant(Constant* C) {
 
       Consts.push_back(NewC2);
     }
-    
-    Type* Ty = C->getType();
-    Type* NewTy = promoteType(Ty);
     if(ConstantExpr* CE = dyn_cast<ConstantExpr>(C)) {
       NewC = CE->getWithOperands(Consts, NewTy);
     } else if(isa<ConstantStruct>(C)) {
