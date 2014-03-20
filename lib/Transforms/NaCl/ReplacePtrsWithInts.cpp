@@ -135,8 +135,6 @@ namespace {
 Type *FunctionConverter::convertType(Type *Ty) {
   if (Ty->isPointerTy())
     return IntPtrType;
-  else if (Ty->isVectorTy() && Ty->getContainedType(0)->isPointerTy())
-    return VectorType::get(IntPtrType, cast<VectorType>(Ty)->getNumElements());
   return Ty;
 }
 
@@ -150,14 +148,8 @@ FunctionType *FunctionConverter::convertFuncType(FunctionType *FTy) {
                            FTy->isVarArg());
 }
 
-static bool ShouldConvert(Value* V) {
-  return V->getType()->isPointerTy() ||
-    (V->getType()->isVectorTy() &&
-     cast<VectorType>(V->getType())->getElementType()->isPointerTy());
-}
-
 void FunctionConverter::recordConverted(Value *From, Value *To) {
-  if (!ShouldConvert(From)) {
+  if (!From->getType()->isPointerTy()) {
     From->replaceAllUsesWith(To);
     return;
   }
@@ -195,9 +187,7 @@ Value *FunctionConverter::stripNoopCasts(Value *Val) {
 
 Value *FunctionConverter::convert(Value *Val, bool BypassPlaceholder) {
   Val = stripNoopCasts(Val);
-  if (!Val->getType()->isPointerTy() &&
-      (!Val->getType()->isVectorTy() ||
-       !cast<VectorType>(Val->getType())->getElementType()->isPointerTy()))
+  if (!Val->getType()->isPointerTy())
     return Val;
   if (Constant *C = dyn_cast<Constant>(Val))
     return ConstantExpr::getPtrToInt(C, IntPtrType);
@@ -238,13 +228,13 @@ void FunctionConverter::convertInPlace(Instruction *Inst) {
   // Convert operands.
   for (unsigned I = 0; I < Inst->getNumOperands(); ++I) {
     Value *Arg = Inst->getOperand(I);
-    if (ShouldConvert(Arg) && !ShouldLeaveAlone(Arg)) {
+    if (Arg->getType()->isPointerTy() && !ShouldLeaveAlone(Arg)) {
       Value *Conv = convert(Arg);
       Inst->setOperand(I, CopyDebug(new IntToPtrInst(Conv, Arg->getType(), "", Inst), Inst));
     }
   }
   // Convert result.
-  if (ShouldConvert(Inst)) {
+  if (Inst->getType()->isPointerTy()) {
     Instruction *Cast = new PtrToIntInst(
         Inst, convertType(Inst->getType()), Inst->getName() + ".asint");
     CopyDebug(Cast, Inst);
@@ -338,7 +328,6 @@ static AttributeSet RemovePointerAttrs(LLVMContext &Context,
         // pointer types.
         case Attribute::NoCapture:
         case Attribute::NoAlias:
-        case Attribute::ReadOnly:
           break;
         default:
           AB.addAttribute(*Attr);
@@ -379,8 +368,8 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
   } else if (isa<PtrToIntInst>(Inst) || isa<IntToPtrInst>(Inst)) {
     Value *Arg = FC->convert(Inst->getOperand(0));
     Type *ResultTy = FC->convertType(Inst->getType());
-    unsigned ArgSize = DL->getTypeSizeInBits(Arg->getType());
-    unsigned ResultSize = DL->getTypeSizeInBits(ResultTy);
+    unsigned ArgSize = Arg->getType()->getIntegerBitWidth();
+    unsigned ResultSize = ResultTy->getIntegerBitWidth();
     Value *Result;
     // We avoid using IRBuilder's CreateZExtOrTrunc() here because it
     // constant-folds ptrtoint ConstantExprs.  This leads to creating
@@ -440,9 +429,7 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
         // https://code.google.com/p/nativeclient/issues/detail?id=3443
         // We do the same for invariant.start/end because they work in
         // a similar way.
-	
-	FC->ToErase.push_back(Inst);
-        
+        Inst->eraseFromParent();
       } else {
         FC->convertInPlace(Inst);
       }
@@ -513,8 +500,6 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
              isa<IndirectBrInst>(Inst) ||
              isa<ExtractValueInst>(Inst) ||
              isa<InsertValueInst>(Inst) ||
-             isa<ExtractElementInst>(Inst) ||
-             isa<InsertElementInst>(Inst) ||
              // These atomics only operate on integer pointers, not
              // other pointers, so we don't need to recreate the
              // instruction.
