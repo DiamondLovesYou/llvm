@@ -25,6 +25,103 @@
 
 using namespace llvm;
 
+struct PromotedType {
+public:
+  Type* Original;
+  Type* Promoted;
+  bool InProgress;
+  std::vector<size_t> Bumps;
+
+  void bump(const size_t Idx) {
+    Bumps.push_back(Idx);
+  }
+  size_t bumpOffset(const size_t Idx) const {
+    if(!Original->isStructTy() || Bumps.size() == 0)
+      return Idx;
+
+    size_t B = 0;
+    for(; B < Bumps.size(); ++B) {
+      // we can't bump an idx to
+      // an element that was removed:
+      assert(Idx != Bumps[B]);
+      if(Idx < Bumps[B])
+	break;
+    }
+    return Idx - B;
+  }
+  Value* bumpOffset(Value* Idx) const {
+    if(!Original->isStructTy() || Bumps.size() == 0)
+      return Idx;
+
+    ConstantInt* I = cast<ConstantInt>(Idx);
+    IntegerType* IntTy = I->getType();
+    size_t B = 0;
+    for(; B < Bumps.size(); ++B) {
+      // we can't bump an idx to
+      // an element that was removed:
+      assert(I->getValue() != Bumps[B]);
+      if(!I->uge(Bumps[B])) {
+	if(B == 0) {
+	  return Idx;
+	} else {
+	  break;
+	}
+      }
+    }
+    return ConstantInt::get(IntTy, I->getValue() - B);
+  }
+  bool isBumped(const size_t Idx) const {
+    return std::binary_search(Bumps.begin(), Bumps.end(), Idx);
+  }
+
+  PromotedType promote(Type* Replacing) const {
+    assert(!InProgress && Promoted != NULL);
+    PromotedType PT = *this;
+    PT.Original = Replacing;
+    return PT;
+  }
+
+  static PromotedType startWithPlaceholder(Type* Original, Type* Promoted) {
+    PromotedType PT;
+    PT.Original = Original;
+    PT.Promoted = Promoted;
+    PT.InProgress = true;
+    return PT;
+  }
+  static PromotedType start(Type* Original) {
+    PromotedType PT;
+    PT.Original = Original;
+    PT.Promoted = NULL;
+    PT.InProgress = true;
+    return PT;
+  }
+
+  PromotedType finishPlaceholder() {
+    assert(InProgress && Promoted != NULL);
+    InProgress = false;
+    return *this;
+  }
+
+  PromotedType finish(Type* PTy) {
+    assert(InProgress && Promoted == NULL);
+    Promoted = PTy;
+    InProgress = false;
+    return *this;
+  }
+
+  bool isFinished() const {
+    return !InProgress;
+  }
+
+  static PromotedType noOp(Type* Ty) {
+    PromotedType PT;
+    PT.Original = Ty;
+    PT.Promoted = Ty;
+    PT.InProgress = false;
+    return PT;
+  }
+};
+
 struct PromoteSimpleStructs : public ModulePass {
   static char ID;
   PromoteSimpleStructs() : ModulePass(ID) {
@@ -88,12 +185,12 @@ struct PromoteSimpleStructs : public ModulePass {
   
   Module* m_module;
   typedef std::set<GlobalValue*>::iterator iterator;
-  typedef std::map<Type*, Type*>::iterator ty_iterator;
+  typedef std::map<Type*, PromotedType>::iterator ty_iterator;
   typedef std::map<Value*, Type*>::iterator origin_ty_iterator;
   typedef std::map<Constant*, Constant*>::iterator const_iterator;
 
   std::set<GlobalValue*> m_promoted;
-  std::map<Type*, Type*> m_promoted_types;
+  std::map<Type*, PromotedType> m_promoted_types;
   std::map<Constant*, Constant*> m_promoted_consts;
   std::map<Value*, Type*> m_original_types;
 
@@ -102,8 +199,23 @@ struct PromoteSimpleStructs : public ModulePass {
 #endif
 
   GlobalValue* getPromoted(GlobalValue* F);
-  Type* getPromotedType(Type* T);
-  Type* getPromotedTypeImpl(Type* T);
+  Type* getPromotedType(Type* T, const PromotedType** Raw);
+  Type* getPromotedType(Type* T) {
+    return getPromotedType(T, (const PromotedType**) NULL);
+  }
+  Type* getPromotedType(Type* T, PromotedType*  Raw) {
+    if(Raw != NULL) {
+      const PromotedType* Buf = NULL;
+      T = getPromotedType(T, &Buf);
+      *Raw = *Buf;
+
+    } else {
+      T = getPromotedType(T, (const PromotedType**) NULL);
+    }
+    return T;
+  }
+
+  PromotedType getPromotedTypeImpl(Type* T);
   static bool shouldPromote(Type* T) {
     std::set<Type*> chain;
     return shouldPromote(T, chain);
@@ -111,9 +223,37 @@ struct PromoteSimpleStructs : public ModulePass {
   static bool shouldPromote(Type* T, std::set<Type*>& Chain);
   static bool shouldPromote(Function* F);
   inline static bool isShallowPromotable(Type* T) {
-    return (isa<StructType>(T) && cast<StructType>(T)->getNumElements() == 1) ||
+    return (isa<StructType>(T) && getInnerMeaningfulType(cast<StructType>(T)) != NULL) ||
       (isa<ArrayType>(T)       && cast<ArrayType>(T)->getNumElements() == 1) ||
       (isa<PointerType>(T)     && isShallowPromotable(T->getContainedType(0)));
+  }
+  inline static bool isMeaningful(Type* T) {
+    return !(isa<StructType>(T) && (cast<StructType>(T)->getNumElements() == 0 ||
+				    (cast<StructType>(T)->getNumElements() == 1 &&
+				     !isMeaningful(T->getContainedType(0))))) &&
+      !(isa<ArrayType>(T) && cast<ArrayType>(T)->getNumElements() == 0);
+  }
+  // returns non-null if this structure has a single meaningful member.
+  inline static Type* getInnerMeaningfulType(StructType* ST) {
+    bool FoundSoleInner = false;
+    Type* OnlyMeaningfulTy = NULL;
+
+    if(ST->getNumElements() == 1)
+      OnlyMeaningfulTy = ST->getElementType(0);
+
+    const StructType::element_iterator end = ST->element_end();
+    for(StructType::element_iterator i = ST->element_begin();
+	i != end && !(FoundSoleInner xor (OnlyMeaningfulTy != NULL));
+	++i) {
+      const bool Meaningful = isMeaningful(*i);
+      if(Meaningful && !FoundSoleInner){
+	FoundSoleInner = true;
+	OnlyMeaningfulTy = *i;
+      } else if(Meaningful && FoundSoleInner) {
+	OnlyMeaningfulTy = NULL;
+      }
+    }
+    return OnlyMeaningfulTy;
   }
   inline Constant* getPromotedConstant(Use* U) {
     return getPromotedConstant(cast<Constant>(U));
@@ -134,7 +274,7 @@ struct PromoteSimpleStructs : public ModulePass {
 
   bool isAggregateType(Type* T);
 
-  bool runOnModule(Module& M);
+  bool runOnModule(Module& M) __attribute__((optimize(0)));
 };
 char PromoteSimpleStructs::ID = 0;
 INITIALIZE_PASS(PromoteSimpleStructs,
@@ -164,9 +304,14 @@ void debug_collect_all_subtypes(Type* T, std::set<Type*>& Collection);
 void debug_printf_all_subtypes(Type* T) {
   std::set<Type*> C;
   debug_collect_all_subtypes(T, C);
+  for(; isa<PointerType>(T); T = T->getContainedType(0)) {
+  }
+  std::cout << "debug_printf_all_subtypes for: ";
+  debug_printf(T);
   const std::set<Type*>::iterator end = C.end();
   for(std::set<Type*>::iterator i = C.begin(); i != end; ++i) {
-    debug_printf(*i);
+    if(*i != T)
+      debug_printf(*i);
   }
 }
 void debug_collect_all_subtypes(Type* T, std::set<Type*>& Collection) {
@@ -235,17 +380,6 @@ GlobalValue* PromoteSimpleStructs::getPromoted(GlobalValue* F) {
   }
   return F;
 }
-Type* PromoteSimpleStructs::getPromotedType(Type* T) {
-  const ty_iterator i = m_promoted_types.find(T);
-  if(i == m_promoted_types.end()) {
-    Type* NewT = getPromotedTypeImpl(T);
-    m_promoted_types.insert(std::make_pair(T, NewT));
-    m_promoted_types.insert(std::make_pair(NewT, NewT));
-    return NewT;
-  }
-  else
-    return i->second;
-}
 Type* PromoteSimpleStructs::getOriginalType(Value* V) {
   if(isa<Constant>(V) && !isa<GlobalValue>(V))
     return V->getType();
@@ -260,11 +394,25 @@ Type* PromoteSimpleStructs::getOriginalType(Value* V) {
   } else
     return i->second;
 }
+Type* PromoteSimpleStructs::getPromotedType(Type* T, const PromotedType** Raw) {
+  const ty_iterator i = m_promoted_types.find(T);
+  if(i == m_promoted_types.end()) {
+    PromotedType NewT = getPromotedTypeImpl(T);
+    assert(NewT.isFinished());
 
-Type* PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
-  if(!shouldPromote(T))
-    return T;
-
+    PromotedType* Instance =
+      &m_promoted_types.insert(std::make_pair(T, NewT)).first->second;
+    m_promoted_types.insert(std::make_pair(NewT.Promoted, NewT));
+    if(Raw != NULL)
+      *Raw = Instance;
+    return NewT.Promoted;
+  } else {
+    if(Raw != NULL)
+      *Raw = &i->second;
+    return i->second.Promoted;
+  }
+}
+PromotedType PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
   if(FunctionType* FT = dyn_cast<FunctionType>(T)) {
     Type* RetT;
     RetT = getPromotedType(FT->getReturnType());
@@ -277,15 +425,22 @@ Type* PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
         ArgTs.push_back(getPromotedType(*i));
     }
 
-    return FunctionType::get(RetT, ArgTs, FT->isVarArg());
+    return PromotedType::start(T)
+      .finish(FunctionType::get(RetT, ArgTs, FT->isVarArg()));
   } else if(PointerType* PT = dyn_cast<PointerType>(T)) {
-    Type* InnerInnerTy = PT->getElementType();
-    return PointerType::get(getPromotedType(InnerInnerTy), 0);
+    Type* InnerTy = PT->getElementType();
+    Type* NewInnerTy = getPromotedType(InnerTy);
+    return PromotedType::start(T)
+      .finish(PointerType::get(NewInnerTy, 0));
   } else if(StructType* ST = dyn_cast<StructType>(T)) {
     if(ST->getNumElements() == 0)
-      return T;
-    if(ST->getNumElements() == 1)
-      return getPromotedType(ST->getElementType(0));
+      return PromotedType::noOp(T);
+    Type* OnlyMeaningfulTy = getInnerMeaningfulType(ST);
+    if(OnlyMeaningfulTy != NULL) {
+      PromotedType PT;
+      getPromotedType(OnlyMeaningfulTy, &PT);
+      return PT.promote(T);
+    }
 
     StructType* Struct;
     if(ST->hasName())
@@ -293,25 +448,37 @@ Type* PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
     else
       Struct = StructType::create(T->getContext());
     // This is a requisite for recursive structures.
-    m_promoted_types[T] = Struct;
+    ty_iterator It = m_promoted_types.insert
+      (std::make_pair(T, PromotedType::startWithPlaceholder(T, Struct))).first;
 
     std::vector<Type*> ArgTs;
     ArgTs.reserve(ST->getNumElements());
 
+    size_t BIdx = 0;
     const StructType::element_iterator end = ST->element_end();
-    for(StructType::element_iterator i = ST->element_begin(); i != end; ++i) {
-      ArgTs.push_back(getPromotedType(*i));
+    for(StructType::element_iterator i = ST->element_begin(); i != end; ++i, ++BIdx) {
+      Type* Old = *i;
+      const PromotedType* Inner = NULL;
+      Type* New = getPromotedType(Old, &Inner);
+      // If it's in-progress, by virtue of this implementation, it must be a meaningful type.
+      if(Inner->InProgress || isMeaningful(New))
+	ArgTs.push_back(New);
+      else
+	It->second.bump(BIdx);
     }
     Struct->setBody(ArgTs);
-
-    return Struct;
+    return It->second.finishPlaceholder();
   } else if(ArrayType* AT = dyn_cast<ArrayType>(T)) {
+    PromotedType InnerPT;
+    getPromotedType(AT->getElementType(), &InnerPT);
     if(AT->getNumElements() == 1)
-      return getPromotedType(AT->getElementType());
+      return InnerPT.promote(T);
 
-    return ArrayType::get(getPromotedType(AT->getElementType()), AT->getNumElements());
+    return PromotedType::start(T)
+      .finish(ArrayType::get(InnerPT.Promoted,
+			     AT->getNumElements()));
   } else {
-    return T;
+    return PromotedType::noOp(T);
   }
 }
 
@@ -468,9 +635,15 @@ void PromoteSimpleStructs::ConversionState::possiblyConvertUsers(Instruction* In
       Type* GEPOriginalTy = GEP->getType();
       Type* GEPPromotedTy = m_p->getPromotedType(GEPOriginalTy);
 
+      Value* Converted;
       recordConverted(GEP);
-      convertGEPInstruction(GEP, GEPOriginalTy, GEPPromotedTy, Replacement, OriginalTy);
-      eraseConverted(GEP);
+      Converted = convertGEPInstruction(GEP,
+					GEPOriginalTy,
+					GEPPromotedTy,
+					Replacement,
+					OriginalTy);
+      if(Converted != GEP)
+	eraseConverted(GEP);
     } else if(isa<ExtractValueInst>(*i)) {
       ExtractValueInst* EV = cast<ExtractValueInst>(*i++);
       if(EV->getAggregateOperand() != Inst)
@@ -516,6 +689,7 @@ Value* PromoteSimpleStructs::ConversionState::convertEVOrIVInstruction(Instructi
                                                                        Type* PromotedTy,
                                                                        Value* AggOp,
                                                                        Type* AggOpOriginalTy) {
+  Value* Converted = NULL;
   ArrayRef<unsigned> Indices;
 
   if(isa<ExtractValueInst>(I))
@@ -528,15 +702,29 @@ Value* PromoteSimpleStructs::ConversionState::convertEVOrIVInstruction(Instructi
   OldIndices.reserve(Indices.size());
   NewIndices.reserve(Indices.size());
 
+  Type* LastTy = AggOpOriginalTy;
   const size_t end = Indices.size();
   for(size_t i = 0; i < end; ++i) {
-    unsigned Idx = Indices[i];
-    Type* Ty = ExtractValueInst::getIndexedType(AggOpOriginalTy, OldIndices);
-    if(!isShallowPromotable(Ty))
-      NewIndices.push_back(Idx);
+    const unsigned Idx = Indices[i];
     OldIndices.push_back(Idx);
+    Type* Ty = ExtractValueInst::getIndexedType(AggOpOriginalTy, OldIndices);
+
+    if(!isMeaningful(Ty)) {
+      // if this is one of those awkward 0-byte aggregates, replace with an undef value.      
+      Converted = UndefValue::get(PromotedTy);
+      possiblyConvertUsers(I, Converted, OriginalTy);
+      I->mutateType(PromotedTy);
+      I->replaceAllUsesWith(Converted);
+      I->eraseFromParent();
+      return Converted;
+    }
+    if(!isShallowPromotable(LastTy)) {
+      const PromotedType* PTy = NULL;
+      m_p->getPromotedType(LastTy, &PTy);
+      NewIndices.push_back(PTy->bumpOffset(Idx));
+    }
+    LastTy = Ty;
   }
-  Value* Converted;
   if(NewIndices.size() == 0) {
     if(isa<ExtractValueInst>(I))
       Converted = AggOp;
@@ -549,7 +737,7 @@ Value* PromoteSimpleStructs::ConversionState::convertEVOrIVInstruction(Instructi
     m_p->eraseOriginalType(I);
     I->replaceAllUsesWith(Converted);
     I->eraseFromParent();
-  } else if(NewIndices.size() == OldIndices.size()) {
+  } else if(NewIndices == OldIndices) {
     if(isa<ExtractValueInst>(I))
       I->setOperand(ExtractValueInst::getAggregateOperandIndex(), AggOp);
     else if(isa<InsertValueInst>(I)) {
@@ -590,46 +778,66 @@ Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPt
                                                                     Type* PromotedTy,
                                                                     Value* PointerOp,
                                                                     Type* PointerOpOriginalTy) {
+  Value* Converted = NULL;
   std::vector<Value*> OldIndices;
   std::vector<Value*> NewIndices;
   OldIndices.reserve(Inst->getNumIndices());
   NewIndices.reserve(Inst->getNumIndices());
 
-  bool SkipNext = false;
-
+  Type* LastTy = PointerOpOriginalTy->getContainedType(0);
+  bool ForceInitialIndex = isShallowPromotable(LastTy);
   const User::op_iterator end = Inst->idx_end();
   for(User::op_iterator i = Inst->idx_begin(); i != end; ++i) {
-    assert(isa<Value>(*i) && "Woa. Internal error.");
-
-    if(!SkipNext) {
-      NewIndices.push_back(get(*i));
-    } else {
-      SkipNext = false;
+    Value* IdxVal = cast<Value>(*i);
+    OldIndices.push_back(IdxVal);
+    Type* NextTy = GetElementPtrInst::getIndexedType(PointerOpOriginalTy,
+						     OldIndices);
+    if(!isMeaningful(NextTy)) {
+      // if this is one of those awkward 0-byte aggregates, replace with an undef value.      
+      Converted = UndefValue::get(PromotedTy);
+      possiblyConvertUsers(Inst, Converted, OriginalTy);
+      Inst->mutateType(PromotedTy);
+      Inst->replaceAllUsesWith(Converted);
+      Inst->eraseFromParent();
+      return Converted;
     }
-      
-    OldIndices.push_back(cast<Value>(*i));
 
-    Type* T = GetElementPtrInst::getIndexedType(PointerOpOriginalTy,
-                                                OldIndices);
-    if(isShallowPromotable(T)) {
-      SkipNext = true;
+    if(!isShallowPromotable(LastTy) || ForceInitialIndex) {
+      // check for array element by ptr offset, ie (&a[0])[index].
+      // in such cases it would be invalid to bump the index offset.
+      if(LastTy != NextTy) {
+	const PromotedType* Last = NULL;
+	m_p->getPromotedType(LastTy, &Last);
+	IdxVal = Last->bumpOffset(IdxVal);
+      }
+      NewIndices.push_back(IdxVal);
+      ForceInitialIndex = false;
     }
+    LastTy = NextTy;
   }
-  Value* Converted;
-  if(NewIndices.size() != 0) {
+  assert(Converted == NULL);
+  if(NewIndices.size() == 0 ||
+     (NewIndices.size() == 1 && 
+      isa<ConstantInt>(NewIndices[0]) &&
+      cast<ConstantInt>(NewIndices[0])->isZero())) {
+    possiblyConvertUsers(Inst, PointerOp, OriginalTy);
+    Converted = PointerOp;
+    Inst->mutateType(PromotedTy);
+    Inst->replaceAllUsesWith(Converted);
+    Inst->eraseFromParent();
+  } else {
     GetElementPtrInst* GEPI = GetElementPtrInst::Create(PointerOp,
-                                                        NewIndices,
-                                                        Inst->getName(),
-                                                        Inst);
+							NewIndices,
+							Inst->getName(),
+							Inst);
     GEPI->setIsInBounds(Inst->isInBounds());
     CopyDebug(Inst, GEPI);
     Converted = GEPI;
     recordConverted(GEPI);
-    m_p->mutateAndReplace(Inst, GEPI, OriginalTy, PromotedTy);
-  } else {
-    assert(0 && "Invalid GEPi");
-    errs() << "GEPi: " << ToStr(*Inst) << "\n";
-    report_fatal_error("Invalid GEPi");
+    /// Sometimes pointer types are created (outside of our control, that is)
+    /// that cause GEPI's type pointer to differ from the type of what we are
+    /// replacing, even when they are otherwise identical.
+    m_p->mutateAndReplace(Inst, GEPI, OriginalTy, GEPI->getType());
   }
   return Converted;
 }
@@ -792,8 +1000,6 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
 
     if(Code == Instruction::GetElementPtr) {
       assert(isa<PointerType>(AggOriginalTy) && "Original type isn't a pointer!");
-
-      bool SkipNext = false;
       
       std::vector<Constant*> NewIndices;
       {
@@ -801,21 +1007,31 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
         OldIndices.reserve(C->getNumOperands());
         NewIndices.reserve(C->getNumOperands());
 
+	Type* LastTy = AggOriginalTy;
         const User::op_iterator end = C->op_end();
         for(; i != end; ++i) {
           Constant* C2 = cast<Constant>(*i);
           Constant* C3 = getPromotedConstant(C2);
 
-          OldIndices.push_back(C2);
+          OldIndices.push_back(C2);          
+          Type* NextTy = GetElementPtrInst::getIndexedType(AggOriginalTy,
+							   OldIndices);
+          if(!isMeaningful(NextTy)) {
+	    NewIndices.clear();
+	    // if this is one of those awkward 0-byte aggregates, replace with an undef value.
+	    Agg = UndefValue::get(NewT);
+	    break;
+	  }
 
-          if(!SkipNext)
-            NewIndices.push_back(C3);
-          else
-            SkipNext = false;
-          
-          Type* T2 = GetElementPtrInst::getIndexedType(AggOriginalTy, OldIndices);
-          if(isShallowPromotable(T2))
-            SkipNext = true; 
+	  if(!isShallowPromotable(LastTy)) {
+	    if(ConstantInt* IdxVal = dyn_cast<ConstantInt>(C3)) {
+	      const PromotedType* Last = NULL;
+	      getPromotedType(LastTy, &Last);
+	      C3 = cast<Constant>(Last->bumpOffset(IdxVal));
+	    }
+	    NewIndices.push_back(C3);
+	  }
+	  LastTy = NextTy;
         }
       }
       if(NewIndices.size() != 0)
@@ -823,8 +1039,6 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
       else
         NewC = Agg;
     } else if(CE->hasIndices()) {
-      bool SkipNext = false;
-
       Constant* Inserted = getPromotedConstant(cast<Constant>(i++));
 
       std::vector<unsigned> NewIndices;
@@ -835,27 +1049,33 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
 
         const ArrayRef<unsigned> Indices = CE->getIndices();
         const size_t end = Indices.size();
+	Type* LastTy = AggOriginalTy;
         for(size_t i = 0; i < end; ++i) {
           unsigned Idx = Indices[i];
 
           OldIndices.push_back(Idx);
-
-          if(!SkipNext)
-            NewIndices.push_back(Idx);
-          else
-            SkipNext = false;
-
-          Type* T2 = ExtractValueInst::getIndexedType(AggOriginalTy, OldIndices);
-          if(isShallowPromotable(T2))
-            SkipNext = true; 
+          Type* NextTy = ExtractValueInst::getIndexedType(AggOriginalTy, OldIndices);
+          if(!isMeaningful(NextTy)) {
+	    // if this is one of those awkward 0-byte aggregates, replace with an undef value.
+	    NewC = UndefValue::get(NewT);
+	    break;
+	  }
+	  if(!isShallowPromotable(LastTy)) {
+	    const PromotedType* PTy = NULL;
+	    getPromotedType(LastTy, &PTy);
+	    NewIndices.push_back(PTy->bumpOffset(Idx));
+	  }
+	  LastTy = NextTy;
         }
       }
-      if(Code == Instruction::ExtractValue)
-        NewC = ConstantExpr::getExtractValue(Agg, NewIndices);
-      else if(Code == Instruction::InsertValue)
-        NewC = ConstantExpr::getInsertValue(Agg,
-                                            Inserted,
-                                            NewIndices);
+      if(NewC == NULL) {
+	if(Code == Instruction::ExtractValue)
+	  NewC = ConstantExpr::getExtractValue(Agg, NewIndices);
+	else if(Code == Instruction::InsertValue)
+	  NewC = ConstantExpr::getInsertValue(Agg,
+					      Inserted,
+					      NewIndices);
+      }
     } else {
       std::vector<Constant*> Consts;
       Consts.reserve(C->getNumOperands());
@@ -900,9 +1120,14 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
     std::vector<Constant*> Consts;
     Consts.reserve(C->getNumOperands());
     const User::op_iterator end = C->op_end();
-    for(i = C->op_begin(); i != end; ++i) {
-      Constant* C2 = cast<Constant>(*i);
-      Consts.push_back(getPromotedConstant(C2));
+    size_t Idx = 0;
+    const PromotedType* PT = NULL; getPromotedType(OriginalT, &PT);
+    for(i = C->op_begin(); i != end; ++i, ++Idx) {
+      Constant* OldC = cast<Constant>(*i);
+      if(!PT->isBumped(Idx)) {
+	Constant* NewC = getPromotedConstant(OldC);
+	Consts.push_back(NewC);
+      }
     }
     if(isa<ConstantStruct>(C))
       NewC = ConstantStruct::get(cast<StructType>(NewT), Consts);
@@ -923,6 +1148,7 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
   }
 
   assert(NewC != NULL && "NewC is NULL");
+  assert(NewC->getType() == NewT);
   m_promoted_consts.insert(std::make_pair(NewC, NewC));
   return NewC;
 }
@@ -981,14 +1207,17 @@ Function* PromoteSimpleStructs::promoteFunction(Function& F, const bool Prototyp
 
 bool PromoteSimpleStructs::runOnModule(Module& M) {
   m_module = &M;
-
+  size_t PromotedFunctions = 0;
   const Module::iterator i_end = M.end();
   for(Module::iterator i = M.begin(); i != i_end; ++i) {
     promoteFunction(*i, false);
+    ++PromotedFunctions;
   }
+  size_t PromotedGlobals = 0;
   const Module::global_iterator j_end = M.global_end();
   for(Module::global_iterator j = M.global_begin(); j != j_end; ++j) {
     promoteGlobal(j);
+    ++PromotedGlobals;
   }
   
   // remove dangling consts:
