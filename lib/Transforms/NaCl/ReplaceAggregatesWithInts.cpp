@@ -41,18 +41,42 @@ class ReplaceAggregatesWithInts :
   public FunctionPass {
 public:
   static char ID;
-  ReplaceAggregatesWithInts() : FunctionPass(ID), m_converted(0) {
+  ReplaceAggregatesWithInts() : FunctionPass(ID) {
     initializeReplaceAggregatesWithIntsPass(*PassRegistry::getPassRegistry());
   }
 
   virtual void getAnalysisUsage(AnalysisUsage &Info) const {
     Info.addRequired<DataLayout>();
   }
-
-  size_t m_converted;
+  virtual bool doInitialization(Module& M) {
+    this->M  = &M;
+    this->DL = NULL;
+    this->C  = &M.getContext();
+    this->I8Ty = Type::getIntNTy(*C, 8);
+    this->I32Ty = Type::getIntNTy(*C, 32);
+    this->MemSet = this->M->getFunction("llvm.memset.p0i8.i32");
+    this->Converted = 0;
+    return false;
+  }
+  virtual bool doFinalization(Module&) {
+    delete this->DL;
+    this->DL = NULL;
+    this->C  = NULL;
+    this->M  = NULL;
+    this->I8Ty = NULL;
+    this->I32Ty = NULL;
+    this->MemSet = NULL;
+    return false;
+  }
+  size_t Converted;
+  const DataLayout* DL;
+  LLVMContext* C;
+  IntegerType* I8Ty;
+  IntegerType* I32Ty;
+  Module* M;
+  Function* MemSet;
 
   Type* getReplacedTy(Type* Ty) {
-    LLVMContext& C = Ty->getContext();
     unsigned Width;
     if(isa<ArrayType>(Ty)) {
       ArrayType* ATy = cast<ArrayType>(Ty);
@@ -63,34 +87,31 @@ public:
         report_fatal_error("Unsupported replacement!");
       }
 
-      if(ATy->getNumElements() == 0)
-        return NULL;
-      else if(ATy->getNumElements() == 1)
-        return ElemTy;
-      else {
-        unsigned Bits = ElemTy->getIntegerBitWidth();
-        Width = Bits * ATy->getNumElements();
-      }
+      const unsigned Bits = ElemTy->getIntegerBitWidth();
+      Width = Bits * ATy->getNumElements();
     } else if(isa<StructType>(Ty)) {
-      const DataLayout DL(getAnalysis<DataLayout>());
-      Width = DL.getTypeSizeInBits(Ty);
+      Width = DL->getTypeSizeInBits(Ty);
     } else {
       errs() << "Type: " << ToStr(*Ty) << "\n";
-      assert(0 && "This shouldn't be reached!");
-      report_fatal_error("This shouldn't be reached!");
+      assert(0 && "Invalid type!");
+      report_fatal_error("Invalid type!");
     }
 
-    if(Width > 64) {
+    if(Width == 0) {
       errs() << "Type: " << ToStr(*Ty) << "\n";
-      assert(0 && "Replacement would be too wide!");
-      report_fatal_error("Replacement would be too wide!");
-    } else if(Width == 0)
+      assert(0 && "Arrays of zero elements should be already replaced!");
+      report_fatal_error("Arrays of zero elements should be already replaced!");
+    } else if(Width > 64)
       return NULL;
 
-    return Type::getIntNTy(C, Width);
+    return Type::getIntNTy(*C, Width);
   }
 
   virtual bool runOnFunction(Function& F) {
+    if(this->DL == NULL) {
+      // apparently this can't go in module initialization
+      this->DL = new DataLayout(getAnalysis<DataLayout>());
+    }
     std::set<Instruction*> ToErase;
 
     bool Changed = false;
@@ -114,9 +135,11 @@ public:
 
           Type* NewTy = getReplacedTy(ContainedTy);
           if(NewTy == NULL) {
+	    Cast->mutateType(this->I8Ty->getPointerTo());
+
             const Value::use_iterator End = Cast->use_end();
             for(Value::use_iterator K = Cast->use_begin(); K != End;) {
-              if(!(isa<StoreInst>(*K) || isa<LoadInst>(*K))) {
+              if(!isa<StoreInst>(*K)) {
                 errs() << "Inst: " << ToStr(*Cast) << "\n";
                 errs() << "Use : " << ToStr(**K) << "\n";
                 assert(0 && "Unknown use!");
@@ -124,7 +147,7 @@ public:
               }
 
               Instruction* KInst = cast<Instruction>(*K++);
-              if(isa<LoadInst>(KInst)) {
+              /*if(isa<LoadInst>(KInst)) {
                 const Value::use_iterator End = KInst->use_end();
                 for(Value::use_iterator L = KInst->use_begin(); L != End; ++L) {
                   if(!isa<StoreInst>(*L)) {
@@ -136,11 +159,32 @@ public:
 
                   ToErase.insert(cast<Instruction>(*L));
                 }
-              }
+		} else {*/
+	      StoreInst* Store = cast<StoreInst>(KInst);
+
+	      Value* ValOp = Store->getValueOperand();
+	      assert(isa<ArrayType>(ValOp->getType()));
+	      ArrayType* ValTy = cast<ArrayType>(ValOp->getType());
+	      assert(isa<ConstantAggregateZero>(ValOp));
+
+	      std::vector<Value*> Args;
+	      Args.reserve(5);
+	      Args.push_back(Cast);
+	      Args.push_back(ConstantInt::get(I8Ty, 0, false));
+	      Args.push_back(ConstantInt::get(I32Ty,
+					      DL->getTypeSizeInBits(ValTy) / 8,
+					      false));
+	      Args.push_back(ConstantInt::get(I32Ty, 0, false));
+	      Args.push_back(ConstantInt::getFalse(Type::getInt1Ty(*this->C)));
+	      CallInst* Call = CallInst::Create(this->MemSet,
+						Args,
+						"",
+						KInst);
+	      CopyDebug(Call, KInst);
+		//}
               ToErase.insert(KInst);
+	      Changed = true;
             }
-            ToErase.insert(Cast);
-            Changed = true;
           } else {
             // mutate load types.
             const Value::use_iterator End = Cast->use_end();
@@ -166,7 +210,7 @@ public:
       (*I)->eraseFromParent();
     }
 
-    ++m_converted;
+    this->Converted++;
     return Changed;
   }
 };
