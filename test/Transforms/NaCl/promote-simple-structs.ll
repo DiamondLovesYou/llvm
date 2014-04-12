@@ -8,7 +8,7 @@
 %promoted3 = type { %not_promoted (%promoted1)*, i64 (%promoted2*)* }
 %promoted4 = type { %promoted1, %promoted3 }
 %linked_list = type { %promoted1, %linked_list* }
-; CHECK: %"enum.trie::Child<()>.3" = type { i8, [3 x i8], i32 }
+; CHECK: %"enum.trie::Child<()>.4" = type { i8, [3 x i8], i32 }
 %"enum.trie::Child<()>" = type { i8, [3 x i8], [1 x i32] }
 ; C;HECK: %"struct.trie::TrieNode<()>.2" = type { i32, [16 x %"enum.trie::Child<()>.3"] }
 %"struct.trie::TrieNode<()>" = type { i32, [16 x %"enum.trie::Child<()>"] }
@@ -19,17 +19,17 @@
 
 @g1 = global i32 42, align 4
 
-; CHECK-LABEL: define %not_promoted @not_promoted_fun1(%not_promoted* %a1, i32 %a2)
+; CHECK-LABEL: define %not_promoted.0 @not_promoted_fun1(%not_promoted.0* %a1, i32 %a2)
 define %not_promoted @not_promoted_fun1(%not_promoted* %a1, i32 %a2) {
-; CHECK: %1 = load %not_promoted* %a1
+; CHECK: %1 = load %not_promoted.0* %a1
        %1 = load %not_promoted* %a1
-; CHECK: %2 = extractvalue %not_promoted %1, 0
+; CHECK: %2 = extractvalue %not_promoted.0 %1, 0
        %2 = extractvalue %not_promoted %1, 0
 ; CHECK: %3 = add i32 %2, %a2
        %3 = add i32 %2, %a2
-; CHECK: %4 = insertvalue %not_promoted %1, i32 %3, 0
+; CHECK: %4 = insertvalue %not_promoted.0 %1, i32 %3, 0
        %4 = insertvalue %not_promoted %1, i32 %3, 0
-; CHECK: ret %not_promoted %4
+; CHECK: ret %not_promoted.0 %4
        ret %not_promoted %4
 }
 
@@ -74,7 +74,7 @@ define %promoted1 @f5() {
 ; CHECK: ret i32* @g1
        ret %promoted1 %1
 }
-; CHECK-LABEL: define %not_promoted @f6(i32* %a1, i64 %a2)
+; CHECK-LABEL: define %not_promoted.0 @f6(i32* %a1, i64 %a2)
 define %not_promoted @f6(%promoted1 %a1, %promoted2 %a2) {
 ; CHECK: %1 = call i32* @f2(i32* %a1)
        %1 = call i32* @f2(%promoted1 %a1)
@@ -93,7 +93,7 @@ define %not_promoted @f6(%promoted1 %a1, %promoted2 %a2) {
 ; CHECK: ret %not_promoted %6
        ret %not_promoted %6
 }
-; CHECK-LABEL: define %not_promoted @f7(i32* %a1)
+; CHECK-LABEL: define %not_promoted.0 @f7(i32* %a1)
 define %not_promoted @f7(%promoted1 %a1) {
 Entry:
 ; CHECK: %0 = call i32* @f2(i32* %a1)
@@ -131,7 +131,7 @@ Exit:
         %14 = insertvalue %not_promoted %10, i32 %13, 0
         ret %not_promoted %14
 }
-; CHECK-LABEL: define %not_promoted @f8(%not_promoted (i32*)* %a1)
+; CHECK-LABEL: define %not_promoted.0 @f8(%not_promoted.0 (i32*)* %a1)
 define %not_promoted @f8(%not_promoted (%promoted1)* %a1) {
        %1 = alloca i32
        store i32 42, i32* %1
@@ -141,9 +141,9 @@ define %not_promoted @f8(%not_promoted (%promoted1)* %a1) {
        %3 = call %not_promoted %a1(%promoted1 %2)
        ret %not_promoted %3
 }
-
+; CHECK-LABEL: define %not_promoted.0 @f9()
 define %not_promoted @f9() {
-; CHECK: %1 = call %not_promoted @f8(%not_promoted (i32*)* @f7)
+; CHECK: %1 = call %not_promoted.0 @f8(%not_promoted.0 (i32*)* @f7)
        %1 = call %not_promoted @f8(%not_promoted (%promoted1)* @f7)
        ret %not_promoted %1
 }
@@ -156,7 +156,7 @@ define %promoted3 @f10() {
 ; CHECK: ret %promoted3.0 %2
        ret %promoted3 %2
 }
-; CHECK-LABEL: define %not_promoted @f11()
+; CHECK-LABEL: define %not_promoted.0 @f11()
 define %not_promoted @f11() {
 ; CHECK: %1 = call %promoted3.0 @f10()
        %1 = call %promoted3 @f10()
@@ -164,9 +164,9 @@ define %not_promoted @f11() {
        %2 = extractvalue %promoted3 %1, 0
 ; CHECK: %3 = extractvalue %promoted3.0 %1, 1
        %3 = extractvalue %promoted3 %1, 1
-; CHECK: %4 = call %not_promoted @f8(%not_promoted (i32*)* %2)
+; CHECK: %4 = call %not_promoted.0 @f8(%not_promoted.0 (i32*)* %2)
        %4 = call %not_promoted @f8(%not_promoted (%promoted1)* %2)
-; CHECK: ret %not_promoted %4
+; CHECK: ret %not_promoted.0 %4
        ret %not_promoted %4
 }
 define %promoted1 @f12() {
@@ -315,3 +315,128 @@ iter_vec_loop_body:                               ; preds = %iter_vec_loop_heade
 iter_vec_next:                                    ; preds = %iter_vec_loop_header
   ret void
 }
+
+%"enum.std::fmt::rt::Piece[#1].144.758.5056.5670.6284.6898.8126.9824" = type { i8, [7 x i8], [9 x i64] }
+
+@_ZN2io6signal23Signum...std..fmt..Show3fmt15__STATIC_FMTSTR20h2a1052ff3a7cf82bd1K9v0.11.preE = external unnamed_addr constant { { i8, { i8*, i64 }, [56 x i8] } }
+
+; Function Attrs: uwtable
+define void @_ZN2io6signal23Signum...std..fmt..Show3fmt20h29346a7683b2d561b0K9v0.11.preE() unnamed_addr {
+case_body17:                                      ; preds = %entry-block
+  %0 = icmp eq %"enum.std::fmt::rt::Piece[#1].144.758.5056.5670.6284.6898.8126.9824"* bitcast ({ { i8, { i8*, i64 }, [56 x i8] } }* @_ZN2io6signal23Signum...std..fmt..Show3fmt15__STATIC_FMTSTR20h2a1052ff3a7cf82bd1K9v0.11.preE to %"enum.std::fmt::rt::Piece[#1].144.758.5056.5670.6284.6898.8126.9824"*), bitcast (i8* getelementptr inbounds ({ { i8, { i8*, i64 }, [56 x i8] } }* @_ZN2io6signal23Signum...std..fmt..Show3fmt15__STATIC_FMTSTR20h2a1052ff3a7cf82bd1K9v0.11.preE, i64 1, i32 0, i32 0) to %"enum.std::fmt::rt::Piece[#1].144.758.5056.5670.6284.6898.8126.9824"*)
+  unreachable
+}
+; CHECK-LABEL: define void @_ZN2io6signal23Signum...std..fmt..Show3fmt20h29346a7683b2d561b0K9v0.11.preE()
+; CHECK-LABEL: case_body17:
+; CHECK-NEXT: %0 = icmp eq %"enum.std::fmt::rt::Piece[#1].144.758.5056.5670.6284.6898.8126.9824.0"* bitcast (%0* @_ZN2io6signal23Signum...std..fmt..Show3fmt15__STATIC_FMTSTR20h2a1052ff3a7cf82bd1K9v0.11.preE to %"enum.std::fmt::rt::Piece[#1].144.758.5056.5670.6284.6898.8126.9824.0"*), bitcast (i8* getelementptr inbounds (%0* @_ZN2io6signal23Signum...std..fmt..Show3fmt15__STATIC_FMTSTR20h2a1052ff3a7cf82bd1K9v0.11.preE, i64 1, i32 0) to %"enum.std::fmt::rt::Piece[#1].144.758.5056.5670.6284.6898.8126.9824.0"*)
+
+; ----------------------------------------------------
+; promotion invalidates BasicBlock iterator:
+; we're most only checking that we don't crash, so there's not much CHECKing that needs to be done here.
+define void @_ZN3str7is_utf820ha808b5c55e670da7J6p9v0.11.preE() unnamed_addr {
+entry-block:
+  br i1 undef, label %_ZN3str28run_utf8_validation_iterator20hab95ed805223fde8J2p9v0.11.preE.exit, label %"_ZN5slice57Items$LT$$x27a$C$$x20T$GT$.Iterator$LT$$BP$$x27a$x20T$GT$4next20hcc6dbb16f27a1a944mo9v0.11.preE.exit.i"
+
+"_ZN5slice57Items$LT$$x27a$C$$x20T$GT$.Iterator$LT$$BP$$x27a$x20T$GT$4next20hcc6dbb16f27a1a944mo9v0.11.preE.exit.i": ; preds = %loop_body.backedge.i, %entry-block
+  %0 = phi i8* [ %3, %loop_body.backedge.i ], [ undef, %entry-block ]
+  %1 = getelementptr inbounds i8* %0, i64 1
+  br i1 undef, label %_ZN3str28run_utf8_validation_iterator20hab95ed805223fde8J2p9v0.11.preE.exit, label %match_case.i
+
+match_case.i:                                     ; preds = %"_ZN5slice57Items$LT$$x27a$C$$x20T$GT$.Iterator$LT$$BP$$x27a$x20T$GT$4next20hcc6dbb16f27a1a944mo9v0.11.preE.exit.i"
+  br i1 undef, label %then-block-61106-.i, label %loop_body.backedge.i
+
+then-block-61106-.i:                              ; preds = %match_case.i
+  br i1 undef, label %_ZN3str28run_utf8_validation_iterator20hab95ed805223fde8J2p9v0.11.preE.exit, label %match_case7.i
+
+match_case7.i:                                    ; preds = %then-block-61106-.i
+  %2 = getelementptr inbounds i8* %0, i64 2
+  br i1 undef, label %loop_body.backedge.i, label %_ZN3str28run_utf8_validation_iterator20hab95ed805223fde8J2p9v0.11.preE.exit
+
+loop_body.backedge.i:                             ; preds = %match_case7.i, %match_case.i
+  %3 = phi i8* [ %1, %match_case.i ], [ %2, %match_case7.i ]
+  br i1 undef, label %_ZN3str28run_utf8_validation_iterator20hab95ed805223fde8J2p9v0.11.preE.exit, label %"_ZN5slice57Items$LT$$x27a$C$$x20T$GT$.Iterator$LT$$BP$$x27a$x20T$GT$4next20hcc6dbb16f27a1a944mo9v0.11.preE.exit.i"
+
+_ZN3str28run_utf8_validation_iterator20hab95ed805223fde8J2p9v0.11.preE.exit: ; preds = %loop_body.backedge.i, %match_case7.i, %then-block-61106-.i, %"_ZN5slice57Items$LT$$x27a$C$$x20T$GT$.Iterator$LT$$BP$$x27a$x20T$GT$4next20hcc6dbb16f27a1a944mo9v0.11.preE.exit.i", %entry-block
+  ret void
+}
+
+%"enum.std::option::Option<&'static f64>[#1].146.1374.5058.5526" = type { double* }
+; CHECK-LABEL: define void @"_ZN6option15Option$LT$T$GT$6unwrap20h2784a1bb46bb36c6IQa4v0.0E"()
+define void @"_ZN6option15Option$LT$T$GT$6unwrap20h2784a1bb46bb36c6IQa4v0.0E"() unnamed_addr {
+entry-block:
+; CHECK: %self = alloca double*
+  %self = alloca %"enum.std::option::Option<&'static f64>[#1].146.1374.5058.5526"
+  br i1 undef, label %match_case, label %match_else
+
+match_else:                                       ; preds = %entry-block
+  unreachable
+
+match_case:                                       ; preds = %entry-block
+; CHECK-NOT: %0 = getelementptr inbounds %"enum.std::option::Option<&'static f64>[#1].146.1374.5058.5526"* %self, i32 0, i32 0
+  %0 = getelementptr inbounds %"enum.std::option::Option<&'static f64>[#1].146.1374.5058.5526"* %self, i32 0, i32 0
+  ret void
+}
+
+%"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560" = type { i64, void (i8*)*, %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560"*, %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560"*, {} }
+; CHECK: %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560.0" = type { i64, void (i8*)*, %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560.0"*, %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560.0"* }
+
+define void @_ZN7cleanup10annihilate20hbc4b5b6d732db483yMR9v0.11.preE() unnamed_addr {
+entry-block:
+  br i1 undef, label %enum-iter-variant-1.i.i.i22, label %_ZN2rt10local_heap11live_allocs20h00ba74d6dc27c595Uz99v0.11.preE.exit27
+
+enum-iter-variant-1.i.i.i22:                      ; preds = %entry-block
+  unreachable
+
+_ZN2rt10local_heap11live_allocs20h00ba74d6dc27c595Uz99v0.11.preE.exit27: ; preds = %entry-block
+  br i1 undef, label %_ZN7cleanup15each_live_alloc20he6e5fd88bcee2ce4lLR9v0.11.preE.exit, label %while_body.i
+
+while_body.i:                                     ; preds = %while_body.i, %_ZN2rt10local_heap11live_allocs20h00ba74d6dc27c595Uz99v0.11.preE.exit27
+  %alloc.01.i = phi %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560"* [ %1, %while_body.i ], [ undef, %_ZN2rt10local_heap11live_allocs20h00ba74d6dc27c595Uz99v0.11.preE.exit27 ]
+  %0 = getelementptr inbounds %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560"* %alloc.01.i, i64 0, i32 3
+  %1 = load %"struct.std::raw::Box<()>[#1].67.3137.7435.10505.13575.16645.18487.24560"** %0, align 8
+  br i1 undef, label %_ZN7cleanup15each_live_alloc20he6e5fd88bcee2ce4lLR9v0.11.preE.exit, label %while_body.i
+
+_ZN7cleanup15each_live_alloc20he6e5fd88bcee2ce4lLR9v0.11.preE.exit: ; preds = %while_body.i, %_ZN2rt10local_heap11live_allocs20h00ba74d6dc27c595Uz99v0.11.preE.exit27
+  unreachable
+}
+
+;----------------------------------------------------
+; check that we don't skip the instructions when the prior instruction is removed/replaced/etc.
+; CHECK: %0 = type { i64, i64 }
+%"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580" = type { %str_slice.1.3071.6141.12895.14737.16578, { i64, i64, [0 x %"enum.fmt::parse::Piece.459.3529.6599.13353.15195.16579"] }* }
+; CHECK: %"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580.0" = type { %str_slice.1.3071.6141.12895.14737.16578.1, %0* }
+%str_slice.1.3071.6141.12895.14737.16578 = type { i8*, i64 }
+%"enum.fmt::parse::Piece.459.3529.6599.13353.15195.16579" = type { i8, [7 x i8], [15 x i64] }
+; CHECK-NOT: %"enum.fmt::parse::Piece.459.3529.6599.13353.15195.16579" = type { i8, [7 x i8], [15 x i64] }
+
+define void @"_ZN3fmt5parse34Method$LT$$x27a$GT$...std..cmp..Eq2eq20h59da4f9eb7e11a93cjQ9v0.11.preE"() unnamed_addr {
+; CHECK-LABEL: define void @"_ZN3fmt5parse34Method$LT$$x27a$GT$...std..cmp..Eq2eq20h59da4f9eb7e11a93cjQ9v0.11.preE"()
+entry-block:
+  br i1 undef, label %before_rhs.i.i61, label %join24
+
+before_rhs.i.i61:                                 ; preds = %entry-block
+  %0 = getelementptr inbounds { i64, i64, [0 x %"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580"] }* undef, i64 0, i32 2, i64 0
+; CHECK-NOT: %0 = getelementptr inbounds { i64, i64, [0 x %"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580"] }* undef, i64 0, i32 2, i64 0
+  %.209 = select i1 undef, %"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580"* null, %"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580"* %0
+; CHECK: %.209 = select i1 undef, %"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580.0"* null, %"struct.fmt::parse::SelectArm.468.3538.6608.13362.15204.16580.0"* undef
+  br label %join24
+
+join24:                                           ; preds = %before_rhs.i.i61, %entry-block
+  ret void
+}
+%"enum.fmt::parse::Piece.459.3529.6599.13353.17192" = type { i8, [7 x i8], [15 x i64] }
+
+declare void @llvm.lifetime.start(i64, i8* nocapture)
+
+define void @"_ZN3fmt5parse34Method$LT$$x27a$GT$...std..cmp..Eq2eq20h59da4f9eb7e11a93cjQ9v0.11.preE"() unnamed_addr {
+; CHECK-LABEL: define void @"_ZN3fmt5parse34Method$LT$$x27a$GT$...std..cmp..Eq2eq20h59da4f9eb7e11a93cjQ9v0.11.preE"()
+"_ZN3fmt5parse37SelectArm$LT$$x27a$GT$...std..cmp..Eq2eq20ha51847e9e7f8b742xuQ9v0.11.preE.exit.i":
+  call void @llvm.lifetime.start(i64 16, i8* undef) #0
+  %0 = getelementptr inbounds { i64, i64, [0 x %"enum.fmt::parse::Piece.459.3529.6599.13353.17192"] }* undef, i64 0, i32 2, i64 0
+; CHECK-NOT: %0 = getelementptr inbounds { i64, i64, [0 x %"enum.fmt::parse::Piece.459.3529.6599.13353.17192"] }* undef, i64 0, i32 2, i64 0
+  store %"enum.fmt::parse::Piece.459.3529.6599.13353.17192"* %0, %"enum.fmt::parse::Piece.459.3529.6599.13353.17192"** undef, align 8
+; CHECK: store %"enum.fmt::parse::Piece.459.3529.6599.13353.17192"* %0, %"enum.fmt::parse::Piece.459.3529.6599.13353.17192"** undef, align 8
+  unreachable
+}
+
+;---------------------------------------------------

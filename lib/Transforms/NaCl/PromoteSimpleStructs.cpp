@@ -588,33 +588,79 @@ Value* PromoteSimpleStructs::ConversionState::get(Value* From, Type** OldTy) {
 
 void PromoteSimpleStructs::ConversionState::convertOperands(User* From) {
   unsigned j = 0;
-  const User::op_iterator end = From->op_end();
-  for(User::op_iterator i = From->op_begin(); i != end; ++i, ++j) {
-    Value* R = get(*i);
+  User::op_iterator i = From->op_begin();
+  for(bool FirstIteration = true;; FirstIteration = false) {
+    // Keep i an element before the current. This way, if the current operand
+    // is replaced, our iterator won't be invalidated. This works because the
+    // previous position is guaranteed to be already converted, and hence
+    // won't give us nasty surprises.
+    User::op_iterator Next = i;
+
+    if(!FirstIteration) {
+      ++Next;
+      ++j;
+    }
+    if(Next == From->op_end()) {
+      break;
+    }
+
+    Value* NextValue = *Next;
+    Value* R = get(NextValue);
+
     // sometimes constant prop will short circuit an expression
     // possibly yielding a global var; hence check the old operand
     // for global var-ness.
-    if(isa<Constant>(R) && !isa<GlobalValue>(*i))
+    if(isa<Constant>(R) && !isa<GlobalValue>(NextValue))
       From->setOperand(j, R);
+
+    if(FirstIteration) {
+      // iterator could be invalidated if the first operand was replaced.
+      i = From->op_begin();
+    } else {
+      ++i;
+    }
   }
 }
 
 void PromoteSimpleStructs::ConversionState::convertBlock(BasicBlock* Bb) {
-  const BasicBlock::iterator j_end = Bb->end();
-  for(BasicBlock::iterator j = Bb->begin(); j != j_end;) {
-    Instruction* Inst = cast<Instruction>(&*(j++));
-    if(&*j == NULL) {
-      // restart if our iterator was invalidated.
-      // this is Okay because m_replacements will still hold
-      // the state on whats converted and whats not,
-      // though the inevitable waste is a bit unfortunate.
-      j = Bb->begin();
-      continue;
+  bool FirstIteration = true;
+  BasicBlock::iterator Prev = Bb->begin();
+  for(;;) {
+    BasicBlock::iterator Next = Prev;
+    if(!FirstIteration) {
+      ++Next;
+      if(Next == Bb->end()) {
+	break;
+      }
     }
-
+    
+    Instruction* Inst = cast<Instruction>(&(*Next));
     if(!m_replacements.count(Inst))
       convertInstruction(Inst);
-  } // basicblock
+
+    if(FirstIteration) {
+      if(Prev != Bb->begin()) {
+	// The first instruction was replaced.
+	// We can't just unset FirstIteration or else we'll end up skipping
+	// the new head instruction (previously the second instruction
+	// in this block).
+	Prev = Bb->begin();
+      } else {
+	// The head instruction was not replaced. Commence bumping.
+	FirstIteration = false;
+      }
+    } else {
+      BasicBlock::iterator PrevNext = Prev; ++PrevNext;
+
+      // If the current (or rather the last) instruction was replaced, we can't
+      // ++Next lest we skip the next (now the current) instruction.
+      // We check by imcrementing a copy of Prev and compairing that to Next.
+      // If they differ, an instruction was replaced/removed/etc.
+      if(PrevNext == Next) {
+	Prev = PrevNext;
+      }
+    }
+  }
 }
 void PromoteSimpleStructs::ConversionState::possiblyConvertUsers(Instruction* Inst,
                                                                  Value* Replacement,
@@ -1007,7 +1053,12 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
         OldIndices.reserve(C->getNumOperands());
         NewIndices.reserve(C->getNumOperands());
 
-	Type* LastTy = AggOriginalTy;
+	Type* LastTy = AggOriginalTy->getContainedType(0);
+	// check for array element by ptr offset, ie (&a[0])[index].
+	// in such cases it would be invalid to bump the index offset.
+	// If the first element is also promotable, without this check
+	// we'd skip the array element offset.
+	bool ForceInitialIndex = isShallowPromotable(LastTy);
         const User::op_iterator end = C->op_end();
         for(; i != end; ++i) {
           Constant* C2 = cast<Constant>(*i);
@@ -1023,13 +1074,15 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
 	    break;
 	  }
 
-	  if(!isShallowPromotable(LastTy)) {
+	  if(!isShallowPromotable(LastTy) || ForceInitialIndex) {
 	    if(ConstantInt* IdxVal = dyn_cast<ConstantInt>(C3)) {
 	      const PromotedType* Last = NULL;
 	      getPromotedType(LastTy, &Last);
-	      C3 = cast<Constant>(Last->bumpOffset(IdxVal));
+	      Value* Bumped = Last->bumpOffset(IdxVal);
+	      C3 = cast<Constant>(Bumped);
 	    }
 	    NewIndices.push_back(C3);
+	    ForceInitialIndex = false;
 	  }
 	  LastTy = NextTy;
         }
