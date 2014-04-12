@@ -10,7 +10,8 @@
 LEVEL := ../..
 TOOLNAME := bugpoint
 LINK_COMPONENTS := asmparser instrumentation scalaropts ipo linker bitreader \
-                   bitwriter irreader vectorize objcarcopts
+                   bitwriter irreader vectorize objcarcopts nacltransforms \
+		   naclanalysis naclbitwriter naclbitreader
 
 # Support plugins.
 NO_DEAD_STRIP := 1

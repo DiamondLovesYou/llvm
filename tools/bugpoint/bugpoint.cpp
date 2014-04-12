@@ -130,6 +130,41 @@ int main(int argc, char **argv) {
   initializeInstrumentation(Registry);
   initializeTarget(Registry);
 
+  initializeAddPNaClExternalDeclsPass(Registry);
+  initializeCanonicalizeMemIntrinsicsPass(Registry);
+  initializeExpandArithWithOverflowPass(Registry);
+  initializeExpandByValPass(Registry);
+  initializeExpandConstantExprPass(Registry);
+  initializeExpandCtorsPass(Registry);
+  initializeExpandGetElementPtrPass(Registry);
+  initializeExpandSmallArgumentsPass(Registry);
+  initializeExpandStructRegsPass(Registry);
+  initializeExpandTlsConstantExprPass(Registry);
+  initializeExpandTlsPass(Registry);
+  initializeExpandVarArgsPass(Registry);
+  initializeFlattenGlobalsPass(Registry);
+  initializeGlobalCleanupPass(Registry);
+  initializeInsertDivideCheckPass(Registry);
+  initializePNaClABIVerifyFunctionsPass(Registry);
+  initializePNaClABIVerifyModulePass(Registry);
+  initializePNaClSjLjEHPass(Registry);
+  initializePromoteI1OpsPass(Registry);
+  initializePromoteIntegersPass(Registry);
+  initializePromoteSimpleStructsPass(Registry);
+  initializePromoteReturnedStructsPass(Registry);
+  initializePromoteStructureArgsPass(Registry);
+  initializeReplaceAggregatesWithIntsPass(Registry);
+  initializeReplaceVectorsWithArraysPass(Registry);
+  initializeRemoveAsmMemoryPass(Registry);
+  initializeReplacePtrsWithIntsPass(Registry);
+  initializeResolveAliasesPass(Registry);
+  initializeResolvePNaClIntrinsicsPass(Registry);
+  initializeRewriteAtomicsPass(Registry);
+  initializeRewriteLLVMIntrinsicsPass(Registry);
+  initializeRewritePNaClLibraryCallsPass(Registry);
+  initializeStripAttributesPass(Registry);
+  initializeStripMetadataPass(Registry);
+
   cl::ParseCommandLineOptions(argc, argv,
                               "LLVM automatic testcase reducer. See\nhttp://"
                               "llvm.org/cmds/bugpoint.html"
