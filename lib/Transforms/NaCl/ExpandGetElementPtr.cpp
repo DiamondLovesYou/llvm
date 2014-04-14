@@ -48,8 +48,7 @@ INITIALIZE_PASS(ExpandGetElementPtr, "expand-getelementptr",
                 "Expand out GetElementPtr instructions into arithmetic",
                 false, false)
 
-static Value *CastToPtrSize(Value *Val, Instruction *InsertPt,
-                            Type *PtrType) {
+Value *CastToPtrSize(Value *Val, Instruction *InsertPt, Type *PtrType) {
   unsigned ValSize = Val->getType()->getIntegerBitWidth();
   unsigned PtrSize = PtrType->getIntegerBitWidth();
   if (ValSize == PtrSize)
@@ -64,8 +63,8 @@ static Value *CastToPtrSize(Value *Val, Instruction *InsertPt,
   return CopyDebug(Inst, InsertPt);
 }
 
-static void FlushOffset(Instruction **Ptr, uint64_t *CurrentOffset,
-                        Instruction *InsertPt, Type *PtrType) {
+void FlushOffset(Instruction **Ptr, uint64_t *CurrentOffset,
+		 Instruction *InsertPt, Type *PtrType) {
   if (*CurrentOffset) {
     *Ptr = BinaryOperator::Create(Instruction::Add, *Ptr,
                                   ConstantInt::get(PtrType, *CurrentOffset),

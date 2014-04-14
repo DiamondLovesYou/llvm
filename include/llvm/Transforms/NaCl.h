@@ -66,6 +66,8 @@ void PhiSafeReplaceUses(Use *U, Value *NewVal);
   // Copy debug information from Original to New, and return New.
   template <class T, class U>
   T* CopyDebug(T* New, U* Original) {
+    if(Original == NULL)
+      return New;
     if(static_cast<void*>(New) != static_cast<void*>(Original) &&
        isa<Instruction>(New) && isa<Instruction>(Original))
       cast<Instruction>(New)->setMetadata(LLVMContext::MD_dbg,

@@ -15,6 +15,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Transforms/NaCl.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/raw_ostream.h"
@@ -819,6 +820,11 @@ Value* PromoteSimpleStructs::ConversionState::convertEVOrIVInstruction(Instructi
   }
   return Converted;
 }
+
+void FlushOffset(Instruction **Ptr, uint64_t *CurrentOffset,
+		 Instruction *InsertPt, Type *PtrType);
+Value *CastToPtrSize(Value *Val, Instruction *InsertPt, Type *PtrType);
+
 Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPtrInst* Inst,
                                                                     Type* OriginalTy,
                                                                     Type* PromotedTy,
@@ -839,8 +845,79 @@ Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPt
     Type* NextTy = GetElementPtrInst::getIndexedType(PointerOpOriginalTy,
 						     OldIndices);
     if(!isMeaningful(NextTy)) {
-      // if this is one of those awkward 0-byte aggregates, replace with an undef value.      
-      Converted = UndefValue::get(PromotedTy);
+      // if this is one of those awkward 0-byte aggregates. Replace with some
+      // pointer arithmetic to point the pointer to one byte past the end.
+      // We'll remove any useless stores/loads with these pointers so all these
+      // can be used for is sentinel values.
+      // Important: be sure to never insert before Inst so we don't invalidate
+      // any iterators.
+
+      DataLayout DL(m_f->getParent());
+      IntegerType* IntPtrTy = DL.getIntPtrType(PointerOp->getContext());
+      Instruction *Ptr = CopyDebug(new PtrToIntInst(PointerOp,
+						    IntPtrTy),
+				   Inst);
+      Ptr->insertAfter(Inst);
+
+      // 'borrowed' from ExpandGEP in ExpandGetElementPtr.cpp
+      uint64_t CurrentOffset = 0;
+      Type* CurrentTy = PointerOpOriginalTy;
+      for (GetElementPtrInst::op_iterator Op = Inst->op_begin() + 1;
+	   Op != Inst->op_end(); ++Op) {
+	Value *Index = *Op;
+	if (StructType *StTy = dyn_cast<StructType>(CurrentTy)) {
+	  uint64_t Field = cast<ConstantInt>(Op)->getZExtValue();
+	  CurrentTy = StTy->getElementType(Field);
+	  CurrentOffset += DL.getStructLayout(StTy)->getElementOffset(Field);
+	} else {
+	  CurrentTy = cast<SequentialType>(CurrentTy)->getElementType();
+	  uint64_t ElementSize = DL.getTypeAllocSize(CurrentTy);
+	  if (ConstantInt *C = dyn_cast<ConstantInt>(Index)) {
+	    CurrentOffset += C->getSExtValue() * ElementSize;
+	  } else {
+	    Instruction* Prev = Ptr;
+	    FlushOffset(&Ptr, &CurrentOffset, NULL, IntPtrTy);
+	    if(Ptr->getParent() == NULL) {
+	      Ptr->insertAfter(Prev);
+	      Prev = Ptr;
+	    }
+	    Index = CopyDebug(CastToPtrSize(Index, NULL, IntPtrTy), Inst);
+	    if(Instruction* I = dyn_cast<Instruction>(Index)) {
+	      if(I->getParent() == NULL) {
+		I->insertAfter(Prev);
+		Prev = I;
+	      }
+	    }
+	    if (ElementSize != 1) {
+	      Index = CopyDebug(BinaryOperator::Create(Instruction::Mul,
+						       Index,
+						       ConstantInt::get(IntPtrTy, ElementSize)),
+				Inst);
+	      if(Instruction* I = dyn_cast<Instruction>(Index)) {
+		if(I->getParent() == NULL) {
+		  I->insertAfter(Prev);
+		  Prev = I;
+		}
+	      }
+	    }
+	    Ptr = BinaryOperator::Create(Instruction::Add,
+					 Ptr,
+					 Index);
+	    CopyDebug(Ptr, Inst);
+	    Ptr->insertAfter(Prev);
+	  }
+	}
+      }
+      Instruction* PrevPtr = Ptr;
+      FlushOffset(&Ptr, &CurrentOffset, NULL, IntPtrTy);
+      if(Ptr->getParent() == NULL) {
+	Ptr->insertAfter(PrevPtr);
+      }
+      IntToPtrInst* Result = CopyDebug(new IntToPtrInst(Ptr,
+							PromotedTy),
+				       Inst);
+      Result->insertAfter(Ptr);
+      Converted = Result;
       possiblyConvertUsers(Inst, Converted, OriginalTy);
       Inst->mutateType(PromotedTy);
       Inst->replaceAllUsesWith(Converted);
