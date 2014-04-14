@@ -275,7 +275,7 @@ struct PromoteSimpleStructs : public ModulePass {
 
   bool isAggregateType(Type* T);
 
-  bool runOnModule(Module& M) __attribute__((optimize(0)));
+  bool runOnModule(Module& M);
 };
 char PromoteSimpleStructs::ID = 0;
 INITIALIZE_PASS(PromoteSimpleStructs,
