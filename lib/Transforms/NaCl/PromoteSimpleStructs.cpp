@@ -626,7 +626,7 @@ void PromoteSimpleStructs::ConversionState::convertOperands(User* From) {
 void PromoteSimpleStructs::ConversionState::convertBlock(BasicBlock* Bb) {
   bool FirstIteration = true;
   BasicBlock::iterator Prev = Bb->begin();
-  for(;;) {
+  for(;Prev != Bb->end();) {
     BasicBlock::iterator Next = Prev;
     if(!FirstIteration) {
       ++Next;
@@ -1074,6 +1074,22 @@ Value* PromoteSimpleStructs::ConversionState::convertInstruction(Instruction* I)
     } else if(isa<InvokeInst>(I)) {
       InvokeInst* Invoke = cast<InvokeInst>(I);
       Converted = convertCall(Invoke, OriginalType, PromotedType);
+    }
+  } else if(isa<LoadInst>(I) && !isMeaningful(PromotedType)) {
+    Converted = UndefValue::get(PromotedType);
+    I->mutateType(PromotedType);
+    I->replaceAllUsesWith(Converted);
+    I->eraseFromParent();
+  } else if(StoreInst* Store = dyn_cast<StoreInst>(I)) {
+    Value* ValOp = Store->getValueOperand();
+    Type* ValOriginalTy = ValOp->getType();
+    Type* ValPromotedTy = m_p->getPromotedType(ValOriginalTy);
+    if(isMeaningful(ValPromotedTy)) {
+      m_p->mutateAndReplace(I, I, OriginalType, PromotedType);
+      convertOperands(I);
+      Converted = I;
+    } else {
+      return NULL;
     }
   } else {
     m_p->mutateAndReplace(I, I, OriginalType, PromotedType);

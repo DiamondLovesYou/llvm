@@ -46,7 +46,7 @@ public:
   
   Type* promoteType(Type* Ty);
   Constant* promoteConstant(Constant* C);
-  void promoteOperands(User* U);
+  void promoteUser(User* U);
   Value* promoteOperand(Value* V);
 
   void promoteGlobal(GlobalValue* V);
@@ -185,18 +185,14 @@ void PromoteStructureArgs::promoteFunction(Function* F) {
   for(Function::iterator i = F->begin(); i != end; ++i) {
     BasicBlock::iterator end = i->end();
     for(BasicBlock::iterator j = i->begin(); j != end;) {
-      Type* Ty = j->getType();
-      if(isa<CallInst>(*j)) {
-        CallInst* Call = cast<CallInst>(j++);
+      Instruction* I = cast<Instruction>(&*(j++));
+      if(CallInst* Call = dyn_cast<CallInst>(I)) {
         promoteCallInst<CallInst>(Call, F);
-      } else if(isa<InvokeInst>(*j)) {
-        InvokeInst* Invoke = cast<InvokeInst>(j++);
+      } else if(InvokeInst* Invoke = dyn_cast<InvokeInst>(I)) {
         promoteCallInst<InvokeInst>(Invoke, F);
+	break;
       } else {
-        promoteOperands(j);
-        Type* NewTy = promoteType(Ty);
-        j->mutateType(NewTy);
-        ++j;
+        promoteUser(I);
       }
     }
   }
@@ -279,13 +275,16 @@ Constant* PromoteStructureArgs::promoteConstant(Constant* C) {
   }
   return NewC;
 }
-void PromoteStructureArgs::promoteOperands(User* U) {
+void PromoteStructureArgs::promoteUser(User* U) {
   unsigned pos = 0;
   const User::value_op_iterator end = U->value_op_end();
   for(User::value_op_iterator k = U->value_op_begin(); k != end; ++k, ++pos) {
-    Value* NewV = promoteOperand(*k);
-    U->setOperand(pos, NewV);
+    Value* V = *k;
+    U->setOperand(pos, promoteOperand(V));
   }
+  Type* Ty = U->getType();
+  Type* NewTy = promoteType(Ty);
+  U->mutateType(NewTy);
 }
 Value* PromoteStructureArgs::promoteOperand(Value* V) {
   if(isa<Constant>(V)) {
@@ -314,9 +313,10 @@ void PromoteStructureArgs::promoteCallInst(T* Inst, Function* ParentF) {
   if(isa<Function>(Called) && cast<Function>(Called)->isIntrinsic())
     return;
 
-  if(isa<GlobalValue>(Called)) {
-    GlobalValue* G = cast<GlobalValue>(Called);
-    promoteGlobal(G);
+  if(Constant* C = dyn_cast<Constant>(Called)) {
+    Called = promoteConstant(C);
+  } else if(User* U = dyn_cast<User>(Called)) {
+    promoteUser(U);
   }
 
   const unsigned end = Inst->getNumArgOperands();
@@ -350,6 +350,7 @@ void PromoteStructureArgs::promoteCallInst(T* Inst, Function* ParentF) {
   Type* Ty = Inst->getType();
   Type* NewTy = promoteType(Ty);
   Inst->mutateType(NewTy);
+  Inst->setCalledFunction(Called);
 }
 
 bool PromoteStructureArgs::runOnModule(Module& M) {

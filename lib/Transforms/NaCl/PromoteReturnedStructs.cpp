@@ -25,7 +25,9 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/NaCl.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Analysis/NaCl.h"
+#include "llvm/Analysis/CFG.h"
 #include <set>
 #include <map>
 #include <iostream>
@@ -59,7 +61,7 @@ public:
   
   Type* promoteType(Type* Ty, const bool InRetPos = false);
   Constant* promoteConstant(Constant* C);
-  void promoteOperands(User* U);
+  void promoteUser(User* U);
   Value* promoteOperand(Value* Op);
 
   void promoteGlobal(GlobalValue* V);
@@ -67,7 +69,7 @@ public:
   bool shouldPromote(Type* Ty);
 
   template <class T>
-  void promoteCallInst(T* Inst);
+  void promoteCallInst(T* Inst, BasicBlock* Normal, BasicBlock* Unwind);
   template <class T>
   void promoteCallArgs(T* Inst);
 
@@ -226,6 +228,8 @@ void PromoteReturnedStructs::promoteFunction(Function* F) {
 
     F->setAttributes(NewAttrs);
     F->addAttribute(1, Attribute::StructRet);
+    F->removeFnAttr(Attribute::ReadNone);
+    F->removeFnAttr(Attribute::ReadOnly);
   } else {
     ty_iterator i = m_types.find(F->getType());
     if(i == m_types.end()) {
@@ -258,20 +262,17 @@ void PromoteReturnedStructs::promoteFunction(Function* F) {
 
   const Function::iterator end = F->end();
   for(Function::iterator i = F->begin(); i != end; ++i) {
-    BasicBlock::iterator end = i->end();
-    for(BasicBlock::iterator j = i->begin(); j != end;) {
-      if(isa<CallInst>(*j)) {
-        CallInst* Call = cast<CallInst>(j++);
-        promoteCallInst<CallInst>(Call);
-      } else if(isa<InvokeInst>(*j)) {
-        InvokeInst* Invoke = cast<InvokeInst>(j++);
-        promoteCallInst<InvokeInst>(Invoke);
+    for(BasicBlock::iterator j = i->begin(); j != i->end();) {
+      Instruction* I = cast<Instruction>(&*(j++));
+      if(CallInst* Call = dyn_cast<CallInst>(I)) {
+        promoteCallInst<CallInst>(Call, NULL, NULL);
+      } else if(InvokeInst* Invoke = dyn_cast<InvokeInst>(I)) {
+	BasicBlock* Normal = Invoke->getNormalDest();
+	BasicBlock* Unwind = Invoke->getUnwindDest();
+        promoteCallInst<InvokeInst>(Invoke, Normal, Unwind);
+	break;
       } else {
-        promoteOperands(j);
-        Type* Ty = j->getType();
-        Type* NewTy = promoteType(Ty);
-        j->mutateType(NewTy);
-        ++j;
+        promoteUser(I);
       }
     }
     
@@ -373,13 +374,16 @@ Constant* PromoteReturnedStructs::promoteConstant(Constant* C) {
     m_consts.insert(std::make_pair(NewC, NewC)).second;
   return NewC;
 }
-void PromoteReturnedStructs::promoteOperands(User* U) {
+void PromoteReturnedStructs::promoteUser(User* U) {
   unsigned pos = 0;
   const User::value_op_iterator end = U->value_op_end();
   for(User::value_op_iterator k = U->value_op_begin(); k != end; ++k, ++pos) {
     Value* V = *k;
     U->setOperand(pos, promoteOperand(V));
   }
+  Type* Ty = U->getType();
+  Type* NewTy = promoteType(Ty);
+  U->mutateType(NewTy);
 }
 Value* PromoteReturnedStructs::promoteOperand(Value* V) {
   if(isa<Constant>(V)) {
@@ -403,7 +407,10 @@ void PromoteReturnedStructs::promoteGlobal(GlobalValue* V) {
 }
 
 template <class T>
-void PromoteReturnedStructs::promoteCallInst(T* Inst) {
+void PromoteReturnedStructs::promoteCallInst(T* Inst,
+					     BasicBlock* Normal,
+					     BasicBlock* Unwind) {
+  // FIXME(diamond): split this into smaller functions.
   Value* Called = Inst->getCalledValue();
   if(isa<Function>(Called)) {
     Function* F = cast<Function>(Called);
@@ -415,35 +422,32 @@ void PromoteReturnedStructs::promoteCallInst(T* Inst) {
     } else {
       promoteGlobal(F);
     }
-  } else {
-    Called = promoteOperand(Called);
-    if(isa<Constant>(Called)) {
-      Constant* C = cast<Constant>(Called);
-      Called = promoteConstant(C);
-    } else if(isa<User>(Called)) {
-      promoteOperands(cast<User>(Called));
-      Type* Ty = Called->getType();
-      Type* NewTy = promoteType(Ty);
-      Called->mutateType(NewTy);
-    }
+  } else if(Constant* C = dyn_cast<Constant>(Called)) {
+    Called = promoteConstant(C);
+  } else if(User* U = dyn_cast<User>(Called)) {
+    promoteUser(U);
   }
   FunctionType* FTy = cast<FunctionType>(Called->getType()->getContainedType(0));
   Type* InstTy = Inst->getType();
   if(shouldPromote(Inst->getType())) {
     Type* AllocaTy = promoteType(InstTy);
-    AllocaInst* Alloca = CopyDebug(new AllocaInst(AllocaTy, NULL, "", Inst), Inst);
+    Instruction* AllocaInsertionPt = Inst->getParent()->getParent()->getEntryBlock().begin();
+    AllocaInst* Alloca = CopyDebug(new AllocaInst(AllocaTy,
+						  NULL,
+						  "",
+						  AllocaInsertionPt),
+				   Inst);
+
     std::vector<Value*> Args;
     Args.reserve(FTy->getNumParams() + 1);
     Args.push_back(Alloca);
     for(unsigned i = 0; i < Inst->getNumArgOperands(); ++i) {
       Value* V = Inst->getArgOperand(i);
-      if(isa<Constant>(V)) {
-        Constant* C = cast<Constant>(V);
-        V = promoteConstant(C);
-      }
-      Args.push_back(V);
+      Args.push_back(promoteOperand(V));
     }
-    Value* BaseCall = NULL;
+    Instruction* BaseCall = NULL;
+    LoadInst* Ret = NULL;
+    PHINode* ToRemove = NULL;
     // Note we don't set the calling convention;
     // PNaCl just overrides it anyway.
     if(isa<CallInst>(Inst)) {
@@ -454,17 +458,63 @@ void PromoteReturnedStructs::promoteCallInst(T* Inst) {
       if(OldCall->cannotDuplicate())
         Call->setCannotDuplicate();
       BaseCall = Call;
-    }
-    else if(isa<InvokeInst>(Inst)) {
-      // should optimize to a no-op.
-      InvokeInst* Inst = cast<InvokeInst>(Inst);
+      Ret = CopyDebug(new LoadInst(Alloca), Inst);
+      Ret->insertAfter(Call);
+    } else if(isa<InvokeInst>(Inst)) {
       BaseCall = CopyDebug(InvokeInst::Create(Called,
-                                              Inst->getNormalDest(),
-                                              Inst->getUnwindDest(),
-                                              Args,
-                                              "",
-                                              Inst),
-                           Inst);
+					      Normal,
+					      Unwind,
+					      Args,
+					      "",
+					      Inst),
+			   Inst);
+      BasicBlock* NormalSplit = SplitBlock(Normal, Normal->getFirstNonPHI(), this);
+      std::swap(NormalSplit, Normal);
+      std::set<User*> Uses(Inst->use_begin(), Inst->use_end());
+      for(std::set<User*>::iterator i = Uses.begin(); i != Uses.end(); ++i) {
+	if(PHINode* Node = dyn_cast<PHINode>(*i)) {
+	  if(Node->getParent() != NormalSplit) {
+	    // only actually process nodes that are in our normal dest:
+	    // replaceAllUsesWith on Inst will clear up the rest.
+	    continue;
+	  }
+	  promoteUser(Node);
+	  for(unsigned i = 0; i < Node->getNumIncomingValues(); ++i) {
+	    BasicBlock* B = Node->getIncomingBlock(i);
+	    Value* V = Node->getIncomingValue(i);
+	    
+	    if(V != Inst) {
+	      if(Constant* Const = dyn_cast<Constant>(V)) {
+		V = promoteConstant(Const);
+	      } else if(User* U = dyn_cast<User>(V)) {
+		promoteUser(U);
+	      }
+	      StoreInst* Store = CopyDebug(new StoreInst(V, Alloca),
+					   B->getTerminator());
+	      Store->insertBefore(B->getTerminator());
+	    } else {
+	      Node->setIncomingValue(i, UndefValue::get(AllocaTy));
+	    }
+	  }
+	  ToRemove = Node;
+	}
+      }
+
+      PHINode* Phi = PHINode::Create(Alloca->getType(), 0, "", NormalSplit->getTerminator());
+      bool AddedParentBlock = false;
+      for(pred_iterator PI = pred_begin(NormalSplit), E = pred_end(NormalSplit);
+	  PI != E; ++PI) {
+	if(*PI != Inst->getParent() || !AddedParentBlock) {
+	  Phi->addIncoming(Alloca, *PI);
+	}
+	if(*PI == Inst->getParent()) {
+	  AddedParentBlock = true;
+	}
+      }
+      Ret = CopyDebug(new LoadInst(Phi,
+				   "",
+				   NormalSplit->getFirstNonPHI()),
+		      Inst);
     }
     T* Call = cast<T>(BaseCall);
     if(Inst->doesNotThrow())
@@ -478,26 +528,20 @@ void PromoteReturnedStructs::promoteCallInst(T* Inst) {
     if(Inst->onlyReadsMemory())
       Call->setOnlyReadsMemory();
 
-    LoadInst* Ret;
-    if(Call->getNextNode() != NULL)
-      Ret = new LoadInst(Alloca,
-                         "",
-                         Call->getNextNode());
-    else
-      Ret = new LoadInst(Alloca,
-                         "",
-                         Call->getParent());
-    
-    CopyDebug(Ret, Call);
-
     if(isa<Function>(Called))
       Ret->setAlignment(cast<Function>(Called)->getParamAlignment(1));
     Inst->mutateType(AllocaTy);
+    if(ToRemove != NULL) {
+      ToRemove->mutateType(AllocaTy);
+      ToRemove->replaceAllUsesWith(Ret);
+      ToRemove->eraseFromParent();
+    }
     Inst->replaceAllUsesWith(Ret);
     Inst->dropAllReferences();
     Inst->eraseFromParent();
   } else {
     promoteCallArgs(Inst);
+    Inst->setCalledFunction(Called);
   }
 }
 template <class T>
