@@ -373,6 +373,7 @@ int main(int argc, char **argv) {
 
   initializeAddPNaClExternalDeclsPass(Registry);
   initializeCanonicalizeMemIntrinsicsPass(Registry);
+  initializeConstantInsertExtractElementIndexPass(Registry);
   initializeExpandArithWithOverflowPass(Registry);
   initializeExpandByValPass(Registry);
   initializeExpandConstantExprPass(Registry);
@@ -384,8 +385,10 @@ int main(int argc, char **argv) {
   initializeExpandTlsConstantExprPass(Registry);
   initializeExpandTlsPass(Registry);
   initializeExpandVarArgsPass(Registry);
+  initializeFixVectorLoadStoreAlignmentPass(Registry);
   initializeFlattenGlobalsPass(Registry);
   initializeGlobalCleanupPass(Registry);
+  initializeGlobalizeConstantVectorsPass(Registry);
   initializeInsertDivideCheckPass(Registry);
   initializePNaClABIVerifyFunctionsPass(Registry);
   initializePNaClABIVerifyModulePass(Registry);
