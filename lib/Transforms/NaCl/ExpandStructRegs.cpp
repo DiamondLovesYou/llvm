@@ -225,6 +225,9 @@ static void ExpandExtractValue(ExtractValueInst *EV) {
       LoadInst *NewLoad = new LoadInst(GEPi, Load->getName() + ".field", Load);
       ProcessLoadOrStoreAttrs(NewLoad, Load);
       ResultField = NewLoad;
+    } else if(isa<LandingPadInst>(StructVal)) {
+      // Nothing we can do here. Just leave it to the PNaCl toolchain.
+      return;
     } else {
       errs() << "Value: " << *StructVal << "\n";
       report_fatal_error("Unrecognized struct value");
@@ -234,6 +237,19 @@ static void ExpandExtractValue(ExtractValueInst *EV) {
   assert(ResultField != NULL);
   EV->replaceAllUsesWith(ResultField);
   EV->eraseFromParent();
+}
+// If an instruction (specifically, InsertValueInst) is used in a resume,
+// we can't add it to the ToErase array.
+static bool HasResumeUse(Instruction* IV) {
+  for(Value::use_iterator I = IV->use_begin(); I != IV->use_end(); ++I) {
+    if(isa<ResumeInst>(*I)) {
+      return true;
+    } else if(isa<InsertValueInst>(*I) && HasResumeUse(cast<Instruction>(*I))) {
+      // A chain.
+      return true;
+    }
+  }
+  return false;
 }
 
 bool ExpandStructRegs::runOnFunction(Function &Func) {
@@ -289,7 +305,8 @@ bool ExpandStructRegs::runOnFunction(Function &Func) {
       if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(Inst)) {
         ExpandExtractValue(EV);
         Changed = true;
-      } else if (isa<InsertValueInst>(Inst)) {
+      } else if (isa<InsertValueInst>(Inst) && !HasResumeUse(Inst)) {
+	// Don't remove if this Inst has a connection to a resume.
         ToErase.push_back(Inst);
         Changed = true;
       }

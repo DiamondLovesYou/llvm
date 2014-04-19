@@ -38,6 +38,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/NaCl.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
 
@@ -137,7 +138,8 @@ static bool ConvertFunction(Function *Func) {
 }
 
 // Convert the given call to use normalized argument/return types.
-static bool ConvertCall(CallInst *Call) {
+template <class T>
+static bool ConvertCall(T *Call, Pass* P) {
   // Don't try to change calls to intrinsics.
   if (isa<IntrinsicInst>(Call))
     return false;
@@ -163,17 +165,54 @@ static bool ConvertCall(CallInst *Call) {
   Value *CastFunc =
     CopyDebug(new BitCastInst(Call->getCalledValue(), NFTy->getPointerTo(),
                               Call->getName() + ".arg_cast", Call), Call);
-  CallInst *NewCall = CallInst::Create(CastFunc, Args, "", Call);
-  CopyDebug(NewCall, Call);
-  NewCall->takeName(Call);
-  NewCall->setAttributes(Call->getAttributes());
-  NewCall->setCallingConv(Call->getCallingConv());
-  NewCall->setTailCall(Call->isTailCall());
-  Value *Result = NewCall;
-  if (FTy->getReturnType() != NFTy->getReturnType()) {
-    Result = CopyDebug(new TruncInst(NewCall, FTy->getReturnType(),
-                                     NewCall->getName() + ".ret_trunc",
-                                     Call), Call);
+  Value *Result = NULL;
+  if(CallInst *OldCall = dyn_cast<CallInst>(Call)) {
+    CallInst *NewCall = CallInst::Create(CastFunc, Args, "", OldCall);
+    CopyDebug(NewCall, OldCall);
+    NewCall->takeName(OldCall);
+    NewCall->setAttributes(OldCall->getAttributes());
+    NewCall->setCallingConv(OldCall->getCallingConv());
+    NewCall->setTailCall(OldCall->isTailCall());
+    Result = NewCall;
+
+    if (FTy->getReturnType() != NFTy->getReturnType()) {
+      Result = CopyDebug(new TruncInst(NewCall, FTy->getReturnType(),
+				       NewCall->getName() + ".ret_trunc",
+				       Call), Call);
+    }
+  } else if(InvokeInst* OldInvoke = dyn_cast<InvokeInst>(Call)) {
+    BasicBlock* NormalDest = OldInvoke->getNormalDest();
+    BasicBlock* UnwindDest = OldInvoke->getUnwindDest();
+
+    BasicBlock* NewNormalDest = NormalDest;
+
+    InvokeInst* New = CopyDebug(InvokeInst::Create(CastFunc,
+						   NewNormalDest,
+						   UnwindDest,
+						   Args,
+						   "",
+						   OldInvoke),
+				OldInvoke);
+    Result = New;
+    if (FTy->getReturnType() != NFTy->getReturnType()) {
+      NormalDest = SplitBlock(NormalDest, NormalDest->begin(), P);
+
+      Result = CopyDebug(new TruncInst(New, FTy->getReturnType(),
+				       OldInvoke->getName() + ".ret_trunc",
+				       NewNormalDest->getTerminator()),
+			 OldInvoke);
+    }
+    
+    if(OldInvoke->doesNotThrow())
+      New->setDoesNotThrow();
+    if(OldInvoke->isNoInline())
+      New->setIsNoInline();
+    if(OldInvoke->doesNotAccessMemory())
+      New->setDoesNotAccessMemory();
+    if(OldInvoke->doesNotReturn())
+      New->setDoesNotReturn();
+    if(OldInvoke->onlyReadsMemory())
+      New->setOnlyReadsMemory();
   }
   Call->replaceAllUsesWith(Result);
   Call->eraseFromParent();
@@ -199,10 +238,9 @@ bool ExpandSmallArguments::runOnModule(Module &M) {
            Iter != E; ) {
         Instruction *Inst = Iter++;
         if (CallInst *Call = dyn_cast<CallInst>(Inst)) {
-          Changed |= ConvertCall(Call);
-        } else if (isa<InvokeInst>(Inst)) {
-          report_fatal_error(
-              "ExpandSmallArguments does not handle invoke instructions");
+          Changed |= ConvertCall(Call, this);
+        } else if (InvokeInst *Invoke = dyn_cast<InvokeInst>(Inst)) {
+          Changed |= ConvertCall(Invoke, this);
         }
       }
     }
