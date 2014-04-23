@@ -320,17 +320,19 @@ void ReplaceVectorsWithArrays::promoteFunction(Function* F) {
 
 	Value* Left = promoteOperand(Shuffle->getOperand(0));
 	Value* Right = promoteOperand(Shuffle->getOperand(1));
-	const unsigned Size = NewTy->getNumElements();
+	const unsigned Size = cast<ArrayType>(Left->getType())->getNumElements();
 	
 	SmallVector<int, 16> Mask = Shuffle->getShuffleMask();
 	Value* V = UndefValue::get(NewTy);
 	for(size_t k = 0; k < Mask.size(); ++k) {
-	  const unsigned Idx = (Mask[k] + 1) / 2;
+	  unsigned Idx;
 	  Value* Side = NULL;
-	  if((unsigned)Mask[k] >= Size / 2) {
+	  if((unsigned)Mask[k] < Size) {
 	    Side = Left;
+	    Idx = Mask[k];
 	  } else {
 	    Side = Right;
+	    Idx = Mask[k] - Size;
 	  }
 
 	  Value* Value = CopyDebug(ExtractValueInst::Create(Side,
