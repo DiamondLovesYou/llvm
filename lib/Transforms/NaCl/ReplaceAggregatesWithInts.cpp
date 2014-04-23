@@ -163,8 +163,7 @@ public:
 	      StoreInst* Store = cast<StoreInst>(KInst);
 
 	      Value* ValOp = Store->getValueOperand();
-	      assert(isa<ArrayType>(ValOp->getType()));
-	      ArrayType* ValTy = cast<ArrayType>(ValOp->getType());
+	      Type* ValTy = ValOp->getType();
 	      assert(isa<ConstantAggregateZero>(ValOp));
 
 	      std::vector<Value*> Args;
