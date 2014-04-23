@@ -418,6 +418,9 @@ Constant* ReplaceVectorsWithArrays::promoteConstant(Constant* C) {
   }
 
   Constant*& NewC = i.first->second;
+
+  Type* OldTy = C->getType();
+  Type* NewTy = promoteType(OldTy);
   if(isa<ConstantExpr>(C) ||
      isa<ConstantStruct>(C) ||
      isa<ConstantArray>(C)) {
@@ -438,9 +441,7 @@ Constant* ReplaceVectorsWithArrays::promoteConstant(Constant* C) {
 
       Consts.push_back(NewC2);
     }
-    
-    Type* Ty = C->getType();
-    Type* NewTy = promoteType(Ty);
+
     if(ConstantExpr* CE = dyn_cast<ConstantExpr>(C)) {
       NewC = CE->getWithOperands(Consts, NewTy);
     } else if(isa<ConstantStruct>(C)) {
@@ -451,13 +452,31 @@ Constant* ReplaceVectorsWithArrays::promoteConstant(Constant* C) {
       NewC = ConstantArray::get(ATy, Consts);
     }
   } else if(isa<UndefValue>(C)) {
-    NewC = UndefValue::get(promoteType(C->getType()));
+    NewC = UndefValue::get(NewTy);
   } else if(isa<ConstantPointerNull>(C)) {
-    Type* OldTy = C->getType();
-    PointerType* NewTy = cast<PointerType>(promoteType(OldTy));
-    NewC = ConstantPointerNull::get(NewTy);
+    NewC = ConstantPointerNull::get(cast<PointerType>(NewTy));
   } else if(isa<ConstantAggregateZero>(C)) {
-    NewC = ConstantAggregateZero::get(promoteType(C->getType()));
+    NewC = ConstantAggregateZero::get(NewTy);
+  } else if(isa<ConstantVector>(C) || isa<ConstantDataVector>(C)) {
+    std::vector<Constant*> ArrayVals;
+    if(C->getSplatValue()) {
+      ArrayVals = std::vector<Constant*>(cast<VectorType>(C->getType())->getNumElements(),
+					 C->getSplatValue());
+    } else if(isa<ConstantVector>(C)) {
+      ArrayVals.reserve(C->getNumOperands());
+      for(User::op_iterator i = C->op_begin(); i != C->op_end(); ++i) {
+	Constant* Op = cast<Constant>(*i);
+	ArrayVals.push_back(Op);
+      }
+    } else if(ConstantDataVector* CDV = dyn_cast<ConstantDataVector>(C)) {
+      const unsigned End = CDV->getNumElements();
+      ArrayVals.reserve(End);
+      for(unsigned i = 0; i < End; ++i) {
+	Constant* Op = CDV->getElementAsConstant(i);
+	ArrayVals.push_back(Op);
+      }
+    }
+    NewC = ConstantArray::get(cast<ArrayType>(NewTy), ArrayVals);
   } else {
     NewC = C;
   }
