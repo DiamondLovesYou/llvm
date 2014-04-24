@@ -64,20 +64,25 @@ namespace {
 char ExpandStructRegs::ID = 0;
 INITIALIZE_PASS(ExpandStructRegs, "expand-struct-regs",
                 "Expand out variables with struct types", false, false)
-
-static void SplitUpPHINode(PHINode *Phi) {
-  StructType *STy = cast<StructType>(Phi->getType());
-
-  Value *NewStruct = UndefValue::get(STy);
+template <class T>
+static void SplitUpPHINode(PHINode *Phi, T* Ty) {
+  Value *NewStruct = UndefValue::get(Ty);
   Instruction *NewStructInsertPt = Phi->getParent()->getFirstInsertionPt();
 
   // Create a separate PHINode for each struct field.
-  for (unsigned Index = 0; Index < STy->getNumElements(); ++Index) {
+  for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
     SmallVector<unsigned, 1> EVIndexes;
     EVIndexes.push_back(Index);
 
+    Type* ElemTy = NULL;
+    if(StructType* STy = dyn_cast<StructType>(Ty)) {
+      ElemTy = STy->getElementType(Index);
+    } else if(ArrayType* ATy = dyn_cast<ArrayType>(Ty)) {
+      ElemTy = ATy->getElementType();
+    }
+
     PHINode *NewPhi = PHINode::Create(
-        STy->getElementType(Index), Phi->getNumIncomingValues(),
+        ElemTy, Phi->getNumIncomingValues(),
         Phi->getName() + ".index", Phi);
     CopyDebug(NewPhi, Phi);
     for (unsigned PhiIndex = 0; PhiIndex < Phi->getNumIncomingValues();
@@ -99,13 +104,12 @@ static void SplitUpPHINode(PHINode *Phi) {
   Phi->replaceAllUsesWith(NewStruct);
   Phi->eraseFromParent();
 }
-
-static void SplitUpSelect(SelectInst *Select) {
-  StructType *STy = cast<StructType>(Select->getType());
-  Value *NewStruct = UndefValue::get(STy);
+template <class T>
+static void SplitUpSelect(SelectInst *Select, T* Ty) {
+  Value *NewStruct = UndefValue::get(Ty);
 
   // Create a separate SelectInst for each struct field.
-  for (unsigned Index = 0; Index < STy->getNumElements(); ++Index) {
+  for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
     SmallVector<unsigned, 1> EVIndexes;
     EVIndexes.push_back(Index);
 
@@ -281,14 +285,20 @@ bool ExpandStructRegs::runOnFunction(Function &Func) {
 	}
       } else if (PHINode *Phi = dyn_cast<PHINode>(Inst)) {
         if (Phi->getType()->isStructTy()) {
-          SplitUpPHINode(Phi);
+          SplitUpPHINode(Phi, cast<StructType>(Phi->getType()));
           Changed = true;
-        }
+        } else if(Phi->getType()->isArrayTy()) {
+	  SplitUpPHINode(Phi, cast<ArrayType>(Phi->getType()));
+	  Changed = true;
+	}
       } else if (SelectInst *Select = dyn_cast<SelectInst>(Inst)) {
         if (Select->getType()->isStructTy()) {
-          SplitUpSelect(Select);
+          SplitUpSelect(Select, cast<StructType>(Select->getType()));
           Changed = true;
-        }
+        } else if(Select->getType()->isVectorTy()) {
+	  SplitUpSelect(Select, cast<VectorType>(Select->getType()));
+	  Changed = true;
+	}
       }
     }
   }
