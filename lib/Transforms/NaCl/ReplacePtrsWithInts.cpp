@@ -328,6 +328,8 @@ static AttributeSet RemovePointerAttrs(LLVMContext &Context,
         // pointer types.
         case Attribute::NoCapture:
         case Attribute::NoAlias:
+        case Attribute::ReadNone:
+        case Attribute::ReadOnly:
           break;
         default:
           AB.addAttribute(*Attr);
