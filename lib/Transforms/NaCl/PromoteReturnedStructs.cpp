@@ -470,7 +470,7 @@ void PromoteReturnedStructs::promoteCallInst(T* Inst,
 			   Inst);
       BasicBlock* NormalSplit = SplitBlock(Normal, Normal->getFirstNonPHI(), this);
       std::swap(NormalSplit, Normal);
-      std::set<User*> Uses(Inst->use_begin(), Inst->use_end());
+      std::set<User*> Uses(Inst->user_begin(), Inst->user_end());
       for(std::set<User*>::iterator i = Uses.begin(); i != Uses.end(); ++i) {
 	if(PHINode* Node = dyn_cast<PHINode>(*i)) {
 	  if(Node->getParent() != NormalSplit) {

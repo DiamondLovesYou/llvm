@@ -68,14 +68,6 @@ public:
                                ArrayRef<Module::ModuleFlagEntry> Flags,
                                Mangler &Mang, const TargetMachine &TM) const {}
 
-  /// This hook allows targets to selectively decide not to emit the
-  /// UsedDirective for some symbols in llvm.used.
-  /// FIXME: REMOVE this (rdar://7071300)
-  virtual bool shouldEmitUsedDirectiveFor(const GlobalValue *GV,
-                                          Mangler &Mang) const {
-    return GV != 0;
-  }
-
   /// Given a constant with the SectionKind, return a section that it should be
   /// placed in.
   virtual const MCSection *getSectionForConstant(SectionKind Kind) const;
@@ -117,25 +109,22 @@ public:
 
   /// Return an MCExpr to use for a reference to the specified global variable
   /// from exception handling information.
-  virtual const MCExpr *getTTypeGlobalReference(const GlobalValue *GV,
-                                                unsigned Encoding,
-                                                Mangler &Mang,
-                                                MachineModuleInfo *MMI,
-                                                MCStreamer &Streamer) const;
-
-  /// Return the MCSymbol for the specified global value. This symbol is the
-  /// main label that is the address of the global
-  MCSymbol *getSymbol(const GlobalValue *GV, Mangler &M) const;
+  virtual const MCExpr *
+  getTTypeGlobalReference(const GlobalValue *GV, unsigned Encoding,
+                          Mangler &Mang, const TargetMachine &TM,
+                          MachineModuleInfo *MMI, MCStreamer &Streamer) const;
 
   /// Return the MCSymbol for a private symbol with global value name as its
   /// base, with the specified suffix.
   MCSymbol *getSymbolWithGlobalValueBase(const GlobalValue *GV,
-                                         StringRef Suffix, Mangler &M) const;
+                                         StringRef Suffix, Mangler &Mang,
+                                         const TargetMachine &TM) const;
 
   // The symbol that gets passed to .cfi_personality.
-  virtual MCSymbol *
-  getCFIPersonalitySymbol(const GlobalValue *GV, Mangler &Mang,
-                          MachineModuleInfo *MMI) const;
+  virtual MCSymbol *getCFIPersonalitySymbol(const GlobalValue *GV,
+                                            Mangler &Mang,
+                                            const TargetMachine &TM,
+                                            MachineModuleInfo *MMI) const;
 
   const MCExpr *
   getTTypeReference(const MCSymbolRefExpr *Sym, unsigned Encoding,
@@ -157,9 +146,16 @@ public:
   virtual const MCExpr *getDebugThreadLocalSymbol(const MCSymbol *Sym) const;
 
   virtual const MCExpr *
-  getExecutableRelativeSymbol(const ConstantExpr *CE, Mangler &Mang) const {
+  getExecutableRelativeSymbol(const ConstantExpr *CE, Mangler &Mang,
+                              const TargetMachine &TM) const {
     return 0;
   }
+
+  /// \brief True if the section is atomized using the symbols in it.
+  /// This is false if the section is not atomized at all (most ELF sections) or
+  /// if it is atomized based on its contents (MachO' __TEXT,__cstring for
+  /// example).
+  virtual bool isSectionAtomizableBySymbols(const MCSection &Section) const;
 
 protected:
   virtual const MCSection *

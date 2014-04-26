@@ -14,7 +14,7 @@
 #include "NaClBitcodeReader.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/AutoUpgrade.h"
+#include "llvm/IR/AutoUpgrade.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/InlineAsm.h"
@@ -73,8 +73,8 @@ static void SetDecodedLinkage(GlobalValue* Global, unsigned Val) {
   case 10: Global->setLinkage(GlobalValue::WeakODRLinkage); break;
   case 11: Global->setLinkage(GlobalValue::LinkOnceODRLinkage); break;
   case 12: Global->setLinkage(GlobalValue::AvailableExternallyLinkage); break;
-  case 13: Global->setLinkage(GlobalValue::LinkerPrivateLinkage); break;
-  case 14: Global->setLinkage(GlobalValue::LinkerPrivateWeakLinkage); break;
+  case 13: Global->setLinkage(GlobalValue::PrivateLinkage); break;
+  case 14: Global->setLinkage(GlobalValue::PrivateLinkage); break;
   case 15:
     // Whoops. just use LinkOnceODRLinkage for now
     Global->setLinkage(GlobalValue::LinkOnceODRLinkage);

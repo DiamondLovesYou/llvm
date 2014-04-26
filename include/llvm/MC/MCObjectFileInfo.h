@@ -39,6 +39,11 @@ protected:
   /// non-.globl label.  This defaults to true.
   bool IsFunctionEHFrameSymbolPrivate;
 
+  /// SupportsCompactUnwindWithoutEHFrame - True if the target object file
+  /// supports emitting a compact unwind section without an associated EH frame
+  /// section.
+  bool SupportsCompactUnwindWithoutEHFrame;
+
   /// PersonalityEncoding, LSDAEncoding, FDEEncoding, TTypeEncoding - Some
   /// encoding values for EH.
   unsigned PersonalityEncoding;
@@ -203,6 +208,9 @@ public:
   bool getSupportsWeakOmittedEHFrame() const {
     return SupportsWeakOmittedEHFrame;
   }
+  bool getSupportsCompactUnwindWithoutEHFrame() const {
+    return SupportsCompactUnwindWithoutEHFrame;
+  }
   bool getCommDirectiveSupportsAlignment() const {
     return CommDirectiveSupportsAlignment;
   }
@@ -364,6 +372,10 @@ public:
   enum Environment { IsMachO, IsELF, IsCOFF };
   Environment getObjectFileType() const {
     return Env;
+  }
+
+  Reloc::Model getRelocM() const {
+    return RelocM;
   }
 
 private:

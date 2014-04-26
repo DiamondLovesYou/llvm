@@ -50,7 +50,7 @@ protected:
 protected:
   explicit StringMapImpl(unsigned itemSize) : ItemSize(itemSize) {
     // Initialize the map with zero buckets to allocation.
-    TheTable = 0;
+    TheTable = nullptr;
     NumBuckets = 0;
     NumItems = 0;
     NumTombstones = 0;
@@ -330,7 +330,7 @@ public:
       if (Bucket && Bucket != getTombstoneVal()) {
         static_cast<MapEntryTy*>(Bucket)->Destroy(Allocator);
       }
-      Bucket = 0;
+      Bucket = nullptr;
     }
 
     NumItems = 0;
@@ -387,7 +387,17 @@ public:
   }
 
   ~StringMap() {
-    clear();
+    // Delete all the elements in the map, but don't reset the elements
+    // to default values.  This is a copy of clear(), but avoids unnecessary
+    // work not required in the destructor.
+    if (!empty()) {
+      for (unsigned I = 0, E = NumBuckets; I != E; ++I) {
+        StringMapEntryBase *Bucket = TheTable[I];
+        if (Bucket && Bucket != getTombstoneVal()) {
+          static_cast<MapEntryTy*>(Bucket)->Destroy(Allocator);
+        }
+      }
+    }
     free(TheTable);
   }
 };
@@ -400,7 +410,7 @@ protected:
 public:
   typedef StringMapEntry<ValueTy> value_type;
 
-  StringMapConstIterator() : Ptr(0) { }
+  StringMapConstIterator() : Ptr(nullptr) { }
 
   explicit StringMapConstIterator(StringMapEntryBase **Bucket,
                                   bool NoAdvance = false)
@@ -433,7 +443,7 @@ public:
 
 private:
   void AdvancePastEmptyBuckets() {
-    while (*Ptr == 0 || *Ptr == StringMapImpl::getTombstoneVal())
+    while (*Ptr == nullptr || *Ptr == StringMapImpl::getTombstoneVal())
       ++Ptr;
   }
 };

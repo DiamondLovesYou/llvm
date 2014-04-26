@@ -83,8 +83,8 @@ static bool ExpandOpForIntSize(Module *M, unsigned Bits, bool Mul) {
   Function *Intrinsic = M->getFunction(Name);
   if (!Intrinsic)
     return false;
-  for (Value::use_iterator CallIter = Intrinsic->use_begin(),
-         E = Intrinsic->use_end(); CallIter != E; ) {
+  for (Value::user_iterator CallIter = Intrinsic->user_begin(),
+         E = Intrinsic->user_end(); CallIter != E; ) {
     CallInst *Call = dyn_cast<CallInst>(*CallIter++);
     if (!Call) {
       report_fatal_error("ExpandArithWithOverflow: Taking the address of a "

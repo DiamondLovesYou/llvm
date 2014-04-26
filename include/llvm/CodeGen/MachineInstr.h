@@ -22,13 +22,14 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/Support/ArrayRecycler.h"
-#include "llvm/Support/DebugLoc.h"
 #include "llvm/Target/TargetOpcodes.h"
-#include <vector>
 
 namespace llvm {
 
@@ -243,6 +244,14 @@ public:
   ///
   DebugLoc getDebugLoc() const { return debugLoc; }
 
+  /// getDebugVariable() - Return the debug variable referenced by
+  /// this DBG_VALUE instruction.
+  DIVariable getDebugVariable() const {
+    assert(isDebugValue() && "not a DBG_VALUE");
+    const MDNode *Var = getOperand(getNumOperands() - 1).getMetadata();
+    return DIVariable(Var);
+  }
+
   /// emitError - Emit an error referring to the source location of this
   /// instruction. This should only be used for inline assembly that is somehow
   /// impossible to compile. Other errors should have been handled much
@@ -287,10 +296,40 @@ public:
   const_mop_iterator operands_begin() const { return Operands; }
   const_mop_iterator operands_end() const { return Operands + NumOperands; }
 
+  iterator_range<mop_iterator> operands() {
+    return iterator_range<mop_iterator>(operands_begin(), operands_end());
+  }
+  iterator_range<const_mop_iterator> operands() const {
+    return iterator_range<const_mop_iterator>(operands_begin(), operands_end());
+  }
+  iterator_range<mop_iterator> explicit_operands() {
+    return iterator_range<mop_iterator>(
+        operands_begin(), operands_begin() + getNumExplicitOperands());
+  }
+  iterator_range<const_mop_iterator> explicit_operands() const {
+    return iterator_range<const_mop_iterator>(
+        operands_begin(), operands_begin() + getNumExplicitOperands());
+  }
+  iterator_range<mop_iterator> implicit_operands() {
+    return iterator_range<mop_iterator>(explicit_operands().end(),
+                                        operands_end());
+  }
+  iterator_range<const_mop_iterator> implicit_operands() const {
+    return iterator_range<const_mop_iterator>(explicit_operands().end(),
+                                              operands_end());
+  }
+
   /// Access to memory operands of the instruction
   mmo_iterator memoperands_begin() const { return MemRefs; }
   mmo_iterator memoperands_end() const { return MemRefs + NumMemRefs; }
   bool memoperands_empty() const { return NumMemRefs == 0; }
+
+  iterator_range<mmo_iterator>  memoperands() {
+    return iterator_range<mmo_iterator>(memoperands_begin(), memoperands_end());
+  }
+  iterator_range<mmo_iterator> memoperands() const {
+    return iterator_range<mmo_iterator>(memoperands_begin(), memoperands_end());
+  }
 
   /// hasOneMemOperand - Return true if this instruction has exactly one
   /// MachineMemOperand.
@@ -623,19 +662,19 @@ public:
   /// bundle remain bundled.
   void eraseFromBundle();
 
-  /// isLabel - Returns true if the MachineInstr represents a label.
-  ///
-  bool isLabel() const {
-    return getOpcode() == TargetOpcode::PROLOG_LABEL ||
-           getOpcode() == TargetOpcode::EH_LABEL ||
-           getOpcode() == TargetOpcode::GC_LABEL;
-  }
-
-  bool isPrologLabel() const {
-    return getOpcode() == TargetOpcode::PROLOG_LABEL;
-  }
   bool isEHLabel() const { return getOpcode() == TargetOpcode::EH_LABEL; }
   bool isGCLabel() const { return getOpcode() == TargetOpcode::GC_LABEL; }
+
+  /// isLabel - Returns true if the MachineInstr represents a label.
+  ///
+  bool isLabel() const { return isEHLabel() || isGCLabel(); }
+  bool isCFIInstruction() const {
+    return getOpcode() == TargetOpcode::CFI_INSTRUCTION;
+  }
+
+  // True if the instruction represents a position in the function.
+  bool isPosition() const { return isLabel() || isCFIInstruction(); }
+
   bool isDebugValue() const { return getOpcode() == TargetOpcode::DBG_VALUE; }
   /// A DBG_VALUE is indirect iff the first operand is a register and
   /// the second operand is an immediate.
@@ -701,7 +740,7 @@ public:
     // Pseudo-instructions that don't produce any real output.
     case TargetOpcode::IMPLICIT_DEF:
     case TargetOpcode::KILL:
-    case TargetOpcode::PROLOG_LABEL:
+    case TargetOpcode::CFI_INSTRUCTION:
     case TargetOpcode::EH_LABEL:
     case TargetOpcode::GC_LABEL:
     case TargetOpcode::DBG_VALUE:

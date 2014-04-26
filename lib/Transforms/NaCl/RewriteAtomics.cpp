@@ -23,7 +23,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/NaClAtomicIntrinsics.h"
-#include "llvm/InstVisitor.h"
+#include "llvm/IR/InstVisitor.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
@@ -65,9 +65,6 @@ public:
     std::vector<AtomicRMWInst*> m_delayed;
     
   virtual bool runOnModule(Module &M);
-  virtual void getAnalysisUsage(AnalysisUsage &Info) const {
-    Info.addRequired<DataLayout>();
-  }
 
   inline bool modifiedModule() const { return ModifiedModule; }
 
@@ -86,7 +83,8 @@ private:
   /// intrinsics. This function may strengthen the ordering initially
   /// specified by the instruction \p I for stability purpose.
   template <class Instruction>
-  ConstantInt *freezeMemoryOrder(const Instruction &I) const;
+  ConstantInt *freezeMemoryOrder(const Instruction &I,
+				 const AtomicOrdering Ordering) const;
 
   /// Sanity-check that instruction \p I which has pointer and value
   /// parameters have matching sizes \p BitSize for the type-pointed-to
@@ -169,7 +167,7 @@ INITIALIZE_PASS(RewriteAtomics, "nacl-rewrite-atomics",
                 false, false)
 
 bool RewriteAtomics::runOnModule(Module &M) {
-  const DataLayout DL(getAnalysis<DataLayout>());
+  const DataLayout DL(&M);
   this->TD = &DL;
   this->M  = &M;
   this->C  = &M.getContext();
@@ -210,7 +208,7 @@ void RewriteAtomics::rewriteRMWNandInst(AtomicRMWInst& I) {
   PointerHelper<AtomicRMWInst> PH(this, I, InitialBlock);
 
   Function* LoadF = AI->find(Intrinsic::nacl_atomic_load, PH.PET)->getDeclaration(M);
-  Value* LoadCallArgs[] = {PH.P, freezeMemoryOrder(I)};
+  Value* LoadCallArgs[] = {PH.P, freezeMemoryOrder(I, I.getOrdering())};
   CallInst* LoadCall = CopyDebug(CallInst::Create(LoadF, LoadCallArgs, "", &I), &I);
     
   BasicBlock* CmpXchgLoop = SplitBlock(ThisBlock, &I, this);
@@ -225,8 +223,8 @@ void RewriteAtomics::rewriteRMWNandInst(AtomicRMWInst& I) {
                                                            &I), &I);
   Function* CmpXchgF = AI->find(Intrinsic::nacl_atomic_cmpxchg, PH.PET)->getDeclaration(M);
   Value* CmpXchgArgs[] = {PH.P, Loop, AndOp,
-                          freezeMemoryOrder(I),
-                          freezeMemoryOrder(I)};
+                          freezeMemoryOrder(I, I.getOrdering()),
+                          freezeMemoryOrder(I, I.getOrdering())};
   CallInst* CmpXchg = CopyDebug(CallInst::Create(CmpXchgF, CmpXchgArgs, "", &I), &I);
   ICmpInst* Cmp = CopyDebug(new ICmpInst(&I, CmpInst::ICMP_EQ, CmpXchg, AndOp), &I);
   BasicBlock* Rest = SplitBlock(CmpXchgLoop, &I, this);
@@ -250,7 +248,8 @@ void RewriteAtomics::rewriteRMWNandInst(AtomicRMWInst& I) {
 }
 
 template <class Instruction>
-ConstantInt *RewriteAtomics::freezeMemoryOrder(const Instruction &I) const {
+ConstantInt *RewriteAtomics::freezeMemoryOrder(const Instruction &I,
+					       const AtomicOrdering Ordering) const {
   NaCl::MemoryOrder AO = NaCl::MemoryOrderInvalid;
 
   // TODO Volatile load/store are promoted to sequentially consistent
@@ -264,7 +263,7 @@ ConstantInt *RewriteAtomics::freezeMemoryOrder(const Instruction &I) const {
   }
 
   if (AO == NaCl::MemoryOrderInvalid) {
-    switch (I.getOrdering()) {
+    switch (Ordering) {
     default:
     case NotAtomic: llvm_unreachable("unexpected memory order");
     // Monotonic is a strict superset of Unordered. Both can therefore
@@ -343,7 +342,7 @@ void RewriteAtomics::visitLoadInst(LoadInst &I) {
     return;
   PointerHelper<LoadInst> PH(this, I, &I);
   fixAlignment(I, I.getAlignment(), PH.BitSize / CHAR_BIT);
-  Value *Args[] = { PH.P, freezeMemoryOrder(I) };
+  Value *Args[] = { PH.P, freezeMemoryOrder(I, I.getOrdering()) };
   replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_load,
                                       PH.OriginalPET, PH.PET, Args);
 }
@@ -366,7 +365,7 @@ void RewriteAtomics::visitStoreInst(StoreInst &I) {
     V = Cast;
   }
   checkSizeMatchesType(I, PH.BitSize, V->getType());
-  Value *Args[] = { V, PH.P, freezeMemoryOrder(I) };
+  Value *Args[] = { V, PH.P, freezeMemoryOrder(I, I.getOrdering()) };
   replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_store,
                                       PH.OriginalPET, PH.PET, Args);
 }
@@ -390,7 +389,7 @@ void RewriteAtomics::visitAtomicRMWInst(AtomicRMWInst &I) {
   PointerHelper<AtomicRMWInst> PH(this, I, &I);
   checkSizeMatchesType(I, PH.BitSize, I.getValOperand()->getType());
   Value *Args[] = { ConstantInt::get(Type::getInt32Ty(*C), Op), PH.P,
-                    I.getValOperand(), freezeMemoryOrder(I) };
+                    I.getValOperand(), freezeMemoryOrder(I, I.getOrdering()) };
   replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_rmw,
                                       PH.OriginalPET, PH.PET, Args);
 }
@@ -409,7 +408,8 @@ void RewriteAtomics::visitAtomicCmpXchgInst(AtomicCmpXchgInst &I) {
   //      IR implicitly drops the Release part of the specified memory
   //      order on failure.
   Value *Args[] = { PH.P, I.getCompareOperand(), I.getNewValOperand(),
-                    freezeMemoryOrder(I), freezeMemoryOrder(I) };
+                    freezeMemoryOrder(I, I.getSuccessOrdering()),
+		    freezeMemoryOrder(I, I.getFailureOrdering()) };
   replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_cmpxchg,
                                       PH.OriginalPET, PH.PET, Args);
 }
@@ -442,7 +442,7 @@ void RewriteAtomics::visitFenceInst(FenceInst &I) {
     replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_fence_all, T,
                                         T, ArrayRef<Value *>());
   } else {
-    Value *Args[] = { freezeMemoryOrder(I) };
+    Value *Args[] = { freezeMemoryOrder(I, I.getOrdering()) };
     replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_fence, T, T,
                                         Args);
   }

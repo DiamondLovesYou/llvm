@@ -45,12 +45,9 @@ public:
     initializeReplaceAggregatesWithIntsPass(*PassRegistry::getPassRegistry());
   }
 
-  virtual void getAnalysisUsage(AnalysisUsage &Info) const {
-    Info.addRequired<DataLayout>();
-  }
   virtual bool doInitialization(Module& M) {
     this->M  = &M;
-    this->DL = NULL;
+    this->DL = new DataLayout(&M);
     this->C  = &M.getContext();
     this->I8Ty = Type::getIntNTy(*C, 8);
     this->I32Ty = Type::getIntNTy(*C, 32);
@@ -108,10 +105,6 @@ public:
   }
 
   virtual bool runOnFunction(Function& F) {
-    if(this->DL == NULL) {
-      // apparently this can't go in module initialization
-      this->DL = new DataLayout(getAnalysis<DataLayout>());
-    }
     std::set<Instruction*> ToErase;
 
     bool Changed = false;
@@ -186,11 +179,11 @@ public:
             }
           } else {
             // mutate load types.
-            const Value::use_iterator End = Cast->use_end();
-            for(Value::use_iterator K = Cast->use_begin(); K != End; ++K) {
-              if(isa<LoadInst>(*K)) {
-                assert(K->getType() == ContainedTy);
-                K->mutateType(NewTy);
+            const Value::user_iterator End = Cast->user_end();
+            for(Value::user_iterator K = Cast->user_begin(); K != End; ++K) {
+              if(LoadInst* Load = dyn_cast<LoadInst>(*K)) {
+                assert(Load->getType() == ContainedTy);
+                Load->mutateType(NewTy);
                 Changed = true;
               }
             }

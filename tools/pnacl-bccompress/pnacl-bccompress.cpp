@@ -797,7 +797,7 @@ static bool CopyBitcode(OwningPtr<MemoryBuffer> &MemBuf,
   std::string ErrorInfo;
   OwningPtr<tool_output_file> OutFile(
       new tool_output_file(OutputFilename.c_str(), ErrorInfo,
-                           sys::fs::F_Binary));
+                           sys::fs::F_None));
   if (!ErrorInfo.empty())
     return Error(ErrorInfo);
 

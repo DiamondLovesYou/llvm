@@ -666,8 +666,8 @@ void PromoteSimpleStructs::ConversionState::convertBlock(BasicBlock* Bb) {
 void PromoteSimpleStructs::ConversionState::possiblyConvertUsers(Instruction* Inst,
                                                                  Value* Replacement,
                                                                  Type* OriginalTy) {
-  const Value::use_iterator end = Inst->use_end();
-  for(Value::use_iterator i = Inst->use_begin(); i != end;) {
+  const Value::user_iterator end = Inst->user_end();
+  for(Value::user_iterator i = Inst->user_begin(); i != end;) {
     if(!isa<Instruction>(*i)) {
       ++i;
       continue;

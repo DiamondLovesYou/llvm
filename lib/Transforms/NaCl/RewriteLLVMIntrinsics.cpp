@@ -122,7 +122,7 @@ bool RewriteLLVMIntrinsics::runOnModule(Module &M) {
 bool RewriteLLVMIntrinsics::visitUses(IntrinsicRewriter &Rewriter) {
   bool Changed = false;
   Function *F = Rewriter.function();
-  for (Value::use_iterator UI = F->use_begin(), UE = F->use_end(); UI != UE;) {
+  for (Value::user_iterator UI = F->user_begin(), UE = F->user_end(); UI != UE;) {
     Value *Use = *UI++;
     if (CallInst *Call = dyn_cast<CallInst>(Use)) {
       Rewriter.rewriteCall(Call);

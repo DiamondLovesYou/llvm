@@ -50,8 +50,6 @@ AMDGPUAsmPrinter::AMDGPUAsmPrinter(TargetMachine &TM, MCStreamer &Streamer)
   DisasmEnabled = TM.getSubtarget<AMDGPUSubtarget>().dumpCode();
 }
 
-/// We need to override this function so we can avoid
-/// the call to EmitFunctionHeader(), which the MCPureStreamer can't handle.
 bool AMDGPUAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   SetupMachineFunction(MF);
 
@@ -212,7 +210,8 @@ void AMDGPUAsmPrinter::findNumUsedRegistersSI(MachineFunction &MF,
           continue;
         }
         unsigned reg = MO.getReg();
-        if (reg == AMDGPU::VCC) {
+        if (reg == AMDGPU::VCC || reg == AMDGPU::VCC_LO ||
+	    reg == AMDGPU::VCC_HI) {
           VCCUsed = true;
           continue;
         }

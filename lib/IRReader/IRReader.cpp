@@ -10,7 +10,6 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/IRReader.h"
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Bitcode/NaCl/NaClReaderWriter.h"
@@ -71,14 +70,14 @@ Module *llvm::getLazyIRModule(MemoryBuffer *Buffer, SMDiagnostic &Err,
 
 Module *llvm::getLazyIRFileModule(const std::string &Filename, SMDiagnostic &Err,
                                   LLVMContext &Context, FileFormat Format) {
-  OwningPtr<MemoryBuffer> File;
+  std::unique_ptr<MemoryBuffer> File;
   if (error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, File)) {
     Err = SMDiagnostic(Filename, SourceMgr::DK_Error,
                        "Could not open input file: " + ec.message());
     return 0;
   }
 
-  return getLazyIRModule(File.take(), Err, Context, Format);
+  return getLazyIRModule(File.release(), Err, Context, Format);
 }
 
 Module *llvm::ParseIR(MemoryBuffer *Buffer, SMDiagnostic &Err,
@@ -121,14 +120,14 @@ Module *llvm::ParseIR(MemoryBuffer *Buffer, SMDiagnostic &Err,
 
 Module *llvm::ParseIRFile(const std::string &Filename, SMDiagnostic &Err,
                           LLVMContext &Context, FileFormat Format) {
-  OwningPtr<MemoryBuffer> File;
+  std::unique_ptr<MemoryBuffer> File;
   if (error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, File)) {
     Err = SMDiagnostic(Filename, SourceMgr::DK_Error,
                        "Could not open input file: " + ec.message());
     return 0;
   }
 
-  return ParseIR(File.take(), Err, Context, Format);
+  return ParseIR(File.release(), Err, Context, Format);
 }
 
 //===----------------------------------------------------------------------===//

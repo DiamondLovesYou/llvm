@@ -15,7 +15,6 @@
 
 #include "llvm/MC/MCWinCOFFObjectWriter.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -125,7 +124,7 @@ public:
   typedef DenseMap<MCSymbol  const *, COFFSymbol *>   symbol_map;
   typedef DenseMap<MCSection const *, COFFSection *> section_map;
 
-  llvm::OwningPtr<MCWinCOFFObjectTargetWriter> TargetObjectWriter;
+  std::unique_ptr<MCWinCOFFObjectTargetWriter> TargetObjectWriter;
 
   // Root level file contents.
   COFF::header Header;
@@ -168,16 +167,15 @@ public:
 
   // MCObjectWriter interface implementation.
 
-  void ExecutePostLayoutBinding(MCAssembler &Asm, const MCAsmLayout &Layout);
+  void ExecutePostLayoutBinding(MCAssembler &Asm,
+                                const MCAsmLayout &Layout) override;
 
-  void RecordRelocation(const MCAssembler &Asm,
-                        const MCAsmLayout &Layout,
-                        const MCFragment *Fragment,
-                        const MCFixup &Fixup,
-                        MCValue Target,
-                        uint64_t &FixedValue);
+  void RecordRelocation(const MCAssembler &Asm, const MCAsmLayout &Layout,
+                        const MCFragment *Fragment, const MCFixup &Fixup,
+                        MCValue Target, bool &IsPCRel,
+                        uint64_t &FixedValue) override;
 
-  void WriteObject(MCAssembler &Asm, const MCAsmLayout &Layout);
+  void WriteObject(MCAssembler &Asm, const MCAsmLayout &Layout) override;
 };
 }
 
@@ -396,7 +394,7 @@ void WinCOFFObjectWriter::DefineSection(MCSectionData const &SectionData) {
   SectionMap[&SectionData.getSection()] = coff_section;
 }
 
-/// This function takes a section data object from the assembler
+/// This function takes a symbol data object from the assembler
 /// and creates the associated COFF symbol staging object.
 void WinCOFFObjectWriter::DefineSymbol(MCSymbolData const &SymbolData,
                                        MCAssembler &Assembler,
@@ -445,6 +443,8 @@ void WinCOFFObjectWriter::DefineSymbol(MCSymbolData const &SymbolData,
       int64_t Addr;
       if (Symbol.getVariableValue()->EvaluateAsAbsolute(Addr, Layout))
         coff_symbol->Data.Value = Addr;
+    } else if (SymbolData.isExternal() && SymbolData.isCommon()) {
+      coff_symbol->Data.Value = SymbolData.getCommonSize();
     }
 
     coff_symbol->Data.Type         = (ResSymData.getFlags() & 0x0000FFFF) >>  0;
@@ -468,24 +468,52 @@ void WinCOFFObjectWriter::DefineSymbol(MCSymbolData const &SymbolData,
   }
 }
 
+// Maximum offsets for different string table entry encodings.
+static const unsigned Max6DecimalOffset = 999999;
+static const unsigned Max7DecimalOffset = 9999999;
+static const uint64_t MaxBase64Offset = 0xFFFFFFFFFULL; // 64^6, including 0
+
+// Encode a string table entry offset in base 64, padded to 6 chars, and
+// prefixed with a double slash: '//AAAAAA', '//AAAAAB', ...
+// Buffer must be at least 8 bytes large. No terminating null appended.
+static void encodeBase64StringEntry(char* Buffer, uint64_t Value) {
+  assert(Value > Max7DecimalOffset && Value <= MaxBase64Offset &&
+         "Illegal section name encoding for value");
+
+  static const char Alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                 "abcdefghijklmnopqrstuvwxyz"
+                                 "0123456789+/";
+
+  Buffer[0] = '/';
+  Buffer[1] = '/';
+
+  char* Ptr = Buffer + 7;
+  for (unsigned i = 0; i < 6; ++i) {
+    unsigned Rem = Value % 64;
+    Value /= 64;
+    *(Ptr--) = Alphabet[Rem];
+  }
+}
+
 /// making a section real involves assigned it a number and putting
 /// name into the string table if needed
 void WinCOFFObjectWriter::MakeSectionReal(COFFSection &S, size_t Number) {
   if (S.Name.size() > COFF::NameSize) {
-    const unsigned Max6DecimalSize = 999999;
-    const unsigned Max7DecimalSize = 9999999;
     uint64_t StringTableEntry = Strings.insert(S.Name.c_str());
 
-    if (StringTableEntry <= Max6DecimalSize) {
+    if (StringTableEntry <= Max6DecimalOffset) {
       std::sprintf(S.Header.Name, "/%d", unsigned(StringTableEntry));
-    } else if (StringTableEntry <= Max7DecimalSize) {
+    } else if (StringTableEntry <= Max7DecimalOffset) {
       // With seven digits, we have to skip the terminating null. Because
       // sprintf always appends it, we use a larger temporary buffer.
       char buffer[9] = { };
       std::sprintf(buffer, "/%d", unsigned(StringTableEntry));
       std::memcpy(S.Header.Name, buffer, 8);
+    } else if (StringTableEntry <= MaxBase64Offset) {
+      // Starting with 10,000,000, offsets are encoded as base64.
+      encodeBase64StringEntry(S.Header.Name, StringTableEntry);
     } else {
-      report_fatal_error("COFF string table is greater than 9,999,999 bytes.");
+      report_fatal_error("COFF string table is greater than 64 GB.");
     }
   } else
     std::memcpy(S.Header.Name, S.Name.c_str(), S.Name.size());
@@ -631,6 +659,7 @@ void WinCOFFObjectWriter::RecordRelocation(const MCAssembler &Asm,
                                            const MCFragment *Fragment,
                                            const MCFixup &Fixup,
                                            MCValue Target,
+                                           bool &IsPCRel,
                                            uint64_t &FixedValue) {
   assert(Target.getSymA() != NULL && "Relocation must reference a symbol!");
 

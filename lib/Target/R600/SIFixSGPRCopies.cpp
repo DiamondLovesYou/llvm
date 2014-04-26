@@ -141,8 +141,8 @@ const TargetRegisterClass *SIFixSGPRCopies::inferRegClassFromUses(
 
   const TargetRegisterClass *RC = MRI.getRegClass(Reg);
   RC = TRI->getSubRegClass(RC, SubReg);
-  for (MachineRegisterInfo::use_iterator I = MRI.use_begin(Reg),
-                                         E = MRI.use_end(); I != E; ++I) {
+  for (MachineRegisterInfo::use_instr_iterator
+       I = MRI.use_instr_begin(Reg), E = MRI.use_instr_end(); I != E; ++I) {
     switch (I->getOpcode()) {
     case AMDGPU::COPY:
       RC = TRI->getCommonSubClass(RC, inferRegClassFromUses(TRI, MRI,
@@ -255,6 +255,16 @@ bool SIFixSGPRCopies::runOnMachineFunction(MachineFunction &MF) {
 
         TII->moveToVALU(MI);
         break;
+      }
+      case AMDGPU::INSERT_SUBREG: {
+        const TargetRegisterClass *DstRC, *SrcRC;
+        DstRC = MRI.getRegClass(MI.getOperand(0).getReg());
+        SrcRC = MRI.getRegClass(MI.getOperand(1).getReg());
+        if (!TRI->isSGPRClass(DstRC) || !TRI->hasVGPRs(SrcRC))
+          break;
+        DEBUG(dbgs() << " Fixing INSERT_SUBREG:\n");
+        DEBUG(MI.print(dbgs()));
+        TII->moveToVALU(MI);
       }
       }
     }

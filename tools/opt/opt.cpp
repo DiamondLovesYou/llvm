@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "BreakpointPrinter.h"
 #include "NewPMDriver.h"
 #include "PassPrinters.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
@@ -24,20 +24,20 @@
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Bitcode/NaCl/NaClBitcodeWriterPass.h"
 #include "llvm/CodeGen/CommandFlags.h"
-#include "llvm/DebugInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassNameParser.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/LinkAllIR.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/PassManager.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/PassNameParser.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -207,65 +207,7 @@ OutputFileFormat(
         clEnumValEnd),
     cl::init(LLVMFormat));
 
-namespace {
 
-struct BreakpointPrinter : public ModulePass {
-  raw_ostream &Out;
-  static char ID;
-  DITypeIdentifierMap TypeIdentifierMap;
-
-  BreakpointPrinter(raw_ostream &out)
-    : ModulePass(ID), Out(out) {
-    }
-
-  void getContextName(DIDescriptor Context, std::string &N) {
-    if (Context.isNameSpace()) {
-      DINameSpace NS(Context);
-      if (!NS.getName().empty()) {
-        getContextName(NS.getContext(), N);
-        N = N + NS.getName().str() + "::";
-      }
-    } else if (Context.isType()) {
-      DIType TY(Context);
-      if (!TY.getName().empty()) {
-        getContextName(TY.getContext().resolve(TypeIdentifierMap), N);
-        N = N + TY.getName().str() + "::";
-      }
-    }
-  }
-
-  virtual bool runOnModule(Module &M) {
-    TypeIdentifierMap.clear();
-    NamedMDNode *CU_Nodes = M.getNamedMetadata("llvm.dbg.cu");
-    if (CU_Nodes)
-      TypeIdentifierMap = generateDITypeIdentifierMap(CU_Nodes);
-
-    StringSet<> Processed;
-    if (NamedMDNode *NMD = M.getNamedMetadata("llvm.dbg.sp"))
-      for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
-        std::string Name;
-        DISubprogram SP(NMD->getOperand(i));
-        assert((!SP || SP.isSubprogram()) &&
-          "A MDNode in llvm.dbg.sp should be null or a DISubprogram.");
-        if (!SP)
-          continue;
-        getContextName(SP.getContext().resolve(TypeIdentifierMap), Name);
-        Name = Name + SP.getDisplayName().str();
-        if (!Name.empty() && Processed.insert(Name)) {
-          Out << Name << "\n";
-        }
-      }
-    return false;
-  }
-
-  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.setPreservesAll();
-  }
-};
-
-} // anonymous namespace
-
-char BreakpointPrinter::ID = 0;
 
 static inline void addPass(PassManagerBase &PM, Pass *P) {
   // Add the pass to the pass manager...
@@ -291,14 +233,7 @@ static void AddOptimizationPasses(PassManagerBase &MPM,FunctionPassManager &FPM,
   if (DisableInline) {
     // No inlining pass
   } else if (OptLevel > 1) {
-    unsigned Threshold = 225;
-    if (SizeLevel == 1)      // -Os
-      Threshold = 75;
-    else if (SizeLevel == 2) // -Oz
-      Threshold = 25;
-    if (OptLevel > 2)
-      Threshold = 275;
-    Builder.Inliner = createFunctionInliningPass(Threshold);
+    Builder.Inliner = createFunctionInliningPass(OptLevel, SizeLevel);
   } else {
     Builder.Inliner = createAlwaysInlinerPass();
   }
@@ -355,29 +290,6 @@ static void AddStandardLinkPasses(PassManagerBase &PM) {
 //===----------------------------------------------------------------------===//
 // CodeGen-related helper functions.
 //
-static TargetOptions GetTargetOptions() {
-  TargetOptions Options;
-  Options.LessPreciseFPMADOption = EnableFPMAD;
-  Options.NoFramePointerElim = DisableFPElim;
-  Options.AllowFPOpFusion = FuseFPOps;
-  Options.UnsafeFPMath = EnableUnsafeFPMath;
-  Options.NoInfsFPMath = EnableNoInfsFPMath;
-  Options.NoNaNsFPMath = EnableNoNaNsFPMath;
-  Options.HonorSignDependentRoundingFPMathOption =
-  EnableHonorSignDependentRoundingFPMath;
-  Options.UseSoftFloat = GenerateSoftFloatCalls;
-  if (FloatABIForCalls != FloatABI::Default)
-    Options.FloatABIType = FloatABIForCalls;
-  Options.NoZerosInBSS = DontPlaceZerosInBSS;
-  Options.GuaranteedTailCallOpt = EnableGuaranteedTailCallOpt;
-  Options.DisableTailCalls = DisableTailCalls;
-  Options.StackAlignmentOverride = OverrideStackAlignment;
-  Options.TrapFuncName = TrapFuncName;
-  Options.PositionIndependentExecutable = EnablePIE;
-  Options.EnableSegmentedStacks = SegmentedStacks;
-  Options.UseInitArray = UseInitArray;
-  return Options;
-}
 
 CodeGenOpt::Level GetCodeGenOptLevel() {
   if (OptLevelO1)
@@ -409,10 +321,17 @@ static TargetMachine* GetTargetMachine(Triple TheTriple) {
   }
 
   return TheTarget->createTargetMachine(TheTriple.getTriple(),
-                                        MCPU, FeaturesStr, GetTargetOptions(),
+                                        MCPU, FeaturesStr,
+                                        InitTargetOptionsFromCodeGenFlags(),
                                         RelocModel, CMModel,
                                         GetCodeGenOptLevel());
 }
+
+#ifdef LINK_POLLY_INTO_TOOLS
+namespace polly {
+void initializePollyPasses(llvm::PassRegistry &Registry);
+}
+#endif
 
 //===----------------------------------------------------------------------===//
 // main for opt
@@ -444,6 +363,13 @@ int main(int argc, char **argv) {
   initializeInstCombine(Registry);
   initializeInstrumentation(Registry);
   initializeTarget(Registry);
+  // For codegen passes, only passes that do IR to IR transformation are
+  // supported. For now, just add CodeGenPrepare.
+  initializeCodeGenPreparePass(Registry);
+
+#ifdef LINK_POLLY_INTO_TOOLS
+  polly::initializePollyPasses(Registry);
+#endif
 
   initializeAddPNaClExternalDeclsPass(Registry);
   initializeCanonicalizeMemIntrinsicsPass(Registry);
@@ -491,7 +417,7 @@ int main(int argc, char **argv) {
   SMDiagnostic Err;
 
   // Load the input module...
-  OwningPtr<Module> M;
+  std::unique_ptr<Module> M;
   M.reset(ParseIRFile(InputFilename, Err, Context));
 
   if (M.get() == 0) {
@@ -504,7 +430,7 @@ int main(int argc, char **argv) {
     M->setTargetTriple(Triple::normalize(TargetTriple));
 
   // Figure out what stream we are supposed to write to...
-  OwningPtr<tool_output_file> Out;
+  std::unique_ptr<tool_output_file> Out;
   if (NoOutput) {
     if (!OutputFilename.empty())
       errs() << "WARNING: The -o (output filename) option is ignored when\n"
@@ -516,7 +442,7 @@ int main(int argc, char **argv) {
 
     std::string ErrorInfo;
     Out.reset(new tool_output_file(OutputFilename.c_str(), ErrorInfo,
-                                   sys::fs::F_Binary));
+                                   sys::fs::F_None));
     if (!ErrorInfo.empty()) {
       errs() << ErrorInfo << '\n';
       return 1;
@@ -564,31 +490,30 @@ int main(int argc, char **argv) {
   Passes.add(TLI);
 
   // Add an appropriate DataLayout instance for this module.
-  DataLayout *TD = 0;
-  const std::string &ModuleDataLayout = M.get()->getDataLayout();
-  if (!ModuleDataLayout.empty())
-    TD = new DataLayout(ModuleDataLayout);
-  else if (!DefaultDataLayout.empty())
-    TD = new DataLayout(DefaultDataLayout);
+  const DataLayout *DL = M.get()->getDataLayout();
+  if (!DL && !DefaultDataLayout.empty()) {
+    M->setDataLayout(DefaultDataLayout);
+    DL = M.get()->getDataLayout();
+  }
 
-  if (TD)
-    Passes.add(TD);
+  if (DL)
+    Passes.add(new DataLayoutPass(M.get()));
 
   Triple ModuleTriple(M->getTargetTriple());
   TargetMachine *Machine = 0;
   if (ModuleTriple.getArch())
     Machine = GetTargetMachine(Triple(ModuleTriple));
-  OwningPtr<TargetMachine> TM(Machine);
+  std::unique_ptr<TargetMachine> TM(Machine);
 
   // Add internal analysis passes from the target machine.
   if (TM.get())
     TM->addAnalysisPasses(Passes);
 
-  OwningPtr<FunctionPassManager> FPasses;
+  std::unique_ptr<FunctionPassManager> FPasses;
   if (OptLevelO1 || OptLevelO2 || OptLevelOs || OptLevelOz || OptLevelO3) {
     FPasses.reset(new FunctionPassManager(M.get()));
-    if (TD)
-      FPasses->add(new DataLayout(*TD));
+    if (DL)
+      FPasses->add(new DataLayoutPass(M.get()));
     if (TM.get())
       TM->addAnalysisPasses(*FPasses);
 
@@ -602,13 +527,13 @@ int main(int argc, char **argv) {
 
       std::string ErrorInfo;
       Out.reset(new tool_output_file(OutputFilename.c_str(), ErrorInfo,
-                                     sys::fs::F_Binary));
+                                     sys::fs::F_None));
       if (!ErrorInfo.empty()) {
         errs() << ErrorInfo << '\n';
         return 1;
       }
     }
-    Passes.add(new BreakpointPrinter(Out->os()));
+    Passes.add(createBreakpointPrinter(Out->os()));
     NoOutput = true;
   }
 

@@ -28,9 +28,10 @@
 #include "llvm/CodeGen/RuntimeLibcalls.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/InlineAsm.h"
-#include "llvm/Support/CallSite.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Target/TargetCallingConv.h"
 #include "llvm/Target/TargetMachine.h"
 #include <climits>
@@ -48,8 +49,10 @@ namespace llvm {
   class MachineFunction;
   class MachineInstr;
   class MachineJumpTableInfo;
+  class Mangler;
   class MCContext;
   class MCExpr;
+  class MCSymbol;
   template<typename T> class SmallVectorImpl;
   class DataLayout;
   class TargetRegisterClass;
@@ -143,7 +146,7 @@ protected:
 
 public:
   const TargetMachine &getTargetMachine() const { return TM; }
-  const DataLayout *getDataLayout() const { return TD; }
+  const DataLayout *getDataLayout() const { return DL; }
   const TargetLoweringObjectFile &getObjFileLowering() const { return TLOF; }
 
   bool isBigEndian() const { return !IsLittleEndian; }
@@ -181,7 +184,22 @@ public:
   /// Return true if a vector of the given type should be split
   /// (TypeSplitVector) instead of promoted (TypePromoteInteger) during type
   /// legalization.
-  virtual bool shouldSplitVectorElementType(EVT /*VT*/) const { return false; }
+  virtual bool shouldSplitVectorType(EVT /*VT*/) const { return false; }
+
+  // There are two general methods for expanding a BUILD_VECTOR node:
+  //  1. Use SCALAR_TO_VECTOR on the defined scalar values and then shuffle
+  //     them together.
+  //  2. Build the vector on the stack and then load it.
+  // If this function returns true, then method (1) will be used, subject to
+  // the constraint that all of the necessary shuffles are legal (as determined
+  // by isShuffleMaskLegal). If this function returns false, then method (2) is
+  // always used. The vector type, and the number of defined values, are
+  // provided.
+  virtual bool
+  shouldExpandBuildVectorWithShuffles(EVT /* VT */,
+                                      unsigned DefinedValues) const {
+    return DefinedValues < 3;
+  }
 
   /// Return true if integer divide is usually cheaper than a sequence of
   /// several shifts, adds, and multiplies for this target.
@@ -218,6 +236,21 @@ public:
   /// dag combiner.
   virtual bool isLoadBitCastBeneficial(EVT /* Load */, EVT /* Bitcast */) const {
     return true;
+  }
+
+  /// \brief Return if the target supports combining a
+  /// chain like:
+  /// \code
+  ///   %andResult = and %val1, #imm-with-one-bit-set;
+  ///   %icmpResult = icmp %andResult, 0
+  ///   br i1 %icmpResult, label %dest1, label %dest2
+  /// \endcode
+  /// into a single machine instruction of a form like:
+  /// \code
+  ///   brOnBitSet %register, #bitNumber, dest
+  /// \endcode
+  bool isMaskAndBranchFoldingLegal() const {
+    return MaskAndBranchFoldingIsLegal;
   }
 
   /// Return the ValueType of the result of SETCC operations.  Also used to
@@ -1183,6 +1216,14 @@ public:
     return true;
   }
 
+  /// Return true if it's significantly cheaper to shift a vector by a uniform
+  /// scalar than by an amount which will vary across each lane. On x86, for
+  /// example, there is a "psllw" instruction for the former case, but no simple
+  /// instruction for a general "a << b" operation on vectors.
+  virtual bool isVectorShiftByScalarCheap(Type *Ty) const {
+    return false;
+  }
+
   /// Return true if it's free to truncate a value of type Ty1 to type
   /// Ty2. e.g. On x86 it's free to truncate a i32 value in register EAX to i16
   /// by referencing its sub-register AX.
@@ -1337,7 +1378,7 @@ public:
 
 private:
   const TargetMachine &TM;
-  const DataLayout *TD;
+  const DataLayout *DL;
   const TargetLoweringObjectFile &TLOF;
 
   /// True if this is a little endian target.
@@ -1714,6 +1755,10 @@ protected:
   /// the branch is usually predicted right.
   bool PredictableSelectIsExpensive;
 
+  /// MaskAndBranchFoldingIsLegal - Indicates if the target supports folding
+  /// a mask of a single bit, a compare, and a branch into a single instruction.
+  bool MaskAndBranchFoldingIsLegal;
+
 protected:
   /// Return true if the value types that can be represented by the specified
   /// register class are all legal.
@@ -1860,6 +1905,7 @@ public:
   /// This method can be implemented by targets that want to expose additional
   /// information about sign bits to the DAG Combiner.
   virtual unsigned ComputeNumSignBitsForTargetNode(SDValue Op,
+                                                   const SelectionDAG &DAG,
                                                    unsigned Depth = 0) const;
 
   struct DAGCombinerInfo {
@@ -1889,6 +1935,14 @@ public:
 
     void CommitTargetLoweringOpt(const TargetLoweringOpt &TLO);
   };
+
+  /// Return if the N is a constant or constant vector equal to the true value
+  /// from getBooleanContents().
+  bool isConstTrueVal(const SDNode *N) const;
+
+  /// Return if the N is a constant or constant vector equal to the false value
+  /// from getBooleanContents().
+  bool isConstFalseVal(const SDNode *N) const;
 
   /// Try to simplify a setcc built with the specified operands and cc. If it is
   /// unable to simplify it, return a null SDValue.
@@ -2098,6 +2152,12 @@ public:
     return false;
   }
 
+  /// Return the builtin name for the __builtin___clear_cache intrinsic
+  /// Default is to invoke the clear cache library call
+  virtual const char * getClearCacheBuiltinName() const {
+    return "__clear_cache";
+  }
+
   /// Return the type that should be used to zero or sign extend a
   /// zeroext/signext integer argument or return value.  FIXME: Most C calling
   /// convention requires the return type to be promoted, but this is not true
@@ -2112,7 +2172,7 @@ public:
 
   /// Returns a 0 terminated array of registers that can be safely used as
   /// scratch registers.
-  virtual const uint16_t *getScratchRegisters(CallingConv::ID CC) const {
+  virtual const MCPhysReg *getScratchRegisters(CallingConv::ID CC) const {
     return NULL;
   }
 
@@ -2244,15 +2304,6 @@ public:
     /// operand it matches.
     unsigned getMatchedOperand() const;
 
-    /// Copy constructor for copying from an AsmOperandInfo.
-    AsmOperandInfo(const AsmOperandInfo &info)
-      : InlineAsm::ConstraintInfo(info),
-        ConstraintCode(info.ConstraintCode),
-        ConstraintType(info.ConstraintType),
-        CallOperandVal(info.CallOperandVal),
-        ConstraintVT(info.ConstraintVT) {
-    }
-
     /// Copy constructor for copying from a ConstraintInfo.
     AsmOperandInfo(const InlineAsm::ConstraintInfo &info)
       : InlineAsm::ConstraintInfo(info),
@@ -2323,6 +2374,24 @@ public:
                       std::vector<SDNode*> *Created) const;
   SDValue BuildUDIV(SDNode *N, SelectionDAG &DAG, bool IsAfterLegalization,
                       std::vector<SDNode*> *Created) const;
+
+  //===--------------------------------------------------------------------===//
+  // Legalization utility functions
+  //
+
+  /// Expand a MUL into two nodes.  One that computes the high bits of
+  /// the result and one that computes the low bits.
+  /// \param VT The value type to use for the Lo and Hi nodes.
+  /// \param LL Low bits of the LHS of the MUL.  You can use this parameter
+  ///        if you want to control how low bits are extracted from the LHS.
+  /// \param LH High bits of the LHS of the MUL.  See LL for meaning.
+  /// \param RL Low bits of the RHS of the MUL.  See LL for meaning
+  /// \param RH High bits of the RHS of the MUL.  See LL for meaning.
+  /// \returns true if the node has been expanded. false if it has not
+  bool expandMUL(SDNode *N, SDValue &Lo, SDValue &Hi, EVT HiLoVT,
+                 SelectionDAG &DAG, SDValue LL = SDValue(),
+		 SDValue LH = SDValue(), SDValue RL = SDValue(),
+		 SDValue RH = SDValue()) const;
 
   //===--------------------------------------------------------------------===//
   // Instruction Emitting Hooks

@@ -62,8 +62,8 @@ static bool expandIntrinsic(Module *M, Intrinsic::ID ID) {
   Types[LengthTypePos] = Type::getInt32Ty(M->getContext());
   Function *NewIntrinsic = Intrinsic::getDeclaration(M, ID, Types);
 
-  for (Value::use_iterator CallIter = OldIntrinsic->use_begin(),
-         E = OldIntrinsic->use_end(); CallIter != E; ) {
+  for (Value::user_iterator CallIter = OldIntrinsic->user_begin(),
+         E = OldIntrinsic->user_end(); CallIter != E; ) {
     CallInst *Call = dyn_cast<CallInst>(*CallIter++);
     if (!Call) {
       report_fatal_error("CanonicalizeMemIntrinsics: Taking the address of an "

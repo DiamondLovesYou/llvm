@@ -232,37 +232,44 @@ private:
                         thawMemoryOrder(Call->getArgOperand(2)), SS, Call);
       break;
     case Intrinsic::nacl_atomic_rmw:
-      if (needsX8632HackFor16BitAtomics(cast<PointerType>(
-              Call->getArgOperand(1)->getType())->getElementType())) {
-        // TODO(jfb) Remove this hack. See below.
-        atomic16BitX8632Hack(Call, false, Call->getArgOperand(1),
-                             Call->getArgOperand(2), Call->getArgOperand(0),
-                             NULL);
-        return true;
+      {
+	const AtomicOrdering Ordering = thawMemoryOrder(Call->getArgOperand(3));
+	if (needsX8632HackFor16BitAtomics
+	    (cast<PointerType>(Call->getArgOperand(1)
+			       ->getType())->getElementType())) {
+	  // TODO(jfb) Remove this hack. See below.
+	  atomic16BitX8632Hack(Call, false, Call->getArgOperand(1),
+			       Call->getArgOperand(2), Call->getArgOperand(0),
+			       NULL, Ordering, Ordering);
+	  return true;
+	}
+	I = new AtomicRMWInst(thawRMWOperation(Call->getArgOperand(0)),
+			      Call->getArgOperand(1), Call->getArgOperand(2),
+			      Ordering, SS, Call);
       }
-      I = new AtomicRMWInst(thawRMWOperation(Call->getArgOperand(0)),
-                            Call->getArgOperand(1), Call->getArgOperand(2),
-                            thawMemoryOrder(Call->getArgOperand(3)), SS, Call);
       break;
     case Intrinsic::nacl_atomic_cmpxchg:
-      if (needsX8632HackFor16BitAtomics(cast<PointerType>(
-              Call->getArgOperand(0)->getType())->getElementType())) {
-        // TODO(jfb) Remove this hack. See below.
-        atomic16BitX8632Hack(Call, true, Call->getArgOperand(0),
-                             Call->getArgOperand(2), NULL,
-                             Call->getArgOperand(1));
-        return true;
+      {
+	const AtomicOrdering Success = thawMemoryOrder(Call->getArgOperand(3));
+	const AtomicOrdering Failure = thawMemoryOrder(Call->getArgOperand(4));
+	if (needsX8632HackFor16BitAtomics
+	    (cast<PointerType>(Call->getArgOperand(0)
+			       ->getType())->getElementType())) {
+	  // TODO(jfb) Remove this hack. See below.
+	  atomic16BitX8632Hack(Call, true, Call->getArgOperand(0),
+			       Call->getArgOperand(2), NULL,
+			       Call->getArgOperand(1),
+			       Success,
+			       Failure);
+	  return true;
+	}
+	I = new AtomicCmpXchgInst(Call->getArgOperand(0), Call->getArgOperand(1),
+				  Call->getArgOperand(2),
+				  Success,
+				  Failure,
+				  SS,
+				  Call);
       }
-      // TODO LLVM currently doesn't support specifying separate memory
-      //      orders for compare exchange's success and failure cases:
-      //      LLVM IR implicitly drops the Release part of the specified
-      //      memory order on failure. It is therefore correct to map
-      //      the success memory order onto the LLVM IR and ignore the
-      //      failure one.
-      I = new AtomicCmpXchgInst(Call->getArgOperand(0), Call->getArgOperand(1),
-                                Call->getArgOperand(2),
-                                thawMemoryOrder(Call->getArgOperand(3)), SS,
-                                Call);
       break;
     case Intrinsic::nacl_atomic_fence:
       I = new FenceInst(M->getContext(),
@@ -342,7 +349,9 @@ private:
   /// compare-exchange loop.
   void atomic16BitX8632Hack(IntrinsicInst *Call, bool IsCmpXChg,
                             Value *Ptr16, Value *RHS, Value *RMWOp,
-                            Value *CmpXChgOldVal) const {
+                            Value *CmpXChgOldVal,
+			    const AtomicOrdering SuccessOrdering,
+			    const AtomicOrdering FailureOrdering) const {
     assert((IsCmpXChg ? CmpXChgOldVal : RMWOp) &&
            "cmpxchg expects an old value, whereas RMW expects an operation");
     Type *I16 = Type::getInt16Ty(M->getContext());
@@ -447,7 +456,9 @@ private:
       Value *OldVal = CopyDebug(IRB.CreateAtomicCmpXchg(Ptr32,
                                                         Expected,
                                                         FinalRes,
-                                                        SequentiallyConsistent),
+							SuccessOrdering,
+							FailureOrdering,
+                                                        SingleThread),
                                 Call);
       OldVal->setName("oldval");
       // Test that the entire 32-bit value didn't change during the operation.
@@ -509,7 +520,8 @@ private:
                                "expected"), Call) :
           Loaded;
       Value *OldVal = CopyDebug(IRB.CreateAtomicCmpXchg(Ptr32, Expected, FinalRes,
-                                                        SequentiallyConsistent), Call);
+							SuccessOrdering, FailureOrdering,
+                                                        SingleThread), Call);
       OldVal->setName("oldval");
       // Test that the entire 32-bit value didn't change during the operation.
       Value *Success = CopyDebug(IRB.CreateICmpEQ(OldVal, Loaded, "success"), Call);
@@ -544,8 +556,8 @@ bool ResolvePNaClIntrinsics::visitCalls(
   if (!IntrinsicFunction)
     return false;
 
-  for (Value::use_iterator UI = IntrinsicFunction->use_begin(),
-                           UE = IntrinsicFunction->use_end();
+  for (Value::user_iterator UI = IntrinsicFunction->user_begin(),
+	 UE = IntrinsicFunction->user_end();
        UI != UE;) {
     // At this point, the only uses of the intrinsic can be calls, since
     // we assume this pass runs on bitcode that passed ABI verification.

@@ -20,9 +20,9 @@
 
 #include "llvm/ADT/ilist.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/IR/DebugLoc.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ArrayRecycler.h"
-#include "llvm/Support/DebugLoc.h"
 #include "llvm/Support/Recycler.h"
 
 namespace llvm {
@@ -258,6 +258,9 @@ public:
     assert(MBBNumbering[N] && "Block was removed from the machine function!");
     return MBBNumbering[N];
   }
+
+  /// Should we be emitting segmented stack stuff for the function
+  bool shouldSplitStack();
 
   /// getNumBlockIDs - Return the number of MBB ID's allocated.
   ///

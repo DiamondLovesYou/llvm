@@ -68,6 +68,24 @@ public:
   enum Generation getGeneration() const;
   bool hasHWFP64() const;
   bool hasCaymanISA() const;
+
+  bool hasBFE() const {
+    return (getGeneration() >= EVERGREEN);
+  }
+
+  bool hasBFM() const {
+    return hasBFE();
+  }
+
+  bool hasMulU24() const {
+    return (getGeneration() >= EVERGREEN);
+  }
+
+  bool hasMulI24() const {
+    return (getGeneration() >= SOUTHERN_ISLANDS ||
+            hasCaymanISA());
+  }
+
   bool IsIRStructurizerEnabled() const;
   bool isIfCvtEnabled() const;
   unsigned getWavefrontSize() const;

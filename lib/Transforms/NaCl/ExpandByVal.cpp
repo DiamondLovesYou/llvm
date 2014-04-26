@@ -58,9 +58,6 @@ namespace {
     }
 
     virtual bool runOnModule(Module &M);
-    virtual void getAnalysisUsage(AnalysisUsage &Info) const {
-      Info.addRequired<DataLayout>();
-    }
   };
 }
 
@@ -175,7 +172,7 @@ static bool ExpandCall(DataLayout *DL, InstType *Call) {
 
 bool ExpandByVal::runOnModule(Module &M) {
   bool Modified = false;
-  DataLayout DL = getAnalysis<DataLayout>();
+  DataLayout DL(&M);
 
   for (Module::iterator Func = M.begin(), E = M.end(); Func != E; ++Func) {
     AttributeSet NewAttrs = RemoveAttrs(Func->getContext(),

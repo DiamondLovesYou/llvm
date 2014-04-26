@@ -245,7 +245,7 @@ static void ExpandExtractValue(ExtractValueInst *EV) {
 // If an instruction (specifically, InsertValueInst) is used in a resume,
 // we can't add it to the ToErase array.
 static bool HasResumeUse(Instruction* IV) {
-  for(Value::use_iterator I = IV->use_begin(); I != IV->use_end(); ++I) {
+  for(Value::user_iterator I = IV->user_begin(); I != IV->user_end(); ++I) {
     if(isa<ResumeInst>(*I)) {
       return true;
     } else if(isa<InsertValueInst>(*I) && HasResumeUse(cast<Instruction>(*I))) {

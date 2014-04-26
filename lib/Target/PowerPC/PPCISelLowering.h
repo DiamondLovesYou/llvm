@@ -121,6 +121,12 @@ namespace llvm {
       /// resultant GPR.  Bits corresponding to other CR regs are undefined.
       MFOCRF,
 
+      // FIXME: Remove these once the ANDI glue bug is fixed:
+      /// i1 = ANDIo_1_[EQ|GT]_BIT(i32 or i64 x) - Represents the result of the
+      /// eq or gt bit of CR0 after executing andi. x, 1. This is used to
+      /// implement truncation of i32 or i64 to i1.
+      ANDIo_1_EQ_BIT, ANDIo_1_GT_BIT,
+
       // EH_SJLJ_SETJMP - SjLj exception handling setjmp.
       EH_SJLJ_SETJMP,
 
@@ -471,6 +477,11 @@ namespace llvm {
     /// expanded to fmul + fadd.
     virtual bool isFMAFasterThanFMulAndFAdd(EVT VT) const;
 
+    // Should we expand the build vector with shuffles?
+    virtual bool
+    shouldExpandBuildVectorWithShuffles(EVT VT,
+                                        unsigned DefinedValues) const;
+
     /// createFastISel - This method returns a target-specific FastISel object,
     /// or null if the target does not support "fast" instruction selection.
     virtual FastISel *createFastISel(FunctionLoweringInfo &FuncInfo,
@@ -515,6 +526,9 @@ namespace llvm {
                                 const PPCSubtarget &Subtarget) const;
     SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG,
                                       const PPCSubtarget &Subtarget) const;
+    SDValue LowerLOAD(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSTORE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerTRUNCATE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_INT(SDValue Op, SelectionDAG &DAG, SDLoc dl) const;
     SDValue LowerINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
@@ -526,6 +540,7 @@ namespace llvm {
     SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerMUL(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
@@ -631,6 +646,8 @@ namespace llvm {
     SDValue lowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
 
+    SDValue DAGCombineExtBoolTrunc(SDNode *N, DAGCombinerInfo &DCI) const;
+    SDValue DAGCombineTruncBoolExt(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue DAGCombineFastRecip(SDValue Op, DAGCombinerInfo &DCI) const;
     SDValue DAGCombineFastRecipFSQRT(SDValue Op, DAGCombinerInfo &DCI) const;
 

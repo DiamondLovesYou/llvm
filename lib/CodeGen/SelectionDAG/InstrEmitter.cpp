@@ -107,9 +107,7 @@ EmitCopyFromReg(SDNode *Node, unsigned ResNo, bool IsClone, bool IsCloned,
     UseRC = TLI->getRegClassFor(VT);
 
   if (!IsClone && !IsCloned)
-    for (SDNode::use_iterator UI = Node->use_begin(), E = Node->use_end();
-         UI != E; ++UI) {
-      SDNode *User = *UI;
+    for (SDNode *User : Node->uses()) {
       bool Match = true;
       if (User->getOpcode() == ISD::CopyToReg &&
           User->getOperand(2).getNode() == Node &&
@@ -242,9 +240,7 @@ void InstrEmitter::CreateVirtualRegisters(SDNode *Node,
     }
 
     if (!VRBase && !IsClone && !IsCloned)
-      for (SDNode::use_iterator UI = Node->use_begin(), E = Node->use_end();
-           UI != E; ++UI) {
-        SDNode *User = *UI;
+      for (SDNode *User : Node->uses()) {
         if (User->getOpcode() == ISD::CopyToReg &&
             User->getOperand(2).getNode() == Node &&
             User->getOperand(2).getResNo() == i) {
@@ -470,9 +466,7 @@ void InstrEmitter::EmitSubregNode(SDNode *Node,
 
   // If the node is only used by a CopyToReg and the dest reg is a vreg, use
   // the CopyToReg'd destination register instead of creating a new vreg.
-  for (SDNode::use_iterator UI = Node->use_begin(), E = Node->use_end();
-       UI != E; ++UI) {
-    SDNode *User = *UI;
+  for (SDNode *User : Node->uses()) {
     if (User->getOpcode() == ISD::CopyToReg &&
         User->getOperand(2).getNode() == Node) {
       unsigned DestReg = cast<RegisterSDNode>(User->getOperand(1))->getReg();
@@ -738,12 +732,18 @@ EmitMachineNode(SDNode *Node, bool IsClone, bool IsCloned,
   const MCInstrDesc &II = TII->get(Opc);
   unsigned NumResults = CountResults(Node);
   unsigned NumDefs = II.getNumDefs();
-  const uint16_t *ScratchRegs = NULL;
+  const MCPhysReg *ScratchRegs = NULL;
 
-  // Handle PATCHPOINT specially and then use the generic code.
-  if (Opc == TargetOpcode::PATCHPOINT) {
-    unsigned CC = Node->getConstantOperandVal(PatchPointOpers::CCPos);
-    NumDefs = NumResults;
+  // Handle STACKMAP and PATCHPOINT specially and then use the generic code.
+  if (Opc == TargetOpcode::STACKMAP || Opc == TargetOpcode::PATCHPOINT) {
+    // Stackmaps do not have arguments and do not preserve their calling
+    // convention. However, to simplify runtime support, they clobber the same
+    // scratch registers as AnyRegCC.
+    unsigned CC = CallingConv::AnyReg;
+    if (Opc == TargetOpcode::PATCHPOINT) {
+      CC = Node->getConstantOperandVal(PatchPointOpers::CCPos);
+      NumDefs = NumResults;
+    }
     ScratchRegs = TLI->getScratchRegisters((CallingConv::ID) CC);
   }
 

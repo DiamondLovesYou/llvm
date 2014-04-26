@@ -45,40 +45,37 @@ public:
                   MCCodeEmitter &CE,
                   raw_ostream &OS);
 
-  void AddCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                       unsigned ByteAlignment, bool External);
-
   // MCStreamer interface
 
-  virtual void InitSections(bool Force);
-  virtual void EmitLabel(MCSymbol *Symbol);
-  virtual void EmitDebugLabel(MCSymbol *Symbol);
-  virtual void EmitAssemblerFlag(MCAssemblerFlag Flag);
-  virtual void EmitThumbFunc(MCSymbol *Func);
-  virtual bool EmitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute);
-  virtual void EmitSymbolDesc(MCSymbol *Symbol, unsigned DescValue);
-  virtual void BeginCOFFSymbolDef(MCSymbol const *Symbol);
-  virtual void EmitCOFFSymbolStorageClass(int StorageClass);
-  virtual void EmitCOFFSymbolType(int Type);
-  virtual void EndCOFFSymbolDef();
-  virtual void EmitCOFFSectionIndex(MCSymbol const *Symbol);
-  virtual void EmitCOFFSecRel32(MCSymbol const *Symbol);
-  virtual void EmitELFSize(MCSymbol *Symbol, const MCExpr *Value);
-  virtual void EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                unsigned ByteAlignment);
-  virtual void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                     unsigned ByteAlignment);
-  virtual void EmitZerofill(const MCSection *Section, MCSymbol *Symbol,
-                            uint64_t Size,unsigned ByteAlignment);
-  virtual void EmitTBSSSymbol(const MCSection *Section, MCSymbol *Symbol,
-                              uint64_t Size, unsigned ByteAlignment);
-  virtual void EmitFileDirective(StringRef Filename);
-  virtual void EmitIdent(StringRef IdentString);
-  virtual void EmitWin64EHHandlerData();
-  virtual void FinishImpl();
+  void InitSections() override;
+  void EmitLabel(MCSymbol *Symbol) override;
+  void EmitDebugLabel(MCSymbol *Symbol) override;
+  void EmitAssemblerFlag(MCAssemblerFlag Flag) override;
+  void EmitThumbFunc(MCSymbol *Func) override;
+  bool EmitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override;
+  void EmitSymbolDesc(MCSymbol *Symbol, unsigned DescValue) override;
+  void BeginCOFFSymbolDef(MCSymbol const *Symbol) override;
+  void EmitCOFFSymbolStorageClass(int StorageClass) override;
+  void EmitCOFFSymbolType(int Type) override;
+  void EndCOFFSymbolDef() override;
+  void EmitCOFFSectionIndex(MCSymbol const *Symbol) override;
+  void EmitCOFFSecRel32(MCSymbol const *Symbol) override;
+  void EmitELFSize(MCSymbol *Symbol, const MCExpr *Value) override;
+  void EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
+                        unsigned ByteAlignment) override;
+  void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
+                             unsigned ByteAlignment) override;
+  void EmitZerofill(const MCSection *Section, MCSymbol *Symbol,
+                    uint64_t Size,unsigned ByteAlignment) override;
+  void EmitTBSSSymbol(const MCSection *Section, MCSymbol *Symbol,
+                      uint64_t Size, unsigned ByteAlignment) override;
+  void EmitFileDirective(StringRef Filename) override;
+  void EmitIdent(StringRef IdentString) override;
+  void EmitWin64EHHandlerData() override;
+  void FinishImpl() override;
 
 private:
-  virtual void EmitInstToData(const MCInst &Inst, const MCSubtargetInfo &STI) {
+  void EmitInstToData(const MCInst &Inst, const MCSubtargetInfo &STI) override {
     MCDataFragment *DF = getOrCreateDataFragment();
 
     SmallVector<MCFixup, 4> Fixups;
@@ -101,29 +98,9 @@ WinCOFFStreamer::WinCOFFStreamer(MCContext &Context, MCAsmBackend &MAB,
                                  MCCodeEmitter &CE, raw_ostream &OS)
     : MCObjectStreamer(Context, MAB, OS, &CE), CurSymbol(NULL) {}
 
-void WinCOFFStreamer::AddCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                      unsigned ByteAlignment, bool External) {
-  assert(!Symbol->isInSection() && "Symbol must not already have a section!");
-
-  const MCSection *Section = getContext().getObjectFileInfo()->getBSSSection();
-  MCSectionData &SectionData = getAssembler().getOrCreateSectionData(*Section);
-  if (SectionData.getAlignment() < ByteAlignment)
-    SectionData.setAlignment(ByteAlignment);
-
-  MCSymbolData &SymbolData = getAssembler().getOrCreateSymbolData(*Symbol);
-  SymbolData.setExternal(External);
-
-  AssignSection(Symbol, Section);
-
-  if (ByteAlignment != 1)
-      new MCAlignFragment(ByteAlignment, 0, 0, ByteAlignment, &SectionData);
-
-  SymbolData.setFragment(new MCFillFragment(0, 0, Size, &SectionData));
-}
-
 // MCStreamer interface
 
-void WinCOFFStreamer::InitSections(bool Force) {
+void WinCOFFStreamer::InitSections() {
   // FIXME: this is identical to the ELF one.
   // This emulates the same behavior of GNU as. This makes it easier
   // to compare the output as the major sections are in the same order.
@@ -244,15 +221,38 @@ void WinCOFFStreamer::EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
   assert((Symbol->isInSection()
          ? Symbol->getSection().getVariant() == MCSection::SV_COFF
          : true) && "Got non-COFF section in the COFF backend!");
-  AddCommonSymbol(Symbol, Size, ByteAlignment, true);
+
+  if (ByteAlignment > 32)
+    report_fatal_error(
+        "The linker won't align common symbols beyond 32 bytes.");
+
+  AssignSection(Symbol, NULL);
+
+  MCSymbolData &SD = getAssembler().getOrCreateSymbolData(*Symbol);
+  SD.setExternal(true);
+  SD.setCommon(Size, ByteAlignment);
 }
 
 void WinCOFFStreamer::EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
                                             unsigned ByteAlignment) {
-  assert((Symbol->isInSection()
-         ? Symbol->getSection().getVariant() == MCSection::SV_COFF
-         : true) && "Got non-COFF section in the COFF backend!");
-  AddCommonSymbol(Symbol, Size, ByteAlignment, false);
+  assert(!Symbol->isInSection() && "Symbol must not already have a section!");
+
+  const MCSection *Section = getContext().getObjectFileInfo()->getBSSSection();
+  MCSectionData &SectionData = getAssembler().getOrCreateSectionData(*Section);
+  if (SectionData.getAlignment() < ByteAlignment)
+    SectionData.setAlignment(ByteAlignment);
+
+  MCSymbolData &SD = getAssembler().getOrCreateSymbolData(*Symbol);
+  SD.setExternal(false);
+
+  AssignSection(Symbol, Section);
+
+  if (ByteAlignment != 1)
+    new MCAlignFragment(ByteAlignment, /*_Value=*/0, /*_ValueSize=*/0,
+                        ByteAlignment, &SectionData);
+
+  SD.setFragment(
+      new MCFillFragment(/*_Value=*/0, /*_ValueSize=*/0, Size, &SectionData));
 }
 
 void WinCOFFStreamer::EmitZerofill(const MCSection *Section, MCSymbol *Symbol,

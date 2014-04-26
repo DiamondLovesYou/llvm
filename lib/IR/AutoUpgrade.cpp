@@ -11,9 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/AutoUpgrade.h"
-#include "llvm/DebugInfo.h"
+#include "llvm/IR/AutoUpgrade.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -21,8 +23,6 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/CFG.h"
-#include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstring>
 using namespace llvm;
@@ -115,7 +115,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         Name == "x86.avx.movnt.ps.256" ||
         Name == "x86.sse42.crc32.64.8" ||
         (Name.startswith("x86.xop.vpcom") && F->arg_size() == 2)) {
-      NewFn = 0;
+      NewFn = nullptr;
       return true;
     }
     // SSE4.1 ptest functions may have an old signature.
@@ -158,7 +158,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
 }
 
 bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
-  NewFn = 0;
+  NewFn = nullptr;
   bool Upgraded = UpgradeIntrinsicFunction1(F, NewFn);
 
   // Upgrade intrinsic attributes.  This does not change the function.
@@ -411,7 +411,7 @@ void llvm::UpgradeCallsToIntrinsic(Function* F) {
   if (UpgradeIntrinsicFunction(F, NewFn)) {
     if (NewFn != F) {
       // Replace all uses to the old function with the new one if necessary.
-      for (Value::use_iterator UI = F->use_begin(), UE = F->use_end();
+      for (Value::user_iterator UI = F->user_begin(), UE = F->user_end();
            UI != UE; ) {
         if (CallInst *CI = dyn_cast<CallInst>(*UI++))
           UpgradeIntrinsicCall(CI, NewFn);
@@ -453,9 +453,9 @@ void llvm::UpgradeInstWithTBAATag(Instruction *I) {
 Instruction *llvm::UpgradeBitCastInst(unsigned Opc, Value *V, Type *DestTy,
                                       Instruction *&Temp) {
   if (Opc != Instruction::BitCast)
-    return 0;
+    return nullptr;
 
-  Temp = 0;
+  Temp = nullptr;
   Type *SrcTy = V->getType();
   if (SrcTy->isPtrOrPtrVectorTy() && DestTy->isPtrOrPtrVectorTy() &&
       SrcTy->getPointerAddressSpace() != DestTy->getPointerAddressSpace()) {
@@ -469,12 +469,12 @@ Instruction *llvm::UpgradeBitCastInst(unsigned Opc, Value *V, Type *DestTy,
     return CastInst::Create(Instruction::IntToPtr, Temp, DestTy);
   }
 
-  return 0;
+  return nullptr;
 }
 
 Value *llvm::UpgradeBitCastExpr(unsigned Opc, Constant *C, Type *DestTy) {
   if (Opc != Instruction::BitCast)
-    return 0;
+    return nullptr;
 
   Type *SrcTy = C->getType();
   if (SrcTy->isPtrOrPtrVectorTy() && DestTy->isPtrOrPtrVectorTy() &&
@@ -489,7 +489,7 @@ Value *llvm::UpgradeBitCastExpr(unsigned Opc, Constant *C, Type *DestTy) {
                                      DestTy);
   }
 
-  return 0;
+  return nullptr;
 }
 
 /// Check the debug info version number, if it is out-dated, drop the debug

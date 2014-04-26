@@ -182,7 +182,7 @@ define i64 @test_fetch_and_xor_i64(i64* %ptr, i64 %value) {
 define zeroext i8 @test_val_compare_and_swap_i8(i8* %ptr, i8 zeroext %oldval, i8 zeroext %newval) {
   ; CHECK-NEXT: %res = call i8 @llvm.nacl.atomic.cmpxchg.i8(i8* %ptr, i8 %oldval, i8 %newval, i32 6, i32 6)
   ; CHECK-NEXT: ret i8 %res
-  %res = cmpxchg i8* %ptr, i8 %oldval, i8 %newval seq_cst
+  %res = cmpxchg i8* %ptr, i8 %oldval, i8 %newval seq_cst seq_cst
   ret i8 %res
 }
 
@@ -190,7 +190,7 @@ define zeroext i8 @test_val_compare_and_swap_i8(i8* %ptr, i8 zeroext %oldval, i8
 define zeroext i16 @test_val_compare_and_swap_i16(i16* %ptr, i16 zeroext %oldval, i16 zeroext %newval) {
   ; CHECK-NEXT: %res = call i16 @llvm.nacl.atomic.cmpxchg.i16(i16* %ptr, i16 %oldval, i16 %newval, i32 6, i32 6)
   ; CHECK-NEXT: ret i16 %res
-  %res = cmpxchg i16* %ptr, i16 %oldval, i16 %newval seq_cst
+  %res = cmpxchg i16* %ptr, i16 %oldval, i16 %newval seq_cst seq_cst
   ret i16 %res
 }
 
@@ -198,7 +198,7 @@ define zeroext i16 @test_val_compare_and_swap_i16(i16* %ptr, i16 zeroext %oldval
 define i32 @test_val_compare_and_swap_i32(i32* %ptr, i32 %oldval, i32 %newval) {
   ; CHECK-NEXT: %res = call i32 @llvm.nacl.atomic.cmpxchg.i32(i32* %ptr, i32 %oldval, i32 %newval, i32 6, i32 6)
   ; CHECK-NEXT: ret i32 %res
-  %res = cmpxchg i32* %ptr, i32 %oldval, i32 %newval seq_cst
+  %res = cmpxchg i32* %ptr, i32 %oldval, i32 %newval seq_cst seq_cst
   ret i32 %res
 }
 
@@ -206,7 +206,7 @@ define i32 @test_val_compare_and_swap_i32(i32* %ptr, i32 %oldval, i32 %newval) {
 define i64 @test_val_compare_and_swap_i64(i64* %ptr, i64 %oldval, i64 %newval) {
   ; CHECK-NEXT: %res = call i64 @llvm.nacl.atomic.cmpxchg.i64(i64* %ptr, i64 %oldval, i64 %newval, i32 6, i32 6)
   ; CHECK-NEXT: ret i64 %res
-  %res = cmpxchg i64* %ptr, i64 %oldval, i64 %newval seq_cst
+  %res = cmpxchg i64* %ptr, i64 %oldval, i64 %newval seq_cst seq_cst
   ret i64 %res
 }
 

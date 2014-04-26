@@ -102,8 +102,6 @@ static const char *linkageName(GlobalValue::LinkageTypes LT) {
   switch (LT) {
     case GlobalValue::ExternalLinkage: return "external";
     case GlobalValue::PrivateLinkage:       return "private ";
-    case GlobalValue::LinkerPrivateLinkage: return "linker_private ";
-    case GlobalValue::LinkerPrivateWeakLinkage: return "linker_private_weak ";
     case GlobalValue::InternalLinkage:      return "internal ";
     case GlobalValue::LinkOnceAnyLinkage:   return "linkonce ";
     case GlobalValue::LinkOnceODRLinkage:   return "linkonce_odr ";

@@ -11,8 +11,10 @@
 #include "MCTargetDesc/SparcFixupKinds.h"
 #include "MCTargetDesc/SparcMCTargetDesc.h"
 #include "llvm/MC/MCELFObjectWriter.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
+#include "llvm/MC/MCValue.h"
 #include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
@@ -36,6 +38,12 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
 
   case Sparc::fixup_sparc_br19:
     return (Value >> 2) & 0x7ffff;
+
+  case Sparc::fixup_sparc_br16_2:
+    return (Value >> 2) & 0xc000;
+
+  case Sparc::fixup_sparc_br16_14:
+    return (Value >> 2) & 0x3fff;
 
   case Sparc::fixup_sparc_pc22:
   case Sparc::fixup_sparc_got22:
@@ -104,6 +112,8 @@ namespace {
         { "fixup_sparc_call30",     2,     30,  MCFixupKindInfo::FKF_IsPCRel },
         { "fixup_sparc_br22",      10,     22,  MCFixupKindInfo::FKF_IsPCRel },
         { "fixup_sparc_br19",      13,     19,  MCFixupKindInfo::FKF_IsPCRel },
+        { "fixup_sparc_br16_2",    10,      2,  MCFixupKindInfo::FKF_IsPCRel },
+        { "fixup_sparc_br16_14",   18,     14,  MCFixupKindInfo::FKF_IsPCRel },
         { "fixup_sparc_hi22",      10,     22,  0 },
         { "fixup_sparc_lo10",      22,     10,  0 },
         { "fixup_sparc_h44",       10,     22,  0 },
@@ -144,16 +154,15 @@ namespace {
       return Infos[Kind - FirstTargetFixupKind];
     }
 
-    void processFixupValue(const MCAssembler &Asm,
-                           const MCAsmLayout &Layout,
-                           const MCFixup &Fixup,
-                           const MCFragment *DF,
-                           MCValue &  Target,
-                           uint64_t &Value,
-                           bool &IsResolved) {
+    void processFixupValue(const MCAssembler &Asm, const MCAsmLayout &Layout,
+                           const MCFixup &Fixup, const MCFragment *DF,
+                           const MCValue &Target, uint64_t &Value,
+                           bool &IsResolved) override {
       switch ((Sparc::Fixups)Fixup.getKind()) {
       default: break;
       case Sparc::fixup_sparc_wplt30:
+        if (Target.getSymA()->getSymbol().isTemporary())
+          return;
       case Sparc::fixup_sparc_tls_gd_hi22:
       case Sparc::fixup_sparc_tls_gd_lo10:
       case Sparc::fixup_sparc_tls_gd_add:
@@ -196,9 +205,14 @@ namespace {
     }
 
     bool writeNopData(uint64_t Count, MCObjectWriter *OW) const {
-      // FIXME: Zero fill for now.
-      for (uint64_t i = 0; i != Count; ++i)
-        OW->Write8(0);
+      // Cannot emit NOP with size not multiple of 32 bits.
+      if (Count % 4 != 0)
+        return false;
+
+      uint64_t NumNops = Count / 4;
+      for (uint64_t i = 0; i != NumNops; ++i)
+        OW->Write32(0x01000000);
+
       return true;
     }
 
@@ -215,7 +229,7 @@ namespace {
       SparcAsmBackend(T), OSType(OSType) { }
 
     void applyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
-                    uint64_t Value) const {
+                    uint64_t Value, bool IsPCRel) const {
 
       Value = adjustFixupValue(Fixup.getKind(), Value);
       if (!Value) return;           // Doesn't change encoding.
