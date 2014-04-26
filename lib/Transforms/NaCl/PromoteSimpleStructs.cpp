@@ -577,14 +577,11 @@ Value* PromoteSimpleStructs::ConversionState::get(Value* From, Type** OldTy) {
     if(OldTy != NULL)
       *OldTy = From->getType();
     return m_p->getPromotedConstant(cast<Constant>(From));
-  } else if(isa<MDNode>(From) || isa<MDString>(From) || isa<BasicBlock>(From)) {
+  } else {
     if(OldTy != NULL)
       *OldTy = From->getType();
     return From;
   }
-
-  assert(0 && "Unhandled case!");
-  llvm_unreachable("Unhandled case!");
 }
 
 void PromoteSimpleStructs::ConversionState::convertOperands(User* From) {
