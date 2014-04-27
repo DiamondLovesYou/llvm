@@ -130,8 +130,8 @@ public:
           if(NewTy == NULL) {
 	    Cast->mutateType(this->I8Ty->getPointerTo());
 
-            const Value::use_iterator End = Cast->use_end();
-            for(Value::use_iterator K = Cast->use_begin(); K != End;) {
+            const Value::user_iterator End = Cast->user_end();
+            for(Value::user_iterator K = Cast->user_begin(); K != End;) {
               if(!isa<StoreInst>(*K)) {
                 errs() << "Inst: " << ToStr(*Cast) << "\n";
                 errs() << "Use : " << ToStr(**K) << "\n";
