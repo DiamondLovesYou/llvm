@@ -140,19 +140,6 @@ public:
               }
 
               Instruction* KInst = cast<Instruction>(*K++);
-              /*if(isa<LoadInst>(KInst)) {
-                const Value::use_iterator End = KInst->use_end();
-                for(Value::use_iterator L = KInst->use_begin(); L != End; ++L) {
-                  if(!isa<StoreInst>(*L)) {
-                    errs() << "Inst: " << ToStr(*KInst) << "\n";
-                    errs() << "Use: " << ToStr(**L) << "\n";
-                    assert(0 && "Non-StoreInst use!");
-                    report_fatal_error("Non-StoreInst use!");
-                  }
-
-                  ToErase.insert(cast<Instruction>(*L));
-                }
-		} else {*/
 	      StoreInst* Store = cast<StoreInst>(KInst);
 
 	      Value* ValOp = Store->getValueOperand();
@@ -173,7 +160,6 @@ public:
 						"",
 						KInst);
 	      CopyDebug(Call, KInst);
-		//}
               ToErase.insert(KInst);
 	      Changed = true;
             }
