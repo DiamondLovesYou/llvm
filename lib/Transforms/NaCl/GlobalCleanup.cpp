@@ -58,7 +58,8 @@ static bool CleanUpLinkage(GlobalValue *GV) {
       GV->eraseFromParent();
       return true;
     }
-    case GlobalValue::WeakAnyLinkage: {
+    case GlobalValue::WeakAnyLinkage:
+    case GlobalValue::AvailableExternallyLinkage: {
       GV->setLinkage(GlobalValue::InternalLinkage);
       return true;
     }
