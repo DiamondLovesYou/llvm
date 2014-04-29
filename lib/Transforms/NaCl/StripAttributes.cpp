@@ -82,6 +82,7 @@ static void CheckAttributes(AttributeSet Attrs) {
         // The following attributes are just hints, which can be
         // safely removed.
         case Attribute::AlwaysInline:
+        case Attribute::Builtin:
         case Attribute::InlineHint:
         case Attribute::MinSize:
         case Attribute::NoAlias:
