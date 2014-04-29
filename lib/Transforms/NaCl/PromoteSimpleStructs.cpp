@@ -26,11 +26,20 @@
 
 using namespace llvm;
 
+template <class T> 
+const std::string ToStr(const T &V) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << const_cast<T &>(V);
+  return OS.str();
+}
+
 struct PromotedType {
 public:
   Type* Original;
   Type* Promoted;
   bool InProgress;
+  bool Protected;
   std::vector<size_t> Bumps;
 
   void bump(const size_t Idx) {
@@ -82,24 +91,27 @@ public:
     return PT;
   }
 
-  static PromotedType startWithPlaceholder(Type* Original, Type* Promoted) {
+  static PromotedType startWithPlaceholder(Type* Original, Type* Promoted, const bool Protected) {
     PromotedType PT;
     PT.Original = Original;
     PT.Promoted = Promoted;
     PT.InProgress = true;
+    PT.Protected = Protected;
     return PT;
   }
-  static PromotedType start(Type* Original) {
+  static PromotedType start(Type* Original, const bool Protected) {
     PromotedType PT;
     PT.Original = Original;
     PT.Promoted = NULL;
     PT.InProgress = true;
+    PT.Protected = Protected;
     return PT;
   }
 
   PromotedType finishPlaceholder() {
     assert(InProgress && Promoted != NULL);
     InProgress = false;
+    Protected = false;
     return *this;
   }
 
@@ -107,6 +119,7 @@ public:
     assert(InProgress && Promoted == NULL);
     Promoted = PTy;
     InProgress = false;
+    Protected = false;
     return *this;
   }
 
@@ -114,11 +127,20 @@ public:
     return !InProgress;
   }
 
-  static PromotedType noOp(Type* Ty) {
+  static PromotedType noOp(Type* Ty, const bool Protected) {
     PromotedType PT;
     PT.Original = Ty;
     PT.Promoted = Ty;
     PT.InProgress = false;
+    PT.Protected = Protected;
+    return PT;
+  }
+  static PromotedType protectedPlaceholder(ArrayType* OriginalTy, ArrayType* PromotedTy) {
+    PromotedType PT;
+    PT.Original = OriginalTy;
+    PT.Promoted = PromotedTy;
+    PT.InProgress = false;
+    PT.Protected = true;
     return PT;
   }
 };
@@ -200,7 +222,7 @@ struct PromoteSimpleStructs : public ModulePass {
 #endif
 
   GlobalValue* getPromoted(GlobalValue* F);
-  Type* getPromotedType(Type* T, const PromotedType** Raw);
+  Type* getPromotedType(Type* T, const PromotedType** Raw, const bool Protected = false);
   Type* getPromotedType(Type* T) {
     return getPromotedType(T, (const PromotedType**) NULL);
   }
@@ -215,8 +237,13 @@ struct PromoteSimpleStructs : public ModulePass {
     }
     return T;
   }
+  PromotedType getPromotedTypeData(Type* T) {
+    PromotedType PT;
+    getPromotedType(T, &PT);
+    return PT;
+  }
 
-  PromotedType getPromotedTypeImpl(Type* T);
+  PromotedType getPromotedTypeImpl(Type* T, const bool Protected);
   static bool shouldPromote(Type* T) {
     std::set<Type*> chain;
     return shouldPromote(T, chain);
@@ -271,6 +298,33 @@ struct PromoteSimpleStructs : public ModulePass {
   void mutateAndReplace(Value* OldV, Value* NewV, Type* OldT, Type* NewT);
 
   void promoteGlobal(GlobalVariable* G);
+  bool isGlobalVariablePromotable(GlobalVariable* G) {
+    return !G->hasAppendingLinkage();
+  }
+  // Used to prevent us from promoting types that are used in appending linkages.
+  // After we've started promoting functions/vars, calling this is no longer allowed.
+  // Note that we don't actually check for ^
+  ArrayType* protectType(Type* Ty) {
+    ArrayType* ATy = dyn_cast<ArrayType>(Ty);
+    assert(ATy && "May only protect array types");
+    ArrayType* NewATy;
+
+    const unsigned NumElements = ATy->getNumElements();
+    Type* ElemTy = ATy->getElementType();
+    NewATy = ArrayType::get(getPromotedType(ElemTy, NULL, true), NumElements);
+    
+    const std::pair<ty_iterator, bool> r =
+      m_promoted_types.insert(std::make_pair(ATy,
+					     PromotedType::protectedPlaceholder(ATy, NewATy)));
+
+    if(!r.second && r.first->second.Promoted != Ty) {
+      errs() << "Original type: " << ToStr(*Ty) << "\n";
+      errs() << "Promoted type: " << ToStr(*r.first->second.Promoted) << "\n";
+      assert(0 && "Did you call protectType after starting the main pass?");
+      llvm_unreachable("Type already promoted");
+    }
+    return NewATy;
+  }
   Function* promoteFunction(Function& F, const bool PrototypeOnly = false);
 
   bool isAggregateType(Type* T);
@@ -283,14 +337,6 @@ INITIALIZE_PASS(PromoteSimpleStructs,
                 "Promote out structs with a single element", 
                 false, 
                 false)
-
-template <class T> 
-const std::string ToStr(const T &V) {
-  std::string S;
-  raw_string_ostream OS(S);
-  OS << const_cast<T &>(V);
-  return OS.str();
-}
 
 #ifndef NDEBUG
 // for use in gdb
@@ -382,8 +428,13 @@ GlobalValue* PromoteSimpleStructs::getPromoted(GlobalValue* F) {
   return F;
 }
 Type* PromoteSimpleStructs::getOriginalType(Value* V) {
-  if(isa<Constant>(V) && !isa<GlobalValue>(V))
+  if(isa<Constant>(V) && !isa<GlobalValue>(V)) {
     return V->getType();
+  } else if(GlobalVariable* G = dyn_cast<GlobalVariable>(V)) {
+    if(!isGlobalVariablePromotable(G)) {
+      return G->getType();
+    }
+  }
 
   origin_ty_iterator i = m_original_types.find(V);
   if(i == m_original_types.end()) {
@@ -395,10 +446,12 @@ Type* PromoteSimpleStructs::getOriginalType(Value* V) {
   } else
     return i->second;
 }
-Type* PromoteSimpleStructs::getPromotedType(Type* T, const PromotedType** Raw) {
+Type* PromoteSimpleStructs::getPromotedType(Type* T,
+					    const PromotedType** Raw,
+					    const bool Protected) {
   const ty_iterator i = m_promoted_types.find(T);
   if(i == m_promoted_types.end()) {
-    PromotedType NewT = getPromotedTypeImpl(T);
+    PromotedType NewT = getPromotedTypeImpl(T, Protected);
     assert(NewT.isFinished());
 
     PromotedType* Instance =
@@ -413,7 +466,7 @@ Type* PromoteSimpleStructs::getPromotedType(Type* T, const PromotedType** Raw) {
     return i->second.Promoted;
   }
 }
-PromotedType PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
+PromotedType PromoteSimpleStructs::getPromotedTypeImpl(Type* T, const bool Protected) {
   if(FunctionType* FT = dyn_cast<FunctionType>(T)) {
     Type* RetT;
     RetT = getPromotedType(FT->getReturnType());
@@ -426,16 +479,16 @@ PromotedType PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
         ArgTs.push_back(getPromotedType(*i));
     }
 
-    return PromotedType::start(T)
+    return PromotedType::start(T, Protected)
       .finish(FunctionType::get(RetT, ArgTs, FT->isVarArg()));
   } else if(PointerType* PT = dyn_cast<PointerType>(T)) {
     Type* InnerTy = PT->getElementType();
     Type* NewInnerTy = getPromotedType(InnerTy);
-    return PromotedType::start(T)
+    return PromotedType::start(T, Protected)
       .finish(PointerType::get(NewInnerTy, 0));
   } else if(StructType* ST = dyn_cast<StructType>(T)) {
     if(ST->getNumElements() == 0)
-      return PromotedType::noOp(T);
+      return PromotedType::noOp(T, Protected);
     Type* OnlyMeaningfulTy = getInnerMeaningfulType(ST);
     if(OnlyMeaningfulTy != NULL) {
       PromotedType PT;
@@ -450,7 +503,7 @@ PromotedType PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
       Struct = StructType::create(T->getContext());
     // This is a requisite for recursive structures.
     ty_iterator It = m_promoted_types.insert
-      (std::make_pair(T, PromotedType::startWithPlaceholder(T, Struct))).first;
+      (std::make_pair(T, PromotedType::startWithPlaceholder(T, Struct, Protected))).first;
 
     std::vector<Type*> ArgTs;
     ArgTs.reserve(ST->getNumElements());
@@ -475,11 +528,11 @@ PromotedType PromoteSimpleStructs::getPromotedTypeImpl(Type* T) {
     if(AT->getNumElements() == 1)
       return InnerPT.promote(T);
 
-    return PromotedType::start(T)
+    return PromotedType::start(T, Protected)
       .finish(ArrayType::get(InnerPT.Promoted,
 			     AT->getNumElements()));
   } else {
-    return PromotedType::noOp(T);
+    return PromotedType::noOp(T, Protected);
   }
 }
 
@@ -1181,7 +1234,9 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
 	    break;
 	  }
 
-	  if(!isShallowPromotable(LastTy) || ForceInitialIndex) {
+	  if(!isShallowPromotable(LastTy) ||
+	     ForceInitialIndex ||
+	     getPromotedTypeData(LastTy).Protected) {
 	    if(ConstantInt* IdxVal = dyn_cast<ConstantInt>(C3)) {
 	      const PromotedType* Last = NULL;
 	      getPromotedType(LastTy, &Last);
@@ -1318,6 +1373,10 @@ void PromoteSimpleStructs::promoteGlobal(GlobalVariable* G) {
   std::pair<iterator, bool> result = m_promoted.insert(G);
   if(!result.second)
     return;
+  else if(!isGlobalVariablePromotable(G)) {
+    recordOriginalType(G, G->getType());
+    return;
+  }
   
   PointerType* OriginalTy = G->getType();
   PointerType* NewTy = cast<PointerType>(getPromotedType(OriginalTy));
@@ -1367,6 +1426,17 @@ Function* PromoteSimpleStructs::promoteFunction(Function& F, const bool Prototyp
 
 bool PromoteSimpleStructs::runOnModule(Module& M) {
   m_module = &M;
+  {
+    const Module::global_iterator end = M.global_end();
+    for(Module::global_iterator i = M.global_begin(); i != end; ++i) {
+      if(!isGlobalVariablePromotable(i)) {
+	// Protect the value type of the var:
+	protectType(i->getType()->getContainedType(0));
+	recordOriginalType(i, i->getType());
+      }
+    }
+  }
+
   size_t PromotedFunctions = 0;
   const Module::iterator i_end = M.end();
   for(Module::iterator i = M.begin(); i != i_end; ++i) {
