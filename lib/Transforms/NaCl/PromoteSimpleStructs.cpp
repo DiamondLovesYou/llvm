@@ -972,11 +972,17 @@ T* PromoteSimpleStructs::ConversionState::convertCall(T* Call,
   std::vector<Value*> Args;
   const unsigned end = Call->getNumArgOperands();
   Args.reserve(end);
+  // Sometimes in C/CXX we will loop back around to this instruction.
+  // We record the original type here so instructions like GEP can still
+  // find the original type. After we finish promoting the call's args,
+  // we remove the original type entry.
+  m_p->recordOriginalType(Call, OriginalTy);
   for(unsigned i = 0; i < end; ++i) {
     Value* V = Call->getArgOperand(i);
     Value* NewV = get(V);
     Args.push_back(NewV);
   }
+  m_p->eraseOriginalType(Call);
 
   if(OldCalled != NewCalled) {
     Value* BaseCall = NULL;
@@ -1100,14 +1106,19 @@ Value* PromoteSimpleStructs::ConversionState::convertInstruction(Instruction* I)
   return Converted;
 }
 Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
+  if(isa<GlobalValue>(C)) {
+    return getPromoted(cast<GlobalValue>(C));
+  }
+
   User::op_iterator i;
   Type* OriginalT;
   Type* NewT;
 
   std::pair<const_iterator, bool> ci =
     m_promoted_consts.insert(std::make_pair(C, (Constant*)NULL));
-  if(!ci.second) {
-    assert(ci.first->second != NULL && "Should not be null");
+  // If ci.first->second is NULL, we've encountered a recursion.
+  // See the comment in the ConstantExpr branch.
+  if(!ci.second && ci.first->second != NULL) {
     return ci.first->second;
   }
   Constant*& NewC = ci.first->second;
@@ -1115,9 +1126,7 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
   OriginalT = C->getType();
   NewT = getPromotedType(OriginalT);
 
-  if(isa<GlobalValue>(C)) {
-    NewC = getPromoted(cast<GlobalValue>(C));
-  } else if(isa<UndefValue>(C)) { // fast path for this common const
+  if(isa<UndefValue>(C)) { // fast path for this common const
     NewC = UndefValue::get(NewT);
   } else if(isa<ConstantExpr>(C)) {
     ConstantExpr* CE = cast<ConstantExpr>(C);
@@ -1153,6 +1162,14 @@ Constant* PromoteSimpleStructs::getPromotedConstant(Constant* C) {
         for(; i != end; ++i) {
           Constant* C2 = cast<Constant>(*i);
           Constant* C3 = getPromotedConstant(C2);
+
+	  // One of the operands caused us to circle back around to this const.
+	  // The only way this can happen is through a global, which means the second time around
+	  // would skip the global causing the recursion, allowing the promotion to finish.
+	  // if all that happens, our reference into the map will reflect the promotion,
+	  // NewC != NULL, and we can just return.
+	  if(NewC != NULL)
+	    return NewC;
 
           OldIndices.push_back(C2);          
           Type* NextTy = GetElementPtrInst::getIndexedType(AggOriginalTy,
