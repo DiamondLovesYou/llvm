@@ -438,8 +438,10 @@ void FuncRewriter::expandResumeInst(ResumeInst *Resume) {
   if (EHResumeFunc->getFunctionType()->getFunctionNumParams() != 1)
     report_fatal_error("Bad type for __pnacl_eh_resume()");
   Type *ArgType = EHResumeFunc->getFunctionType()->getFunctionParamType(0);
-  if(ArgType != ExceptionPtr->getType())
-    ExceptionPtr = new BitCastInst(ExceptionPtr, ArgType, "resume_cast", Resume);
+  if(ArgType != ExceptionPtr->getType()) {
+    Instruction::CastOps Op = CastInst::getCastOpcode(ExceptionPtr, false, ArgType, false);
+    ExceptionPtr = CastInst::Create(Op, ExceptionPtr, ArgType, "resume_cast", Resume);
+  }
 
   Value *Args[] = { ExceptionPtr };
   CopyDebug(CallInst::Create(EHResumeFunc, Args, "", Resume), Resume);
