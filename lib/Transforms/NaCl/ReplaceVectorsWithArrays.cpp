@@ -485,9 +485,7 @@ Constant* ReplaceVectorsWithArrays::promoteConstant(Constant* C) {
 
   assert(NewC != NULL);
   if(C != NewC) {
-    const bool NewCInserted = m_consts.insert(std::make_pair(NewC, NewC)).second;
-    assert(NewCInserted);
-    (void)NewCInserted;
+    m_consts.insert(std::make_pair(NewC, NewC));
   }
   return NewC;
 }
