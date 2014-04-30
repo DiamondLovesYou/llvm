@@ -296,6 +296,8 @@ static void WriteTypeTable(const NaClValueEnumerator &VE,
       AbbrevToUse = TYPE_FUNCTION_ABBREV;
       break;
     }
+    case Type::PointerTyID:
+      report_fatal_error("Pointer types are not supported in PNaCl bitcode");
     case Type::StructTyID:
       report_fatal_error("Struct types are not supported in PNaCl bitcode");
     case Type::ArrayTyID:
