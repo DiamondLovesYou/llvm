@@ -45,6 +45,11 @@ set(LLVM_TEST_DEPENDS
           llvm-tblgen
           macho-dump
           opt
+          pnacl-bcanalyzer
+          pnacl-bcdis
+          pnacl-llc
+          pnacl-freeze
+          pnacl-thaw
           FileCheck
           count
           not
