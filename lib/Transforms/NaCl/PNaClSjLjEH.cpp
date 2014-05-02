@@ -175,21 +175,15 @@ void FuncRewriter::initializeFrame() {
 
   Instruction* InsertPt = Func->getEntryBlock().getFirstNonPHIOrDbgOrLifetime();
 
-  GlobalVariable *EHStackTlsVarUncast = M->getGlobalVariable("__pnacl_eh_stack");
   PointerType* EhFrameTyPtr = ExceptionFrameTy->getPointerTo();
-  if (!EHStackTlsVarUncast) {
-    EHStackTlsVarUncast = cast<GlobalVariable>(M->getOrInsertGlobal("__pnacl_eh_stack",
-                                                                    EhFrameTyPtr));
-    EHStackTlsVarUncast->setThreadLocal(true);
-    EHStackTlsVarUncast->setLinkage(GlobalValue::LinkOnceAnyLinkage);
-    EHStackTlsVarUncast->setInitializer(ConstantPointerNull::get(EhFrameTyPtr));
-    EHStackTlsVar = EHStackTlsVarUncast;
-  } else {
-    EHStackTlsVar = new BitCastInst(EHStackTlsVarUncast,
-                                    EhFrameTyPtr->getPointerTo(),
-                                    "pnacl_eh_stack",
-                                    InsertPt);
+  Constant *EHStackTlsVarUncast = M->getOrInsertGlobal("__pnacl_eh_stack", EhFrameTyPtr);
+  if (GlobalVariable* GlobalVar = dyn_cast<GlobalVariable>(EHStackTlsVarUncast)) {
+    // __pnacl_eh_stack was created:
+    GlobalVar->setThreadLocal(true);
+    GlobalVar->setLinkage(GlobalValue::LinkOnceAnyLinkage);
+    GlobalVar->setInitializer(ConstantPointerNull::get(EhFrameTyPtr));
   }
+  EHStackTlsVar = EHStackTlsVarUncast;
 
   // Allocate the new exception frame.  This is reused across all
   // invoke instructions in the function.
