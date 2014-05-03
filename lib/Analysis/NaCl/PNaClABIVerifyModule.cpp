@@ -332,7 +332,10 @@ bool PNaClABIVerifyModule::isWhitelistedMetadata(const NamedMDNode *MD) {
 
 bool PNaClABIVerifyModule::isWhitelistedExternal(const GlobalValue *GV) {
   if (const Function *Func = dyn_cast<const Function>(GV)) {
-    if (Func->getName().equals("_start") || Func->isIntrinsic()) {
+    if (Func->getName().equals("_start") ||
+	Func->isIntrinsic() ||
+	Func->getName().equals("__nacl_tp_tls_offset") ||
+	Func->getName().equals("__nacl_tp_tdb_offset")) {
       return true;
     }
   }
@@ -469,7 +472,9 @@ bool PNaClABIVerifyModule::runOnModule(Module &M) {
       // Unfortunately this means we simply don't check this property
       // when translating a pexe in the browser.
       // TODO(mseaborn): Enforce this property in the bitcode reader.
-      if (!StreamingMode && MI->isDeclaration()) {
+      if (!StreamingMode && MI->isDeclaration() &&
+	  !(MI->getName().equals("__nacl_tp_tls_offset") ||
+	    MI->getName().equals("__nacl_tp_tdb_offset"))) {
         Reporter->addError() << "Function " << MI->getName()
                              << " is declared but not defined (disallowed)\n";
       }
