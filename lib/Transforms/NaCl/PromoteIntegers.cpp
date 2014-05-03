@@ -433,15 +433,17 @@ static void convertInstruction(Instruction *Inst, ConversionState &State) {
     CopyDebug(NewInst, Alloc);
     NewInst->setAlignment(Alloc->getAlignment());
     State.recordConverted(Alloc, NewInst);
-  } else if (BitCastInst *BCInst = dyn_cast<BitCastInst>(Inst)) {
+  } else if (CastInst *Cast = dyn_cast<CastInst>(Inst)) {
     // Only handle pointers. Ints can't be casted to/from other ints
-    Type *DestType = shouldConvert(BCInst) ?
-        getPromotedType(BCInst->getDestTy()) : BCInst->getDestTy();
-    Instruction *NewInst = CopyDebug(new BitCastInst(
-        State.getConverted(BCInst->getOperand(0)),
-        DestType,
-        "", BCInst), BCInst);
-    State.recordConverted(BCInst, NewInst);
+    Type *DestType = shouldConvert(Cast) ?
+        getPromotedType(Cast->getDestTy()) : Cast->getDestTy();
+    Instruction *NewInst = CopyDebug(CastInst::Create(Cast->getOpcode(),
+						      State.getConverted(Cast->getOperand(0)),
+						      DestType,
+						      "",
+						      Cast),
+				     Cast);
+    State.recordConverted(Cast, NewInst);
   } else if (LoadInst *Load = dyn_cast<LoadInst>(Inst)) {
     if (shouldConvert(Load)) {
       splitLoad(Load, State);
