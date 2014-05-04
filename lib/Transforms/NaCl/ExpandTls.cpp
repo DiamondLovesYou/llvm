@@ -287,11 +287,24 @@ static void defineTlsLayoutIntrinsics(Module &M) {
   //     return 0;
   //   }
   // This means the thread pointer points to the TDB.
-  NewFunc = Function::Create(FuncType, GlobalValue::InternalLinkage,
-                             "nacl_tp_tdb_offset", &M);
-  BB = BasicBlock::Create(M.getContext(), "entry", NewFunc);
-  ReturnInst::Create(M.getContext(),
-                     ConstantInt::get(M.getContext(), APInt(32, 0)), BB);
+  StringRef TdbName = "__nacl_tp_tdb_offset";
+  NewFunc = M.getFunction(TdbName);
+  if(NewFunc != NULL) {
+    if(NewFunc->getFunctionType() != FuncType) {
+      errs() << "Expected: " << *FuncType << "\n";
+      errs() << "Found:    " << *NewFunc->getType() << "\n";
+      report_fatal_error(TdbName + " is defined and isn't the right type");
+    }
+    NewFunc->setLinkage(GlobalValue::InternalLinkage);
+  } else {
+    NewFunc = Function::Create(FuncType, GlobalValue::InternalLinkage,
+                               TdbName, &M);
+  }
+  if(NewFunc->size() == 0) {
+    BB = BasicBlock::Create(M.getContext(), "entry", NewFunc);
+    ReturnInst::Create(M.getContext(),
+                       ConstantInt::get(M.getContext(), APInt(32, 0)), BB);
+  }
   if (Function *Intrinsic = M.getFunction("llvm.nacl.tp.tdb.offset")) {
     Intrinsic->replaceAllUsesWith(NewFunc);
     Intrinsic->eraseFromParent();
@@ -302,13 +315,26 @@ static void defineTlsLayoutIntrinsics(Module &M) {
   //     return -tls_size;
   //   }
   // This means the TLS variables are stored below the thread pointer.
-  NewFunc = Function::Create(FuncType, GlobalValue::InternalLinkage,
-                             "nacl_tp_tls_offset", &M);
-  BB = BasicBlock::Create(M.getContext(), "entry", NewFunc);
-  Value *Arg = NewFunc->arg_begin();
-  Arg->setName("size");
-  Value *Result = BinaryOperator::CreateNeg(Arg, "result", BB);
-  ReturnInst::Create(M.getContext(), Result, BB);
+  StringRef TlsName = "__nacl_tp_tls_offset";
+  NewFunc = M.getFunction(TlsName);
+  if(NewFunc != NULL) {
+    if(NewFunc->getFunctionType() != FuncType) {
+      errs() << "Expected: " << *FuncType << "\n";
+      errs() << "Found:    " << *NewFunc->getType() << "\n";
+      report_fatal_error(TlsName + " is defined and isn't the right type");
+    }
+    NewFunc->setLinkage(GlobalValue::InternalLinkage);
+  } else {
+    NewFunc = Function::Create(FuncType, GlobalValue::InternalLinkage,
+                               TlsName, &M);
+  }
+  if(NewFunc->size() == 0) {
+    BB = BasicBlock::Create(M.getContext(), "entry", NewFunc);
+    Value *Arg = NewFunc->arg_begin();
+    Arg->setName("size");
+    Value *Result = BinaryOperator::CreateNeg(Arg, "result", BB);
+    ReturnInst::Create(M.getContext(), Result, BB);
+  }
   if (Function *Intrinsic = M.getFunction("llvm.nacl.tp.tls.offset")) {
     Intrinsic->replaceAllUsesWith(NewFunc);
     Intrinsic->eraseFromParent();
