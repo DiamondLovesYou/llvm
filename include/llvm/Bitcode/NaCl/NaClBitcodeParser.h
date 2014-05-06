@@ -372,6 +372,8 @@ public:
       : Parser(Parser), GlobalBlockID(naclbitc::BLOCKINFO_BLOCK_ID) {
   }
 
+  virtual ~NaClBitcodeParserListener() {}
+
 private:
   virtual void BeginBlock(unsigned NumWords);
 
