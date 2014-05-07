@@ -431,6 +431,7 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
         // https://code.google.com/p/nativeclient/issues/detail?id=3443
         // We do the same for invariant.start/end because they work in
         // a similar way.
+        Inst->dropAllReferences();
         Inst->eraseFromParent();
       } else {
         FC->convertInPlace(Inst);
