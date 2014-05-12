@@ -273,6 +273,7 @@ void initializeStackMapLivenessPass(PassRegistry&);
 /// NaCl specific passes:
 void initializeAddPNaClExternalDeclsPass(PassRegistry&);
 void initializeCanonicalizeMemIntrinsicsPass(PassRegistry&);
+void initializeCombineVectorInstructionsPass(PassRegistry&);
 void initializeConstantInsertExtractElementIndexPass(PassRegistry&);
 void initializeExpandArithWithOverflowPass(PassRegistry&);
 void initializeExpandByValPass(PassRegistry&);
