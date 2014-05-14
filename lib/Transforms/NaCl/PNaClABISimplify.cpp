@@ -27,7 +27,7 @@ EnableSjLjEH("enable-pnacl-sjlj-eh",
                       "as part of the pnacl-abi-simplify passes"),
              cl::init(false));
 
-void llvm::PNaClABISimplifyAddPreOptPasses(PassManagerBase &PM) {
+void llvm::PNaClABISimplifyAddPreOptPasses(PassManagerBase &PM, const bool BuildingLibrary) {
   if (EnableSjLjEH) {
     // This comes before ExpandTls because it introduces references to
     // a TLS variable, __pnacl_eh_stack.  This comes before

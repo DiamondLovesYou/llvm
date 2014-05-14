@@ -35,7 +35,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/InstVisitor.h"
+#include "llvm/IR/InstVisitor.h"
 #include "llvm/Pass.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Transforms/NaCl.h"
@@ -267,7 +267,7 @@ bool CombineVectorInstructions::visitInsertElementInst(InsertElementInst &IE) {
 
       // If this insertelement isn't used by some other insertelement, turn it
       // (and any insertelements it points to), into one big shuffle.
-      if (!IE.hasOneUse() || !isa<InsertElementInst>(IE.use_back())) {
+      if (!IE.hasOneUse() || !isa<InsertElementInst>(IE.user_back())) {
         typedef SmallVector<Constant *, 16> MaskT;
         MaskT Mask;
         Value *RHS = 0;

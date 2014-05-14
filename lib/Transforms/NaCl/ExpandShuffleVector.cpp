@@ -32,9 +32,11 @@ public:
   ExpandShuffleVector() : BasicBlockPass(ID), M(0) {
     initializeExpandShuffleVectorPass(*PassRegistry::getPassRegistry());
   }
-  virtual bool doInitialization(Module &Mod) {
-    M = &Mod;
-    return false; // Unchanged.
+  
+  using llvm::Pass::doInitialization;
+  bool doInitialization(Function &F) override {
+    M = F.getParent();
+    return this->BasicBlockPass::doInitialization(F);
   }
 
   virtual bool runOnBasicBlock(BasicBlock &BB);

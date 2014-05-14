@@ -14,13 +14,13 @@ label1:
 label2:
   ret i32 200
 }
-; CHECK: define i32 @indirectbr_example
+; CHECK-LABEL: define i32 @indirectbr_example
 ; CHECK-NEXT: %indirectbr_cast = ptrtoint i8* %addr to i32
 ; CHECK-NEXT: switch i32 %indirectbr_cast, label %indirectbr_default [
 ; CHECK-NEXT:   i32 1, label %label1
 ; CHECK-NEXT:   i32 2, label %label2
 ; CHECK-NEXT: ]
-; CHECK: indirectbr_default:
+; CHECK-LABEL: indirectbr_default:
 ; CHECK-NEXT: unreachable
 
 
@@ -31,7 +31,7 @@ label:
   %val = phi i32 [ 123, %entry ], [ 123, %entry ]
   ret i32 %val
 }
-; CHECK: define i32 @label_appears_twice
+; CHECK-LABEL: define i32 @label_appears_twice
 ; CHECK: switch i32 %indirectbr_cast, label %indirectbr_default [
 ; CHECK-NEXT:   i32 1, label %label
 ; CHECK-NEXT: ]
@@ -43,7 +43,7 @@ define i8* @unused_blockaddress() {
 dead_label:
   ret i8* null
 }
-; CHECK: define i8* @unused_blockaddress
+; CHECK-LABEL: define i8* @unused_blockaddress
 ; CHECK-NEXT: ret i8* inttoptr (i32 -1 to i8*)
 
 
@@ -55,7 +55,7 @@ define i32 @multiple_indirectbr(i8* %addr) {
 label:
   ret i32 100
 }
-; CHECK: define i32 @multiple_indirectbr
+; CHECK-LABEL: define i32 @multiple_indirectbr
 ; CHECK: switch i32 %indirectbr_cast{{[0-9]*}}, label %indirectbr_default [
 ; CHECK-NEXT: i32 1, label %label
 ; CHECK: switch i32 %indirectbr_cast{{[0-9]*}}, label %indirectbr_default [

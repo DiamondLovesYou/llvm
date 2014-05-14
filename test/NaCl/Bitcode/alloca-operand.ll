@@ -1,5 +1,4 @@
-; RUN: llvm-as < %s | pnacl-freeze | pnacl-bcanalyzer -dump-records \
-; RUN:              | FileCheck %s
+; RUN: llvm-as < %s | pnacl-freeze | pnacl-bcanalyzer -dump-records | FileCheck %s
 
 ; Test that alloca's size operand is represented with a relative value
 ; ID, the same as other instructions' operands.

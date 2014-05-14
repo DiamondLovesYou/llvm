@@ -35,23 +35,25 @@ namespace {
 class FixVectorLoadStoreAlignment : public BasicBlockPass {
 public:
   static char ID; // Pass identification, replacement for typeid
-  FixVectorLoadStoreAlignment() : BasicBlockPass(ID), M(0), DL(0) {
+  FixVectorLoadStoreAlignment() : BasicBlockPass(ID), M(0) {
     initializeFixVectorLoadStoreAlignmentPass(*PassRegistry::getPassRegistry());
   }
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addRequired<DataLayout>();
     BasicBlockPass::getAnalysisUsage(AU);
   }
-  virtual bool doInitialization(Module &Mod) {
-    M = &Mod;
-    return false; // Unchanged.
+
+  using llvm::Pass::doInitialization;
+  bool doInitialization(Function &F) override {
+    M = F.getParent();
+    DL.reset(new DataLayout(M));
+    return BasicBlockPass::doInitialization(F);
   }
   virtual bool runOnBasicBlock(BasicBlock &BB);
 
 private:
   typedef SmallVector<Instruction *, 8> Instructions;
   const Module *M;
-  const DataLayout *DL;
+  std::unique_ptr<DataLayout> DL;
 
   /// Some sub-classes of Instruction have a non-virtual function
   /// indicating which operand is the pointer operand. This template
@@ -218,8 +220,6 @@ void FixVectorLoadStoreAlignment::fixVectorLoadStoreAlignment(
 
 bool FixVectorLoadStoreAlignment::runOnBasicBlock(BasicBlock &BB) {
   bool Changed = false;
-  if (!DL)
-    DL = &getAnalysis<DataLayout>();
   Instructions Loads;
   Instructions Stores;
   findVectorLoadStore(BB, Loads, Stores);

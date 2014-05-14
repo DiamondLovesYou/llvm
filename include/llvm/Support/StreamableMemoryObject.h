@@ -104,7 +104,8 @@ class StreamableMemoryObject : public MemoryObject {
 /// dropLeadingBytes and setKnownObjectSize methods which are not applicable
 /// to non-streamed objects.
 class StreamingMemoryObject : public StreamableMemoryObject {
- public:
+public:
+  StreamingMemoryObject(DataStreamer *streamer);
   /// Drop s bytes from the front of the stream, pushing the positions of the
   uint64_t getBase() const override { return 0; }
   uint64_t getExtent() const override;
@@ -166,11 +167,6 @@ private:
     }
     return true;
   }
-
-  StreamingMemoryObjectImpl(
-      const StreamingMemoryObjectImpl&) LLVM_DELETED_FUNCTION;
-  void operator=(
-      const StreamingMemoryObjectImpl&) LLVM_DELETED_FUNCTION;
 };
 
 StreamableMemoryObject *getNonStreamedMemoryObject(

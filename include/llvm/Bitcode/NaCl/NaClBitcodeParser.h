@@ -298,13 +298,13 @@ public:
   const RecordVector &GetValues() const {
     return Data.Values;
   }
+  RecordVector &GetValues() {
+    return Data.Values;
+  }
 
   /// Allows lower level access to data representing record.
   const NaClBitcodeRecordData &GetRecordData() const {
     return Data;
-  }
-  RecordVector &GetValues() {
-    return Values;
   }
 
   /// Returns true if the record was read using an abbreviation.

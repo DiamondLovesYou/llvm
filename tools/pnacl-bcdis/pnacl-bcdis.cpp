@@ -391,7 +391,7 @@ public:
   }
 
   /// Generates an error with the given message.
-  virtual bool Error(const std::string &Message) LLVM_OVERRIDE {
+  virtual bool Error(const std::string &Message) override {
     // Use local error routine so that all errors are treated uniformly.
     ObjDump.Error() << Message << "\n";
     return true;
@@ -404,12 +404,12 @@ public:
 
   /// Flushes out objdump and then exits with fatal error, using
   /// the given message.
-  void Fatal(const std::string &Message) LLVM_OVERRIDE {
+  void Fatal(const std::string &Message) {
     ObjDump.Fatal(Message);
   }
 
   /// Parses the top-level module block.
-  virtual bool ParseBlock(unsigned BlockID) LLVM_OVERRIDE;
+  virtual bool ParseBlock(unsigned BlockID) override;
 
   /// Installs the given type to the next available type index.
   void InstallType(Type *Ty) {
@@ -745,13 +745,13 @@ public:
 
   virtual ~NaClDisBlockParser() {}
 
-  virtual bool ParseBlock(unsigned BlockID) LLVM_OVERRIDE;
+  virtual bool ParseBlock(unsigned BlockID) override;
 
-  virtual void EnterBlock(unsigned NumWords) LLVM_OVERRIDE;
+  virtual void EnterBlock(unsigned NumWords) override;
 
-  virtual void ExitBlock() LLVM_OVERRIDE;
+  virtual void ExitBlock() override;
 
-  virtual void ProcessRecord() LLVM_OVERRIDE;
+  virtual void ProcessRecord() override;
 
 protected:
   // Prints the block header instruction for the block. Called by EnterBlock.
@@ -1013,11 +1013,11 @@ public:
       : NaClDisBlockParser(BlockID, EnclosingParser) {
   }
 
-  virtual void ProcessBlockInfo() LLVM_OVERRIDE {
+  virtual void ProcessBlockInfo() override {
     EnterBlock(0);
   }
 
-  virtual void PrintBlockHeader() LLVM_OVERRIDE;
+  virtual void PrintBlockHeader() override;
 
   virtual ~NaClDisBlockInfoParser() {}
 };
@@ -1042,9 +1042,9 @@ public:
   virtual ~NaClDisTypesParser();
 
 private:
-  virtual void PrintBlockHeader() LLVM_OVERRIDE;
+  virtual void PrintBlockHeader() override;
 
-  virtual void ProcessRecord() LLVM_OVERRIDE;
+  virtual void ProcessRecord() override;
 
   /// Returns the value id for the next type to be defined.
   BitcodeId NextTypeId() {
@@ -1211,7 +1211,7 @@ public:
 
   virtual ~NaClDisGlobalsParser() {}
 
-  virtual void PrintBlockHeader() LLVM_OVERRIDE;
+  virtual void PrintBlockHeader() override;
 };
 
 void NaClDisGlobalsParser::PrintBlockHeader() {
@@ -1231,7 +1231,7 @@ public:
 
   virtual ~NaClDisValueSymtabParser() {}
 
-  virtual void PrintBlockHeader() LLVM_OVERRIDE;
+  virtual void PrintBlockHeader() override;
 };
 
 void NaClDisValueSymtabParser::PrintBlockHeader() {
@@ -1250,7 +1250,7 @@ public:
 
   virtual ~NaClDisConstantsParser() {}
 
-  virtual void PrintBlockHeader() LLVM_OVERRIDE;
+  virtual void PrintBlockHeader() override;
 };
 
 void NaClDisConstantsParser::PrintBlockHeader() {
@@ -1270,9 +1270,9 @@ public:
     Context->ResetLocalCounters();
   }
 
-  virtual void PrintBlockHeader() LLVM_OVERRIDE;
+  virtual void PrintBlockHeader() override;
 
-  virtual bool ParseBlock(unsigned BlockID) LLVM_OVERRIDE;
+  virtual bool ParseBlock(unsigned BlockID) override;
 private:
   // The function index of the function being defined.
   uint32_t FcnId;
@@ -1338,11 +1338,11 @@ public:
 
   virtual ~NaClDisModuleParser() {}
 
-  virtual bool ParseBlock(unsigned BlockID) LLVM_OVERRIDE;
+  virtual bool ParseBlock(unsigned BlockID) override;
 
-  virtual void PrintBlockHeader() LLVM_OVERRIDE;
+  virtual void PrintBlockHeader() override;
 
-  virtual void ProcessRecord() LLVM_OVERRIDE;
+  virtual void ProcessRecord() override;
 };
 
 bool NaClDisModuleParser::ParseBlock(unsigned BlockID) {
@@ -1510,7 +1510,7 @@ static bool DisassembleBitcode() {
 
   // Create a stream to output the bitcode text to.
   std::string ErrorInfo;
-  raw_fd_ostream Output(OutputFilename.c_str(), ErrorInfo);
+  raw_fd_ostream Output(OutputFilename.c_str(), ErrorInfo, sys::fs::F_None);
   if (!ErrorInfo.empty()) {
     errs() << ErrorInfo << '\n';
     return true;

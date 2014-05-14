@@ -30,24 +30,25 @@ namespace {
 class ConstantInsertExtractElementIndex : public BasicBlockPass {
 public:
   static char ID; // Pass identification, replacement for typeid
-  ConstantInsertExtractElementIndex() : BasicBlockPass(ID), M(0), DL(0) {
+  ConstantInsertExtractElementIndex() : BasicBlockPass(ID), M(0) {
     initializeConstantInsertExtractElementIndexPass(
         *PassRegistry::getPassRegistry());
   }
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addRequired<DataLayout>();
     BasicBlockPass::getAnalysisUsage(AU);
   }
-  virtual bool doInitialization(Module &Mod) {
-    M = &Mod;
-    return false; // Unchanged.
+  using llvm::Pass::doInitialization;
+  bool doInitialization(Function &F) override {
+    M = F.getParent();
+    DL.reset(new DataLayout(M));
+    return this->BasicBlockPass::doInitialization(F);
   }
   virtual bool runOnBasicBlock(BasicBlock &BB);
 
 private:
   typedef SmallVector<Instruction *, 8> Instructions;
   const Module *M;
-  const DataLayout *DL;
+  std::unique_ptr<DataLayout> DL;
 
   void findNonConstantInsertExtractElements(
       const BasicBlock &BB, Instructions &OutOfRangeConstantIndices,
@@ -160,8 +161,6 @@ void ConstantInsertExtractElementIndex::fixNonConstantVectorIndices(
 
 bool ConstantInsertExtractElementIndex::runOnBasicBlock(BasicBlock &BB) {
   bool Changed = false;
-  if (!DL)
-    DL = &getAnalysis<DataLayout>();
   Instructions OutOfRangeConstantIndices;
   Instructions NonConstantVectorIndices;
 

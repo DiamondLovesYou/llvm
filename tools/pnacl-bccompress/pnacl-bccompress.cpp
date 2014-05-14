@@ -1266,7 +1266,7 @@ static bool AnalyzeBitcode(OwningPtr<MemoryBuffer> &MemBuf,
 
   if (ShowAbbreviationFrequencies || ShowValueDistributions) {
     std::string ErrorInfo;
-    raw_fd_ostream Output(OutputFilename.c_str(), ErrorInfo);
+    raw_fd_ostream Output(OutputFilename.c_str(), ErrorInfo, sys::fs::F_None);
     if (!ErrorInfo.empty()) {
       errs() << ErrorInfo << "\n";
       exit(1);
@@ -1422,7 +1422,7 @@ protected:
   virtual void ProcessRecord() {
     // Find best fitting abbreviation to use, and print out the record
     // using that abbreviations.
-    unsigned AbbrevIndex =
+    unsigned AbbrevIndex = BlockAbbreviations->GetRecordAbbrevIndex(Record.GetRecordData());
     NaClBitcodeRecord::RecordVector &Values = Record.GetValues();
     if (AbbrevIndex == naclbitc::UNABBREV_RECORD) {
       Context->Writer.EmitRecord(Record.GetCode(), Values, 0);

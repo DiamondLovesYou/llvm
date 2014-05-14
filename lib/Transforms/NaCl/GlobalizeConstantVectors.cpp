@@ -21,7 +21,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
-#include "llvm/Support/InstIterator.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/Transforms/NaCl.h"
 
 using namespace llvm;
@@ -31,18 +31,22 @@ namespace {
 class GlobalizeConstantVectors : public ModulePass {
 public:
   static char ID; // Pass identification, replacement for typeid
-  GlobalizeConstantVectors() : ModulePass(ID), DL(0) {
+  GlobalizeConstantVectors() : ModulePass(ID) {
     initializeGlobalizeConstantVectorsPass(*PassRegistry::getPassRegistry());
   }
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesCFG();
-    AU.addRequired<DataLayout>();
   }
   virtual bool runOnModule(Module &M);
 
+  bool doInitialization(Module &Mod) override {
+    DL.reset(new DataLayout(&Mod));
+    return this->ModulePass::doInitialization(Mod);
+  }
+
 private:
   typedef SmallVector<Value *, 128> Values;
-  const DataLayout *DL;
+  std::unique_ptr<DataLayout> DL;
 
   void findConstantVectors(const Function &F, Values &CVs) const;
   void globalizeConstantVectors(Module &M, Function &F,
@@ -88,7 +92,7 @@ GlobalizeConstantVectors::globalizeConstantVectors(Module &M, Function &F,
     LoadInst *MaterializedGV = new LoadInst(GV, Name, /* isVolatile= */ false,
                                             GV->getAlignment(), FirstInst);
 
-    for (Value::use_iterator UI = V->use_begin(), UE = V->use_end(); UI != UE;
+    for (Value::user_iterator UI = V->user_begin(), UE = V->user_end(); UI != UE;
          ++UI) {
       User *U = *UI;
       if (Instruction *I = dyn_cast<Instruction>(U))
@@ -112,7 +116,6 @@ GlobalizeConstantVectors::globalizeConstantVectors(Module &M, Function &F,
 
 bool GlobalizeConstantVectors::runOnModule(Module &M) {
   bool Changed = false;
-  DL = &getAnalysis<DataLayout>();
   for (Module::iterator FI = M.begin(), FE = M.end(); FI != FE; ++FI) {
     Function &F = *FI;
     Values ConstantVectors;
