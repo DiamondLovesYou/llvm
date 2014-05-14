@@ -51,10 +51,11 @@ InputFileFormat(
     "bitcode-format",
     cl::desc("Define format of input file:"),
     cl::values(
-        clEnumValN(LLVMFormat, "llvm", "LLVM file (default)"),
+        clEnumValN(LLVMFormat, "llvm", "LLVM file (bitcode or IR)"),
         clEnumValN(PNaClFormat, "pnacl", "PNaCl bitcode file"),
+        clEnumValN(AutoDetectFormat, "auto", "Autodetect file (default)"),
         clEnumValEnd),
-    cl::init(LLVMFormat));
+    cl::init(AutoDetectFormat));
 
 // General options for llc.  Other pass-specific options are specified
 // within the corresponding llc passes, and target-specific options

@@ -106,6 +106,9 @@ namespace llvm {
         BufPtr[2] == 'X' &&
         BufPtr[3] == 'E';
   }
+  /// isNaClBitcode - Return true if the given bytes are the magic bytes for
+  /// PNaCl bitcode wire format. Does not take ownership of Buffer.
+  bool isNaClBitcode(const MemoryBuffer *Buffer);
 
   // NaClWriteHeader - Write the contents of the bitcode header to the
   // corresponding bitcode stream.

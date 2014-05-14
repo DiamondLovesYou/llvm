@@ -97,6 +97,10 @@ namespace llvm {
     return isBitcodeWrapper(BufPtr, BufEnd) ||
            isRawBitcode(BufPtr, BufEnd);
   }
+  /// isBitcode - Return true if the given bytes are the magic bytes for
+  /// LLVM IR bitcode, either with or without a wrapper. Does not take ownership
+  /// of Buffer.
+  bool isBitcode(const MemoryBuffer *Buffer);
 
   /// SkipBitcodeWrapperHeader - Some systems wrap bc files with a special
   /// header for padding or other reasons.  The format of this header is:

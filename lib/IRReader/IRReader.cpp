@@ -33,9 +33,24 @@ static const char *const TimeIRParsingName = "Parse IR";
 
 Module *llvm::getLazyIRModule(MemoryBuffer *Buffer, SMDiagnostic &Err,
                               LLVMContext &Context, FileFormat Format) {
-  if (Format == LLVMFormat) {
-    if (isBitcode((const unsigned char *)Buffer->getBufferStart(),
-                  (const unsigned char *)Buffer->getBufferEnd())) {
+  FileFormat RealFormat;
+  bool Assembly = false;
+  if (Format == AutoDetectFormat) {
+    if (isBitcode(Buffer)) {
+      RealFormat = LLVMFormat;
+    } else if (isNaClBitcode(Buffer)) {
+      RealFormat = PNaClFormat;
+    } else {
+      RealFormat = LLVMFormat;
+      Assembly = true;
+    }
+  } else {
+    RealFormat = Format;
+    Assembly = !isBitcode(Buffer);
+  }
+
+  if (RealFormat == LLVMFormat) {
+    if (!Assembly) {
       std::string ErrMsg;
       ErrorOr<Module *> ModuleOrErr = getLazyBitcodeModule(Buffer, Context);
       if (error_code EC = ModuleOrErr.getError()) {
@@ -50,9 +65,8 @@ Module *llvm::getLazyIRModule(MemoryBuffer *Buffer, SMDiagnostic &Err,
     }
 
     return ParseAssembly(Buffer, 0, Err, Context);
-  } else if ((Format == PNaClFormat) &&
-      isNaClBitcode((const unsigned char *)Buffer->getBufferStart(),
-                    (const unsigned char *)Buffer->getBufferEnd())) {
+  } else if (RealFormat == PNaClFormat &&
+             (Format == AutoDetectFormat || isNaClBitcode(Buffer))) {
     std::string ErrMsg;
     Module *M = getNaClLazyBitcodeModule(Buffer, Context, &ErrMsg);
     if (M == 0)
@@ -84,9 +98,25 @@ Module *llvm::ParseIR(MemoryBuffer *Buffer, SMDiagnostic &Err,
                       LLVMContext &Context, FileFormat Format) {
   NamedRegionTimer T(TimeIRParsingName, TimeIRParsingGroupName,
                      TimePassesIsEnabled);
-  if (Format == LLVMFormat) {
-    if (isBitcode((const unsigned char *)Buffer->getBufferStart(),
-                  (const unsigned char *)Buffer->getBufferEnd())) {
+
+  FileFormat RealFormat;
+  bool Assembly = false;
+  if (Format == AutoDetectFormat) {
+    if (isBitcode(Buffer)) {
+      RealFormat = LLVMFormat;
+    } else if (isNaClBitcode(Buffer)) {
+      RealFormat = PNaClFormat;
+    } else {
+      RealFormat = LLVMFormat;
+      Assembly = true;
+    }
+  } else {
+    RealFormat = Format;
+    Assembly = !isBitcode(Buffer);
+  }
+
+  if (RealFormat == LLVMFormat) {
+    if (!Assembly) {
       ErrorOr<Module *> ModuleOrErr = parseBitcodeFile(Buffer, Context);
       Module *M = 0;
       if (error_code EC = ModuleOrErr.getError())
@@ -100,9 +130,8 @@ Module *llvm::ParseIR(MemoryBuffer *Buffer, SMDiagnostic &Err,
     }
 
     return ParseAssembly(Buffer, 0, Err, Context);
-  } else if ((Format == PNaClFormat) &&
-      isNaClBitcode((const unsigned char *)Buffer->getBufferStart(),
-                    (const unsigned char *)Buffer->getBufferEnd())) {
+  } else if (RealFormat == PNaClFormat &&
+             (Format == AutoDetectFormat || isNaClBitcode(Buffer))) {
     std::string ErrMsg;
     Module *M = NaClParseBitcodeFile(Buffer, Context, &ErrMsg);
     if (M == 0)
@@ -129,6 +158,24 @@ Module *llvm::ParseIRFile(const std::string &Filename, SMDiagnostic &Err,
 
   return ParseIR(File.release(), Err, Context, Format);
 }
+
+/// isBitcode - Return true if the given bytes are the magic bytes for
+/// LLVM IR bitcode, either with or without a wrapper. Does not take ownership
+/// of Buffer. Placed here so tools don't need to depend on extra components.
+bool llvm::isBitcode(const MemoryBuffer *Buffer) {
+  return isBitcodeWrapper((const unsigned char *)Buffer->getBufferStart(),
+                          (const unsigned char *)Buffer->getBufferEnd()) ||
+    isRawBitcode((const unsigned char *)Buffer->getBufferStart(),
+                 (const unsigned char *)Buffer->getBufferEnd());
+}
+/// isNaClBitcode - Return true if the given bytes are the magic bytes for
+/// PNaCl bitcode wire format. Does not take ownership of Buffer. Placed here so
+/// tools don't need to depend on extra components.
+bool llvm::isNaClBitcode(const MemoryBuffer *Buffer) {
+  return isNaClBitcode((const unsigned char *)Buffer->getBufferStart(),
+                       (const unsigned char *)Buffer->getBufferEnd());
+}
+
 
 //===----------------------------------------------------------------------===//
 // C API.

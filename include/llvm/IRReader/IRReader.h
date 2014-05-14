@@ -30,37 +30,40 @@ enum FileFormat {
   // LLVM IR source or bitcode file (as appropriate).
   LLVMFormat,
   // PNaCl bitcode file.
-  PNaClFormat
+  PNaClFormat,
+  // Autodetect file format.
+  AutoDetectFormat
 };
 
 /// If the given MemoryBuffer holds a bitcode image, return a Module for it
 /// which does lazy deserialization of function bodies.  Otherwise, attempt to
 /// parse it as LLVM Assembly and return a fully populated Module. This
 /// function *always* takes ownership of the given MemoryBuffer.
+/// If Format is null, autodetect format.
 Module *getLazyIRModule(MemoryBuffer *Buffer, SMDiagnostic &Err,
-                        LLVMContext &Context, FileFormat Format = LLVMFormat);
+                        LLVMContext &Context, FileFormat Format = AutoDetectFormat);
 
 /// If the given file holds a bitcode image, return a Module
 /// for it which does lazy deserialization of function bodies.  Otherwise,
 /// attempt to parse it as LLVM Assembly and return a fully populated
-/// Module.
+/// Module. If Format is null, autodetect format.
 Module *getLazyIRFileModule(const std::string &Filename, SMDiagnostic &Err,
-                            LLVMContext &Context, FileFormat Format = LLVMFormat);
+                            LLVMContext &Context, FileFormat Format = AutoDetectFormat);
 
 /// If the given MemoryBuffer holds a bitcode image, return a Module
 /// for it.  Otherwise, attempt to parse it as LLVM Assembly and return
 /// a Module for it. This function *always* takes ownership of the given
-/// MemoryBuffer.
+/// MemoryBuffer. If Format is null, autodetect format.
 Module *ParseIR(MemoryBuffer *Buffer,
                 SMDiagnostic &Err,
                 LLVMContext &Context,
-                FileFormat Format = LLVMFormat);
+                FileFormat Format = AutoDetectFormat);
 
 /// If the given file holds a bitcode image, return a Module for it.
 /// Otherwise, attempt to parse it as LLVM Assembly and return a Module
-/// for it.
+/// for it. If Format is null, autodetect format.
 Module *ParseIRFile(const std::string &Filename, SMDiagnostic &Err,
-                    LLVMContext &Context, FileFormat Format = LLVMFormat);
+                    LLVMContext &Context, FileFormat Format = AutoDetectFormat);
 
 }
 
