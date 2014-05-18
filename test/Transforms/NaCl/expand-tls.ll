@@ -73,7 +73,7 @@ define i32 @test_get_tp_tls_offset(i32 %tls_size) {
 }
 ; Uses of the intrinsic are replaced with uses of a regular function.
 ; CHECK-LABEL: define i32 @test_get_tp_tls_offset
-; CHECK: call i32 @__nacl_tp_tls_offset
+; CHECK: call i32 @nacl_tp_tls_offset
 ; NO_TLS-NOT: llvm.nacl.tp.tls.offset
 
 define i32 @test_get_tp_tdb_offset(i32 %tdb_size) {
@@ -82,5 +82,26 @@ define i32 @test_get_tp_tdb_offset(i32 %tdb_size) {
 }
 ; Uses of the intrinsic are replaced with uses of a regular function.
 ; CHECK-LABEL: define i32 @test_get_tp_tdb_offset
-; CHECK: call i32 @__nacl_tp_tdb_offset
+; CHECK: call i32 @nacl_tp_tdb_offset
+; NO_TLS-NOT: llvm.nacl.tp.tdb.offset
+
+declare i32 @__nacl_tp_tls_offset(i32)
+declare i32 @__nacl_tp_tdb_offset(i32)
+
+define i32 @test_get_tp_tls_offset2(i32 %tls_size) {
+  %offset = call i32 @__nacl_tp_tls_offset(i32 %tls_size)
+  ret i32 %offset
+}
+; Uses of the intrinsic are replaced with uses of a regular function.
+; CHECK-LABEL: define i32 @test_get_tp_tls_offset
+; CHECK: call i32 @nacl_tp_tls_offset
+; NO_TLS-NOT: llvm.nacl.tp.tls.offset
+
+define i32 @test_get_tp_tdb_offset2(i32 %tdb_size) {
+  %offset = call i32 @__nacl_tp_tdb_offset(i32 %tdb_size)
+  ret i32 %offset
+}
+; Uses of the intrinsic are replaced with uses of a regular function.
+; CHECK-LABEL: define i32 @test_get_tp_tdb_offset
+; CHECK: call i32 @nacl_tp_tdb_offset
 ; NO_TLS-NOT: llvm.nacl.tp.tdb.offset

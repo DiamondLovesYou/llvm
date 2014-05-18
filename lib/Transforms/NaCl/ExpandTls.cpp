@@ -269,6 +269,13 @@ static void rewriteTlsVars(Module &M, std::vector<VarInfo> *TlsVars,
   }
 }
 
+static void replaceFunctionWith(Module& M, const StringRef Name, Function* With) {
+  if (Function *F = M.getFunction(Name)) {
+    F->replaceAllUsesWith(With);
+    F->eraseFromParent();
+  }
+}
+
 // Provide fixed definitions for PNaCl's TLS layout intrinsics.  We
 // adopt the x86-style layout: ExpandTls will output a program that
 // uses the x86-style layout wherever it runs.  This overrides any
@@ -287,7 +294,10 @@ static void defineTlsLayoutIntrinsics(Module &M) {
   //     return 0;
   //   }
   // This means the thread pointer points to the TDB.
-  StringRef TdbName = "__nacl_tp_tdb_offset";
+  // Also note that we can't prefix '__' to the function name;
+  // during translation, because crtbegin.o also defines this symbol, users will
+  // get a multiply-defined symbol error.
+  StringRef TdbName = "nacl_tp_tdb_offset";
   NewFunc = M.getFunction(TdbName);
   if(NewFunc != NULL) {
     if(NewFunc->getFunctionType() != FuncType) {
@@ -305,17 +315,18 @@ static void defineTlsLayoutIntrinsics(Module &M) {
     ReturnInst::Create(M.getContext(),
                        ConstantInt::get(M.getContext(), APInt(32, 0)), BB);
   }
-  if (Function *Intrinsic = M.getFunction("llvm.nacl.tp.tdb.offset")) {
-    Intrinsic->replaceAllUsesWith(NewFunc);
-    Intrinsic->eraseFromParent();
-  }
+  replaceFunctionWith(M, "llvm.nacl.tp.tdb.offset", NewFunc);
+  replaceFunctionWith(M, "__nacl_tp_tdb_offset", NewFunc);
 
   // Define the intrinsic as follows:
   //   uint32_t __nacl_tp_tls_offset(uint32_t tls_size) {
   //     return -tls_size;
   //   }
   // This means the TLS variables are stored below the thread pointer.
-  StringRef TlsName = "__nacl_tp_tls_offset";
+  // Also note that we can't prefix '__' to the function name;
+  // during translation, because crtbegin.o also defines this symbol, users will
+  // get a multiply-defined symbol error.
+  StringRef TlsName = "nacl_tp_tls_offset";
   NewFunc = M.getFunction(TlsName);
   if(NewFunc != NULL) {
     if(NewFunc->getFunctionType() != FuncType) {
@@ -335,10 +346,8 @@ static void defineTlsLayoutIntrinsics(Module &M) {
     Value *Result = BinaryOperator::CreateNeg(Arg, "result", BB);
     ReturnInst::Create(M.getContext(), Result, BB);
   }
-  if (Function *Intrinsic = M.getFunction("llvm.nacl.tp.tls.offset")) {
-    Intrinsic->replaceAllUsesWith(NewFunc);
-    Intrinsic->eraseFromParent();
-  }
+  replaceFunctionWith(M, "llvm.nacl.tp.tls.offset", NewFunc);
+  replaceFunctionWith(M, "__nacl_tp_tls_offset", NewFunc);
 }
 
 bool ExpandTls::runOnModule(Module &M) {
