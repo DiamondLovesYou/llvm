@@ -55,3 +55,16 @@ Function *llvm::RecreateFunction(Function *Func, FunctionType *NewType) {
                                Func->getFunctionType()->getPointerTo()));
   return NewFunc;
 }
+
+void llvm::setGlobalVariableValue(Module &M, const char *Name,
+                                  Constant *Value) {
+  GlobalVariable *Var = M.getNamedGlobal(Name);
+  if (Var != nullptr) {
+    if (Var->hasInitializer()) {
+      report_fatal_error(std::string("Variable ") + Name +
+                         " already has an initializer");
+    }
+    Var->replaceAllUsesWith(ConstantExpr::getBitCast(Value, Var->getType()));
+    Var->eraseFromParent();
+  }
+}

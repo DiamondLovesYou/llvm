@@ -268,14 +268,6 @@ static void defineArray(Module *M, const char *Name,
     OldGlobal->replaceAllUsesWith(ConstantExpr::getBitCast(
                                       NewGlobal, OldGlobal->getType()));
     OldGlobal->eraseFromParent();
-  } else {
-    if (Elements.size() > 0) {
-      // This warning could happen for a program that does not link
-      // against the C++ runtime libraries.  Such a program might
-      // contain "invoke" instructions but never throw any C++
-      // exceptions.
-      errs() << "Warning: Variable " << Name << " not referenced\n";
-    }
   }
 }
 

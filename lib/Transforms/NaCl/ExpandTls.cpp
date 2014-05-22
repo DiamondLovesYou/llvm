@@ -72,24 +72,6 @@ INITIALIZE_PASS(ExpandTls, "nacl-expand-tls",
                 "Expand out TLS variables and fix TLS variable layout",
                 false, false)
 
-static void setGlobalVariableValue(Module &M, const char *Name,
-                                   Constant *Value) {
-  GlobalVariable *Var = M.getNamedGlobal(Name);
-  if (!Var) {
-    // This warning can happen in a program that does not use a libc
-    // and does not initialize TLS variables.  Such a program might be
-    // linked with "-nostdlib".
-    errs() << "Warning: Variable " << Name << " not referenced\n";
-  } else {
-    if (Var->hasInitializer()) {
-      report_fatal_error(std::string("Variable ") + Name +
-                         " already has an initializer");
-    }
-    Var->replaceAllUsesWith(ConstantExpr::getBitCast(Value, Var->getType()));
-    Var->eraseFromParent();
-  }
-}
-
 // Insert alignment padding into the TLS template.
 static void padToAlignment(PassState *State,
                            std::vector<Type*> *FieldTypes,

@@ -96,6 +96,8 @@ static void CopyLoadOrStoreAttrs(InstType *Dest, InstType *Src) {
 // different.
 Function *RecreateFunction(Function *Func, FunctionType *NewType);
 
+void setGlobalVariableValue(Module &M, const char *Name, Constant *Value);
+
 }
 
 #endif
