@@ -267,11 +267,13 @@ static void rewriteTlsVars(Module &M, std::vector<VarInfo> *TlsVars,
        VarInfo != TlsVars->end();
        ++VarInfo) {
     GlobalVariable *Var = VarInfo->TlsVar;
-    Var->removeDeadConstantUsers();
     VarStack.emplace(Var);
     while (!VarStack.empty()) {
       if(VarStack.top()->use_empty()) {
         VarStack.pop();
+        if(!VarStack.empty()) {
+          VarStack.top()->removeDeadConstantUsers();
+        }
         continue;
       }
       Use *U = &*VarStack.top()->use_begin();
