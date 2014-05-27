@@ -1,5 +1,6 @@
 ; RUN: opt < %s -nacl-expand-tls -S | FileCheck %s
 
+target datalayout = "p:32:32:32"
 
 @tvar = thread_local global i32 123
 
@@ -16,11 +17,14 @@ return:
 }
 ; The TLS access gets pushed back into the PHI node's incoming block,
 ; which might be suboptimal but works in all cases.
-; CHECK: define i32* @get_tvar(i1 %cmp) {
-; CHECK: entry:
-; CHECK: %field = getelementptr %tls_struct* %tls_struct, i32 -1, i32 0, i32 0
-; CHECK: else:
-; CHECK: return:
+; CHECK-LABEL: define i32* @get_tvar(i1 %cmp) {
+; CHECK-LABEL: entry:
+; CHECK-NEXT: %tls_raw = call i8* @llvm.nacl.read.tp()
+; CHECK-NEXT: %gep_int = ptrtoint i8* %tls_raw to i32
+; CHECK-NEXT: %gep = add i32 %gep_int, -4
+; CHECK-NEXT: %field = inttoptr i32 %gep to i32*
+; CHECK-LABEL: else:
+; CHECK-LABEL: return:
 ; CHECK: %result = phi i32* [ %field, %entry ], [ null, %else ]
 
 
@@ -38,12 +42,18 @@ exit:
   %result = phi i32* [ @tvar, %iftrue ], [ @tvar, %iffalse ]
   ret i32* %result
 }
-; CHECK: define i32* @tls_phi_twice(i1 %arg) {
-; CHECK: iftrue:
-; CHECK: %field{{.*}} = getelementptr %tls_struct* %tls_struct{{.*}}, i32 -1, i32 0, i32 0
-; CHECK: iffalse:
-; CHECK: %field{{.*}} = getelementptr %tls_struct* %tls_struct{{.*}}, i32 -1, i32 0, i32 0
-; CHECK: exit:
+; CHECK-LABEL: define i32* @tls_phi_twice(i1 %arg) {
+; CHECK-LABEL: iftrue:
+; CHECK-NEXT: %tls_raw{{.*}} = call i8* @llvm.nacl.read.tp()
+; CHECK-NEXT: %gep_int{{.*}} = ptrtoint i8* %tls_raw{{.*}} to i32
+; CHECK-NEXT: %gep{{.*}} = add i32 %gep_int{{.*}}, -4
+; CHECK-NEXT: %field{{.*}} = inttoptr i32 %gep{{.*}} to i32*
+; CHECK-LABEL: iffalse:
+; CHECK-NEXT: %tls_raw{{.*}} = call i8* @llvm.nacl.read.tp()
+; CHECK-NEXT: %gep_int{{.*}} = ptrtoint i8* %tls_raw{{.*}} to i32
+; CHECK-NEXT: %gep{{.*}} = add i32 %gep_int{{.*}}, -4
+; CHECK-NEXT: %field{{.*}} = inttoptr i32 %gep{{.*}} to i32*
+; CHECK-LABEL: exit:
 ; CHECK: %result = phi i32* [ %field{{.*}}, %iftrue ], [ %field{{.*}}, %iffalse ]
 
 
@@ -56,5 +66,11 @@ done:
   %result = phi i32* [ @tvar, %entry ], [ @tvar, %entry ]
   ret i32* %result
 }
-; CHECK: define i32* @tls_phi_multiple_entry(i1 %arg) {
-; CHECK: %result = phi i32* [ %field, %entry ], [ %field, %entry ]
+; CHECK-LABEL: define i32* @tls_phi_multiple_entry(i1 %arg) {
+; CHECK-LABEL: entry:
+; CHECK-NEXT: %tls_raw = call i8* @llvm.nacl.read.tp()
+; CHECK-NEXT: %gep_int = ptrtoint i8* %tls_raw to i32
+; CHECK-NEXT: %gep = add i32 %gep_int, -4
+; CHECK-NEXT: %field = inttoptr i32 %gep to i32*
+; CHECK-LABEL: done:
+; CHECK-NEXT: %result = phi i32* [ %field, %entry ], [ %field, %entry ]

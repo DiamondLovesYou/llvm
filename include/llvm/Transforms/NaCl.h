@@ -23,6 +23,7 @@ class Instruction;
 class ModulePass;
 class Use;
 class Value;
+class Constant;
 
 BasicBlockPass *createCombineVectorInstructionsPass();
 BasicBlockPass *createConstantInsertExtractElementIndexPass();

@@ -213,22 +213,83 @@ static PointerType *buildTlsTemplate(Module &M, std::vector<VarInfo> *TlsVars) {
   return TemplatePtrType;
 }
 
+// From ExpandGetElementPtr.cpp:
+void FlushOffset(Instruction **Ptr, uint64_t *CurrentOffset,
+		 Instruction *InsertPt, Type *PtrType);
+Value *CastToPtrSize(Value *Val, Instruction *InsertPt, Type *PtrType);
+
+static Instruction* ExpandGEP(Value* PtrOperand,
+                              Type* CurrentTy,
+                              SmallVectorImpl<int>& Indices,
+                              Instruction* InsertPt,
+                              Module* M,
+                              const DataLayout *DL,
+                              Type *PtrType,
+                              Type *FinalType) {
+  Instruction *Ptr = new PtrToIntInst(PtrOperand, PtrType,
+                                      "gep_int", InsertPt);
+  CopyDebug(Ptr, InsertPt);
+
+  // We do some limited constant folding ourselves.  An alternative
+  // would be to generate verbose, unfolded output (e.g. multiple
+  // adds; adds of zero constants) and use a later pass such as
+  // "-instcombine" to clean that up.  However, "-instcombine" can
+  // reintroduce GetElementPtr instructions.
+  uint64_t CurrentOffset = 0;
+
+  for (auto Op = Indices.begin();
+       Op != Indices.end();
+       ++Op) {
+    if (StructType *StTy = dyn_cast<StructType>(CurrentTy)) {
+      CurrentTy = StTy->getElementType(*Op);
+      CurrentOffset += DL->getStructLayout(StTy)->getElementOffset(*Op);
+    } else {
+      CurrentTy = cast<SequentialType>(CurrentTy)->getElementType();
+      const uint64_t ElementSize = DL->getTypeAllocSize(CurrentTy);
+      CurrentOffset += (*Op) * ElementSize;
+    }
+  }
+  FlushOffset(&Ptr, &CurrentOffset, InsertPt, PtrType);
+
+  Instruction *Result = new IntToPtrInst(Ptr, FinalType, "", InsertPt);
+  CopyDebug(Result, InsertPt);
+  return Result;
+}
+
 static void rewriteTlsVars(Module &M, std::vector<VarInfo> *TlsVars,
                            PointerType *TemplatePtrType) {
   // Set up the intrinsic that reads the thread pointer.
   Function *ReadTpFunc = Intrinsic::getDeclaration(&M, Intrinsic::nacl_read_tp);
-
+  const DataLayout DL(&M);
+  Type *PtrType = M.getDataLayout()->getIntPtrType(M.getContext());
+  std::stack<Constant*> VarStack;
   for (std::vector<VarInfo>::iterator VarInfo = TlsVars->begin();
        VarInfo != TlsVars->end();
        ++VarInfo) {
     GlobalVariable *Var = VarInfo->TlsVar;
-    while (!Var->use_empty()) {
-      Use *U = &*Var->use_begin();
+    Var->removeDeadConstantUsers();
+    VarStack.emplace(Var);
+    while (!VarStack.empty()) {
+      if(VarStack.top()->use_empty()) {
+        VarStack.pop();
+        continue;
+      }
+      Use *U = &*VarStack.top()->use_begin();
+      if(ConstantExpr* CE = dyn_cast<ConstantExpr>(U->getUser())) {
+        if(CE->getOpcode() == Instruction::BitCast) {
+          // When modules are merged, LLVM can create bitcasts for globals of
+          // differing types.
+          VarStack.push(CE);
+          continue;
+        }
+        // else trip assert below.
+      }
+      assert(isa<Instruction>(U->getUser()));
+
       Instruction *InsertPt = PhiSafeInsertPt(U);
-      Value *RawThreadPtr = CallInst::Create(ReadTpFunc, "tls_raw", InsertPt);
-      Value *TypedThreadPtr = new BitCastInst(RawThreadPtr, TemplatePtrType,
-                                              "tls_struct", InsertPt);
-      SmallVector<Value*, 3> Indexes;
+      Instruction *RawThreadPtr = CallInst::Create(ReadTpFunc, "tls_raw", InsertPt);
+
+      SmallVector<int, 3> Indexes;
       // We use -1 because we use the x86-style TLS layout in which
       // the TLS data is stored at addresses below the thread pointer.
       // This is largely because a check in nacl_irt_thread_create()
@@ -237,14 +298,18 @@ static void rewriteTlsVars(Module &M, std::vector<VarInfo> *TlsVars,
       // TODO(mseaborn): I intend to remove that check because it is
       // non-portable.  In the mean time, we want PNaCl pexes to work
       // in older Chromium releases when translated to nexes.
-      Indexes.push_back(ConstantInt::get(
-          M.getContext(), APInt(32, -1)));
-      Indexes.push_back(ConstantInt::get(
-          M.getContext(), APInt(32, VarInfo->IsBss ? 1 : 0)));
-      Indexes.push_back(ConstantInt::get(
-          M.getContext(), APInt(32, VarInfo->TemplateIndex)));
-      Value *TlsField = GetElementPtrInst::Create(TypedThreadPtr, Indexes,
-                                                  "field", InsertPt);
+      Indexes.push_back(-1);
+      Indexes.push_back(VarInfo->IsBss ? 1 : 0);
+      Indexes.push_back(VarInfo->TemplateIndex);
+      Value *TlsField = ExpandGEP(RawThreadPtr,
+                                  TemplatePtrType,
+                                  Indexes,
+                                  InsertPt,
+                                  &M,
+                                  M.getDataLayout(),
+                                  PtrType,
+                                  Var->getType());
+      TlsField->setName("field");
       PhiSafeReplaceUses(U, TlsField);
     }
     VarInfo->TlsVar->eraseFromParent();
@@ -333,9 +398,6 @@ static void defineTlsLayoutIntrinsics(Module &M) {
 }
 
 bool ExpandTls::runOnModule(Module &M) {
-  ModulePass *Pass = createExpandTlsConstantExprPass();
-  Pass->runOnModule(M);
-  delete Pass;
 
   std::vector<VarInfo> TlsVars;
   PointerType *TemplatePtrType = buildTlsTemplate(M, &TlsVars);
