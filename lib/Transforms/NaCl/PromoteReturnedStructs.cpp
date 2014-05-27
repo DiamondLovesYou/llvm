@@ -571,6 +571,15 @@ bool PromoteReturnedStructs::runOnModule(Module& M) {
       promoteGlobal(i);
     }
   }
+
+  // Ensure alias types are up-to-date:
+  for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
+       I != E; ++I) {
+    auto* Aliasee = promoteConstant(I->getAliasee());
+    I->mutateType(Aliasee->getType());
+    I->setAliasee(Aliasee);
+  }
+
   // remove dangling consts:
   {
     const const_iterator end = m_consts.end();

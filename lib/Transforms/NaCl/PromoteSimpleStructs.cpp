@@ -1450,6 +1450,14 @@ bool PromoteSimpleStructs::runOnModule(Module& M) {
     ++PromotedGlobals;
   }
   
+  // Ensure alias types are up-to-date:
+  for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
+       I != E; ++I) {
+    auto* Aliasee = getPromotedConstant(I->getAliasee());
+    I->mutateType(Aliasee->getType());
+    I->setAliasee(Aliasee);
+  }
+
   // remove dangling consts:
   {
     const const_iterator end = m_promoted_consts.end();
