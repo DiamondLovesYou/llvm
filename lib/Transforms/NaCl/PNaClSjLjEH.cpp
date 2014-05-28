@@ -375,9 +375,7 @@ void FuncRewriter::expandResumeInst(ResumeInst *Resume) {
   if (!EHResumeFunc) {
     EHResumeFunc = Func->getParent()->getFunction("__pnacl_eh_resume");
     if (!EHResumeFunc) {
-      // FIXME: This doesn't filter catches. Rust code can't catch, so this
-      // shouldn't be a problem in the short term.
-
+      // Create a declaration of __pnacl_eh_resume:
       Module* M = Func->getParent();
       LLVMContext& C = M->getContext();
       EHResumeFunc =
@@ -385,37 +383,10 @@ void FuncRewriter::expandResumeInst(ResumeInst *Resume) {
                                            std::vector<Type*>(1,
                                                               Type::getInt8Ty(C)->getPointerTo()),
                                            false),
-                         GlobalValue::InternalLinkage,
+                         GlobalValue::ExternalLinkage,
                          "__pnacl_eh_resume");
       M->getFunctionList().insertAfter(Func, EHResumeFunc);
-
       EHResumeFunc->setDoesNotReturn();
-
-      BasicBlock* Entry = BasicBlock::Create(C, "entry", EHResumeFunc);
-
-      IntegerType* I32 = Type::getInt32Ty(M->getContext());
-
-      Value* EHStackTlsVar = M->getGlobalVariable("__pnacl_eh_stack");
-      if(EHStackTlsVar->getType() != ExceptionFrameTy->getPointerTo()->getPointerTo())
-        EHStackTlsVar =
-          new BitCastInst(EHStackTlsVar,
-                          ExceptionFrameTy->getPointerTo()->getPointerTo(),
-                          "pnacl_eh_stack");
-
-      LoadInst* EHStackTlsVarLoad = new LoadInst(EHStackTlsVar, "", Entry);
-
-      Value *JmpBufIndexes[] = { ConstantInt::get(I32, 0),
-                                 ConstantInt::get(I32, 0),
-                                 ConstantInt::get(I32, 0) };
-      Instruction* FrameJmpBufPtr = GetElementPtrInst::Create(EHStackTlsVarLoad,
-                                                              JmpBufIndexes,
-                                                              "",
-                                                              Entry);
-
-      Function* LongJmp = Intrinsic::getDeclaration(M, Intrinsic::nacl_longjmp);
-      Value* LongJmpArgs[] = { FrameJmpBufPtr, ConstantInt::get(I32, 1) };
-      CallInst::Create(LongJmp, LongJmpArgs, "", Entry);
-      new UnreachableInst(C, Entry);
     }
   }
 

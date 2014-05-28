@@ -24,18 +24,17 @@ lpad:
 }
 ; CHECK-LABEL: define i32 @invoke_test
 ; CHECK-NEXT: %invoke_result_ptr = alloca i32
-; CHECK-NEXT: %pnacl_eh_stack = bitcast i8** @__pnacl_eh_stack to %ExceptionFrame**
 ; CHECK-NEXT: %invoke_frame = alloca %ExceptionFrame, align 8
 ; CHECK-NEXT: %invoke_jmp_buf = getelementptr %ExceptionFrame* %invoke_frame, i32 0, i32 0, i32 0
 ; CHECK-NEXT: %invoke_next = getelementptr %ExceptionFrame* %invoke_frame, i32 0, i32 1
 ; CHECK-NEXT: %exc_info_ptr = getelementptr %ExceptionFrame* %invoke_frame, i32 0, i32 2
-; CHECK-NEXT: %old_eh_stack = load %ExceptionFrame** %pnacl_eh_stack
+; CHECK-NEXT: %old_eh_stack = load %ExceptionFrame** bitcast (i8** @__pnacl_eh_stack to %ExceptionFrame**)
 ; CHECK-NEXT: store %ExceptionFrame* %old_eh_stack, %ExceptionFrame** %invoke_next
 ; CHECK-NEXT: store i32 {{[0-9]+}}, i32* %exc_info_ptr
-; CHECK-NEXT: store %ExceptionFrame* %invoke_frame, %ExceptionFrame** %pnacl_eh_stack
+; CHECK-NEXT: store %ExceptionFrame* %invoke_frame, %ExceptionFrame** bitcast (i8** @__pnacl_eh_stack to %ExceptionFrame**)
 ; CHECK-NEXT: %invoke_is_exc = call i32 @invoke_test_setjmp_caller(i64 %arg, i32 (i64)* @external_func, i8* %invoke_jmp_buf, i32* %invoke_result_ptr)
 ; CHECK-NEXT: %result = load i32* %invoke_result_ptr
-; CHECK-NEXT: store %ExceptionFrame* %old_eh_stack, %ExceptionFrame** %pnacl_eh_stack
+; CHECK-NEXT: store %ExceptionFrame* %old_eh_stack, %ExceptionFrame** bitcast (i8** @__pnacl_eh_stack to %ExceptionFrame**)
 ; CHECK-NEXT: %invoke_sj_is_zero = icmp eq i32 %invoke_is_exc, 0
 ; CHECK-NEXT: br i1 %invoke_sj_is_zero, label %cont, label %lpad
 ; CHECK-LABEL: cont:
