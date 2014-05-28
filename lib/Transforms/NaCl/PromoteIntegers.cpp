@@ -587,7 +587,6 @@ static void convertInstruction(Instruction *Inst, ConversionState &State) {
     State.recordConverted(Phi, NewPhi);
   } else if (SwitchInst *Switch = dyn_cast<SwitchInst>(Inst)) {
     Value *Condition = getClearConverted(Switch->getCondition(), Switch, State);
-    Type* ConditionType = Condition->getType();
     SwitchInst *NewInst = SwitchInst::Create(
         Condition,
         Switch->getDefaultDest(),
