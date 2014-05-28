@@ -137,7 +137,8 @@ static void ExpandConstant(DataLayout *DL, Constant *Val,
       *ResultOffset += DL->getIndexedOffset(CE->getOperand(0)->getType(),
                                             Indexes);
     } else if (CE->getOpcode() == Instruction::BitCast ||
-               CE->getOpcode() == Instruction::IntToPtr) {
+               CE->getOpcode() == Instruction::IntToPtr ||
+               CE->getOpcode() == Instruction::Add) {
       // Nothing more to do.
     } else if (CE->getOpcode() == Instruction::PtrToInt) {
       if (Val->getType()->getIntegerBitWidth() < DL->getPointerSizeInBits()) {
