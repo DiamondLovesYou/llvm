@@ -544,9 +544,11 @@ bool ReplaceVectorsWithArrays::runOnModule(Module& M) {
   // Ensure alias types are up-to-date:
   for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
        I != E; ++I) {
-    auto* Aliasee = promoteConstant(I->getAliasee());
+    auto* Aliasee = I->getAliasee();
+    if(auto* A = dyn_cast<GlobalVariable>(Aliasee)) {
+      promoteGlobal(A);
+    }
     I->mutateType(Aliasee->getType());
-    I->setAliasee(Aliasee);
   }
 
   // remove dangling consts:

@@ -14,6 +14,7 @@
 #include "Mips.h"
 #include "MipsRegisterInfo.h"
 #include "MipsSubtarget.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCFixedLenDisassembler.h"
 #include "llvm/MC/MCInst.h"
@@ -24,6 +25,8 @@
 
 using namespace llvm;
 
+#define DEBUG_TYPE "mips-disassembler"
+
 typedef MCDisassembler::DecodeStatus DecodeStatus;
 
 namespace {
@@ -33,19 +36,16 @@ class MipsDisassemblerBase : public MCDisassembler {
 public:
   /// Constructor     - Initializes the disassembler.
   ///
-  MipsDisassemblerBase(const MCSubtargetInfo &STI, const MCRegisterInfo *Info,
+  MipsDisassemblerBase(const MCSubtargetInfo &STI, MCContext &Ctx,
                        bool bigEndian) :
-    MCDisassembler(STI), RegInfo(Info),
+    MCDisassembler(STI, Ctx),
     IsN64(STI.getFeatureBits() & Mips::FeatureN64), isBigEndian(bigEndian) {}
 
   virtual ~MipsDisassemblerBase() {}
 
-  const MCRegisterInfo *getRegInfo() const { return RegInfo.get(); }
-
   bool isN64() const { return IsN64; }
 
 private:
-  OwningPtr<const MCRegisterInfo> RegInfo;
   bool IsN64;
 protected:
   bool isBigEndian;
@@ -57,19 +57,19 @@ class MipsDisassembler : public MipsDisassemblerBase {
 public:
   /// Constructor     - Initializes the disassembler.
   ///
-  MipsDisassembler(const MCSubtargetInfo &STI, const MCRegisterInfo *Info,
+  MipsDisassembler(const MCSubtargetInfo &STI, MCContext &Ctx,
                    bool bigEndian) :
-    MipsDisassemblerBase(STI, Info, bigEndian) {
+    MipsDisassemblerBase(STI, Ctx, bigEndian) {
       IsMicroMips = STI.getFeatureBits() & Mips::FeatureMicroMips;
     }
 
   /// getInstruction - See MCDisassembler.
-  virtual DecodeStatus getInstruction(MCInst &instr,
-                                      uint64_t &size,
-                                      const MemoryObject &region,
-                                      uint64_t address,
-                                      raw_ostream &vStream,
-                                      raw_ostream &cStream) const;
+  DecodeStatus getInstruction(MCInst &instr,
+                              uint64_t &size,
+                              const MemoryObject &region,
+                              uint64_t address,
+                              raw_ostream &vStream,
+                              raw_ostream &cStream) const override;
 };
 
 
@@ -78,17 +78,17 @@ class Mips64Disassembler : public MipsDisassemblerBase {
 public:
   /// Constructor     - Initializes the disassembler.
   ///
-  Mips64Disassembler(const MCSubtargetInfo &STI, const MCRegisterInfo *Info,
+  Mips64Disassembler(const MCSubtargetInfo &STI, MCContext &Ctx,
                      bool bigEndian) :
-    MipsDisassemblerBase(STI, Info, bigEndian) {}
+    MipsDisassemblerBase(STI, Ctx, bigEndian) {}
 
   /// getInstruction - See MCDisassembler.
-  virtual DecodeStatus getInstruction(MCInst &instr,
-                                      uint64_t &size,
-                                      const MemoryObject &region,
-                                      uint64_t address,
-                                      raw_ostream &vStream,
-                                      raw_ostream &cStream) const;
+  DecodeStatus getInstruction(MCInst &instr,
+                              uint64_t &size,
+                              const MemoryObject &region,
+                              uint64_t address,
+                              raw_ostream &vStream,
+                              raw_ostream &cStream) const override;
 };
 
 } // end anonymous namespace
@@ -205,6 +205,16 @@ static DecodeStatus DecodeJumpTarget(MCInst &Inst,
                                      uint64_t Address,
                                      const void *Decoder);
 
+static DecodeStatus DecodeBranchTarget21(MCInst &Inst,
+                                         unsigned Offset,
+                                         uint64_t Address,
+                                         const void *Decoder);
+
+static DecodeStatus DecodeBranchTarget26(MCInst &Inst,
+                                         unsigned Offset,
+                                         uint64_t Address,
+                                         const void *Decoder);
+
 // DecodeBranchTargetMM - Decode microMIPS branch offset, which is
 // shifted left by 1 bit.
 static DecodeStatus DecodeBranchTargetMM(MCInst &Inst,
@@ -263,6 +273,9 @@ static DecodeStatus DecodeExtSize(MCInst &Inst,
                                   uint64_t Address,
                                   const void *Decoder);
 
+static DecodeStatus DecodeSimm19Lsl2(MCInst &Inst, unsigned Insn,
+                                     uint64_t Address, const void *Decoder);
+
 /// INSVE_[BHWD] have an implicit operand that the generated decoder doesn't
 /// handle.
 template <typename InsnType>
@@ -275,26 +288,30 @@ extern Target TheMipselTarget, TheMipsTarget, TheMips64Target,
 
 static MCDisassembler *createMipsDisassembler(
                        const Target &T,
-                       const MCSubtargetInfo &STI) {
-  return new MipsDisassembler(STI, T.createMCRegInfo(""), true);
+                       const MCSubtargetInfo &STI,
+                       MCContext &Ctx) {
+  return new MipsDisassembler(STI, Ctx, true);
 }
 
 static MCDisassembler *createMipselDisassembler(
                        const Target &T,
-                       const MCSubtargetInfo &STI) {
-  return new MipsDisassembler(STI, T.createMCRegInfo(""), false);
+                       const MCSubtargetInfo &STI,
+                       MCContext &Ctx) {
+  return new MipsDisassembler(STI, Ctx, false);
 }
 
 static MCDisassembler *createMips64Disassembler(
                        const Target &T,
-                       const MCSubtargetInfo &STI) {
-  return new Mips64Disassembler(STI, T.createMCRegInfo(""), true);
+                       const MCSubtargetInfo &STI,
+                       MCContext &Ctx) {
+  return new Mips64Disassembler(STI, Ctx, true);
 }
 
 static MCDisassembler *createMips64elDisassembler(
                        const Target &T,
-                       const MCSubtargetInfo &STI) {
-  return new Mips64Disassembler(STI, T.createMCRegInfo(""), false);
+                       const MCSubtargetInfo &STI,
+                       MCContext &Ctx) {
+  return new Mips64Disassembler(STI, Ctx, false);
 }
 
 extern "C" void LLVMInitializeMipsDisassembler() {
@@ -471,7 +488,8 @@ Mips64Disassembler::getInstruction(MCInst &instr,
 
 static unsigned getReg(const void *D, unsigned RC, unsigned RegNo) {
   const MipsDisassemblerBase *Dis = static_cast<const MipsDisassemblerBase*>(D);
-  return *(Dis->getRegInfo()->getRegClass(RC).begin() + RegNo);
+  const MCRegisterInfo *RegInfo = Dis->getContext().getRegisterInfo();
+  return *(RegInfo->getRegClass(RC).begin() + RegNo);
 }
 
 static DecodeStatus DecodeCPU16RegsRegisterClass(MCInst &Inst,
@@ -848,6 +866,26 @@ static DecodeStatus DecodeJumpTarget(MCInst &Inst,
   return MCDisassembler::Success;
 }
 
+static DecodeStatus DecodeBranchTarget21(MCInst &Inst,
+                                         unsigned Offset,
+                                         uint64_t Address,
+                                         const void *Decoder) {
+  int32_t BranchOffset = SignExtend32<21>(Offset) << 2;
+
+  Inst.addOperand(MCOperand::CreateImm(BranchOffset));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus DecodeBranchTarget26(MCInst &Inst,
+                                         unsigned Offset,
+                                         uint64_t Address,
+                                         const void *Decoder) {
+  int32_t BranchOffset = SignExtend32<26>(Offset) << 2;
+
+  Inst.addOperand(MCOperand::CreateImm(BranchOffset));
+  return MCDisassembler::Success;
+}
+
 static DecodeStatus DecodeBranchTargetMM(MCInst &Inst,
                                          unsigned Offset,
                                          uint64_t Address,
@@ -901,5 +939,11 @@ static DecodeStatus DecodeExtSize(MCInst &Inst,
                                   const void *Decoder) {
   int Size = (int) Insn  + 1;
   Inst.addOperand(MCOperand::CreateImm(SignExtend32<16>(Size)));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus DecodeSimm19Lsl2(MCInst &Inst, unsigned Insn,
+                                     uint64_t Address, const void *Decoder) {
+  Inst.addOperand(MCOperand::CreateImm(SignExtend32<19>(Insn) << 2));
   return MCDisassembler::Success;
 }

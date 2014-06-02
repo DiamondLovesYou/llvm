@@ -60,7 +60,7 @@ public:
   void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
                                             RegScavenger *RS) const override;
 
-  void adjustForSegmentedStacks(MachineFunction &MF) const;
+  void adjustForSegmentedStacks(MachineFunction &MF) const override;
   void adjustForSegmentedStacksThumb(MachineFunction &MF) const;
   void adjustForSegmentedStacksARM(MachineFunction &MF) const;
 

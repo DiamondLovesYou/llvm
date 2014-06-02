@@ -37,6 +37,7 @@
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/PassManager.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -214,7 +215,10 @@ static inline void addPass(PassManagerBase &PM, Pass *P) {
   PM.add(P);
 
   // If we are verifying all of the intermediate steps, add the verifier...
-  if (VerifyEach) PM.add(createVerifierPass());
+  if (VerifyEach) {
+    PM.add(createVerifierPass());
+    PM.add(createDebugInfoVerifierPass());
+  }
 }
 
 /// AddOptimizationPasses - This routine adds optimization passes
@@ -224,7 +228,8 @@ static inline void addPass(PassManagerBase &PM, Pass *P) {
 /// OptLevel - Optimization Level
 static void AddOptimizationPasses(PassManagerBase &MPM,FunctionPassManager &FPM,
                                   unsigned OptLevel, unsigned SizeLevel) {
-  FPM.add(createVerifierPass());                  // Verify that input is correct
+  FPM.add(createVerifierPass());          // Verify that input is correct
+  MPM.add(createDebugInfoVerifierPass()); // Verify that debug info is correct
 
   PassManagerBuilder Builder;
   Builder.OptLevel = OptLevel;
@@ -263,6 +268,9 @@ static void AddStandardCompilePasses(PassManagerBase &PM) {
   if (StripDebug)
     addPass(PM, createStripSymbolsPass(true));
 
+  // Verify debug info only after it's (possibly) stripped.
+  PM.add(createDebugInfoVerifierPass());
+
   if (DisableOptimizations) return;
 
   // -std-compile-opts adds the same module passes as -O3.
@@ -279,6 +287,9 @@ static void AddStandardLinkPasses(PassManagerBase &PM) {
   // If the -strip-debug command line option was specified, do it.
   if (StripDebug)
     addPass(PM, createStripSymbolsPass(true));
+
+  // Verify debug info only after it's (possibly) stripped.
+  PM.add(createDebugInfoVerifierPass());
 
   if (DisableOptimizations) return;
 
@@ -308,7 +319,7 @@ static TargetMachine* GetTargetMachine(Triple TheTriple) {
                                                          Error);
   // Some modules don't specify a triple, and this is okay.
   if (!TheTarget) {
-    return 0;
+    return nullptr;
   }
 
   // Package up features to be passed to target/subtarget
@@ -364,8 +375,9 @@ int main(int argc, char **argv) {
   initializeInstrumentation(Registry);
   initializeTarget(Registry);
   // For codegen passes, only passes that do IR to IR transformation are
-  // supported. For now, just add CodeGenPrepare.
+  // supported.
   initializeCodeGenPreparePass(Registry);
+  initializeAtomicExpandLoadLinkedPass(Registry);
 
 #ifdef LINK_POLLY_INTO_TOOLS
   polly::initializePollyPasses(Registry);
@@ -426,7 +438,7 @@ int main(int argc, char **argv) {
   std::unique_ptr<Module> M;
   M.reset(ParseIRFile(InputFilename, Err, Context));
 
-  if (M.get() == 0) {
+  if (!M.get()) {
     Err.print(argv[0], errs());
     return 1;
   }
@@ -506,7 +518,7 @@ int main(int argc, char **argv) {
     Passes.add(new DataLayoutPass(M.get()));
 
   Triple ModuleTriple(M->getTargetTriple());
-  TargetMachine *Machine = 0;
+  TargetMachine *Machine = nullptr;
   if (ModuleTriple.getArch())
     Machine = GetTargetMachine(Triple(ModuleTriple));
   std::unique_ptr<TargetMachine> TM(Machine);
@@ -602,7 +614,7 @@ int main(int argc, char **argv) {
     }
 
     const PassInfo *PassInf = PassList[i];
-    Pass *P = 0;
+    Pass *P = nullptr;
     if (PassInf->getTargetMachineCtor())
       P = PassInf->getTargetMachineCtor()(TM.get());
     else if (PassInf->getNormalCtor())
@@ -682,8 +694,10 @@ int main(int argc, char **argv) {
     PNaClABISimplifyAddPostOptPasses(Passes);
 
   // Check that the module is well formed on completion of optimization
-  if (!NoVerify && !VerifyEach)
+  if (!NoVerify && !VerifyEach) {
     Passes.add(createVerifierPass());
+    Passes.add(createDebugInfoVerifierPass());
+  }
 
   // Write bitcode or assembly to the output as the last step...
   if (!NoOutput && !AnalyzeOnly) {

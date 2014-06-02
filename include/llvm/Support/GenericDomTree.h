@@ -453,6 +453,21 @@ public:
     DomTreeNodeBase<NodeT> *NodeA = getNode(A);
     DomTreeNodeBase<NodeT> *NodeB = getNode(B);
 
+    // If we have DFS info, then we can avoid all allocations by just querying
+    // it from each IDom. Note that because we call 'dominates' twice above, we
+    // expect to call through this code at most 16 times in a row without
+    // building valid DFS information. This is important as below is a *very*
+    // slow tree walk.
+    if (DFSInfoValid) {
+      DomTreeNodeBase<NodeT> *IDomA = NodeA->getIDom();
+      while (IDomA) {
+        if (NodeB->DominatedBy(IDomA))
+          return IDomA->getBlock();
+        IDomA = IDomA->getIDom();
+      }
+      return nullptr;
+    }
+
     // Collect NodeA dominators set.
     SmallPtrSet<DomTreeNodeBase<NodeT>*, 16> NodeADoms;
     NodeADoms.insert(NodeA);
@@ -489,7 +504,7 @@ public:
   /// creates a new node as a child of DomBB dominator node,linking it into
   /// the children list of the immediate dominator.
   DomTreeNodeBase<NodeT> *addNewBlock(NodeT *BB, NodeT *DomBB) {
-    assert(getNode(BB) == 0 && "Block already in dominator tree!");
+    assert(getNode(BB) == nullptr && "Block already in dominator tree!");
     DomTreeNodeBase<NodeT> *IDomNode = getNode(DomBB);
     assert(IDomNode && "Not immediate dominator specified for block!");
     DFSInfoValid = false;
@@ -636,7 +651,7 @@ protected:
     // immediate dominator.
     NodeT *IDom = getIDom(BB);
 
-    assert(IDom || this->DomTreeNodes[NULL]);
+    assert(IDom || this->DomTreeNodes[nullptr]);
     DomTreeNodeBase<NodeT> *IDomNode = getNodeForBlock(IDom);
 
     // Add a new tree node for this NodeT, and link it as a child of

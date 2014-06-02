@@ -19,6 +19,7 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Value.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -1480,7 +1481,7 @@ bool NaClDisParser::ParseBlock(unsigned BlockID) {
 // if successful, true otherwise.
 static bool DisassembleBitcode() {
   // Open the bitcode file and put into a buffer.
-  OwningPtr<MemoryBuffer> MemBuf;
+  std::unique_ptr<MemoryBuffer> MemBuf;
   if (error_code ec =
       MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), MemBuf)) {
     errs() << "Error reading '" << InputFilename << "': "

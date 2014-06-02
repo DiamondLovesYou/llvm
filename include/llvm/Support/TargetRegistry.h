@@ -45,14 +45,14 @@ namespace llvm {
   class MCSymbolizer;
   class MCRelocationInfo;
   class MCTargetAsmParser;
+  class MCTargetOptions;
   class TargetMachine;
   class TargetOptions;
   class raw_ostream;
   class formatted_raw_ostream;
 
   MCStreamer *createAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
-                                bool isVerboseAsm, bool useCFI,
-                                bool useDwarfDirectory,
+                                bool isVerboseAsm, bool useDwarfDirectory,
                                 MCInstPrinter *InstPrint, MCCodeEmitter *CE,
                                 MCAsmBackend *TAB, bool ShowInst);
 
@@ -104,11 +104,14 @@ namespace llvm {
                                                 const MCRegisterInfo &MRI,
                                                 StringRef TT,
                                                 StringRef CPU);
-    typedef MCTargetAsmParser *(*MCAsmParserCtorTy)(MCSubtargetInfo &STI,
-                                                    MCAsmParser &P,
-                                                    const MCInstrInfo &MII);
+    typedef MCTargetAsmParser *(*MCAsmParserCtorTy)(
+        MCSubtargetInfo &STI,
+        MCAsmParser &P,
+        const MCInstrInfo &MII,
+        const MCTargetOptions &Options);
     typedef MCDisassembler *(*MCDisassemblerCtorTy)(const Target &T,
-                                                    const MCSubtargetInfo &STI);
+                                                    const MCSubtargetInfo &STI,
+                                                    MCContext &Ctx);
     typedef MCInstPrinter *(*MCInstPrinterCtorTy)(const Target &T,
                                                   unsigned SyntaxVariant,
                                                   const MCAsmInfo &MAI,
@@ -131,7 +134,6 @@ namespace llvm {
     typedef MCStreamer *(*AsmStreamerCtorTy)(MCContext &Ctx,
                                              formatted_raw_ostream &OS,
                                              bool isVerboseAsm,
-                                             bool useCFI,
                                              bool useDwarfDirectory,
                                              MCInstPrinter *InstPrint,
                                              MCCodeEmitter *CE,
@@ -361,12 +363,14 @@ namespace llvm {
     ///
     /// \param Parser The target independent parser implementation to use for
     /// parsing and lexing.
-    MCTargetAsmParser *createMCAsmParser(MCSubtargetInfo &STI,
-                                         MCAsmParser &Parser,
-                                         const MCInstrInfo &MII) const {
+    MCTargetAsmParser *createMCAsmParser(
+        MCSubtargetInfo &STI,
+        MCAsmParser &Parser,
+        const MCInstrInfo &MII,
+        const MCTargetOptions &Options) const {
       if (!MCAsmParserCtorFn)
         return nullptr;
-      return MCAsmParserCtorFn(STI, Parser, MII);
+      return MCAsmParserCtorFn(STI, Parser, MII, Options);
     }
 
     /// createAsmPrinter - Create a target specific assembly printer pass.  This
@@ -377,10 +381,11 @@ namespace llvm {
       return AsmPrinterCtorFn(TM, Streamer);
     }
 
-    MCDisassembler *createMCDisassembler(const MCSubtargetInfo &STI) const {
+    MCDisassembler *createMCDisassembler(const MCSubtargetInfo &STI,
+                                         MCContext &Ctx) const {
       if (!MCDisassemblerCtorFn)
         return nullptr;
-      return MCDisassemblerCtorFn(*this, STI);
+      return MCDisassemblerCtorFn(*this, STI, Ctx);
     }
 
     MCInstPrinter *createMCInstPrinter(unsigned SyntaxVariant,
@@ -430,19 +435,16 @@ namespace llvm {
     MCStreamer *createAsmStreamer(MCContext &Ctx,
                                   formatted_raw_ostream &OS,
                                   bool isVerboseAsm,
-                                  bool useCFI,
                                   bool useDwarfDirectory,
                                   MCInstPrinter *InstPrint,
                                   MCCodeEmitter *CE,
                                   MCAsmBackend *TAB,
                                   bool ShowInst) const {
       if (AsmStreamerCtorFn)
-        return AsmStreamerCtorFn(Ctx, OS, isVerboseAsm, useCFI,
-                                 useDwarfDirectory, InstPrint, CE, TAB,
-                                 ShowInst);
-      return llvm::createAsmStreamer(Ctx, OS, isVerboseAsm, useCFI,
-                                     useDwarfDirectory, InstPrint, CE, TAB,
-                                     ShowInst);
+        return AsmStreamerCtorFn(Ctx, OS, isVerboseAsm, useDwarfDirectory,
+                                 InstPrint, CE, TAB, ShowInst);
+      return llvm::createAsmStreamer(Ctx, OS, isVerboseAsm, useDwarfDirectory,
+                                     InstPrint, CE, TAB, ShowInst);
     }
 
     /// createMCRelocationInfo - Create a target specific MCRelocationInfo.
@@ -1097,8 +1099,9 @@ namespace llvm {
 
   private:
     static MCTargetAsmParser *Allocator(MCSubtargetInfo &STI, MCAsmParser &P,
-                                        const MCInstrInfo &MII) {
-      return new MCAsmParserImpl(STI, P, MII);
+                                        const MCInstrInfo &MII,
+                                        const MCTargetOptions &Options) {
+      return new MCAsmParserImpl(STI, P, MII, Options);
     }
   };
 

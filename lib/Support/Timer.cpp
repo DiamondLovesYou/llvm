@@ -15,6 +15,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Mutex.h"
@@ -100,7 +101,7 @@ static TimerGroup *getDefaultTimerGroup() {
 //===----------------------------------------------------------------------===//
 
 void Timer::init(StringRef N) {
-  assert(TG == 0 && "Timer already initialized");
+  assert(!TG && "Timer already initialized");
   Name.assign(N.begin(), N.end());
   Started = false;
   TG = getDefaultTimerGroup();
@@ -108,7 +109,7 @@ void Timer::init(StringRef N) {
 }
 
 void Timer::init(StringRef N, TimerGroup &tg) {
-  assert(TG == 0 && "Timer already initialized");
+  assert(!TG && "Timer already initialized");
   Name.assign(N.begin(), N.end());
   Started = false;
   TG = &tg;

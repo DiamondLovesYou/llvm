@@ -23,6 +23,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <vector>
+#include <stack>
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Constants.h"

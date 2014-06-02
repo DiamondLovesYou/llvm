@@ -9,7 +9,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "arm64-branch-relax"
 #include "ARM64.h"
 #include "ARM64InstrInfo.h"
 #include "ARM64MachineFunctionInfo.h"
@@ -23,6 +22,8 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
 using namespace llvm;
+
+#define DEBUG_TYPE "arm64-branch-relax"
 
 static cl::opt<bool>
 BranchRelaxation("arm64-branch-relax", cl::Hidden, cl::init(true),
@@ -81,10 +82,10 @@ class ARM64BranchRelaxation : public MachineFunctionPass {
   bool relaxBranchInstructions();
   void scanFunction();
   MachineBasicBlock *splitBlockBeforeInstr(MachineInstr *MI);
-  void adjustBlockOffsets(MachineBasicBlock *BB);
+  void adjustBlockOffsets(MachineBasicBlock &MBB);
   bool isBlockInRange(MachineInstr *MI, MachineBasicBlock *BB, unsigned Disp);
   bool fixupConditionalBranch(MachineInstr *MI);
-  void computeBlockSize(MachineBasicBlock *MBB);
+  void computeBlockSize(const MachineBasicBlock &MBB);
   unsigned getInstrOffset(MachineInstr *MI) const;
   void dumpBBs();
   void verify();
@@ -93,9 +94,9 @@ public:
   static char ID;
   ARM64BranchRelaxation() : MachineFunctionPass(ID) {}
 
-  virtual bool runOnMachineFunction(MachineFunction &MF);
+  bool runOnMachineFunction(MachineFunction &MF) override;
 
-  virtual const char *getPassName() const {
+  const char *getPassName() const override {
     return "ARM64 branch relaxation pass";
   }
 };
@@ -106,11 +107,9 @@ char ARM64BranchRelaxation::ID = 0;
 void ARM64BranchRelaxation::verify() {
 #ifndef NDEBUG
   unsigned PrevNum = MF->begin()->getNumber();
-  for (MachineFunction::iterator MBBI = MF->begin(), E = MF->end(); MBBI != E;
-       ++MBBI) {
-    MachineBasicBlock *MBB = MBBI;
-    unsigned Align = MBB->getAlignment();
-    unsigned Num = MBB->getNumber();
+  for (MachineBasicBlock &MBB : *MF) {
+    unsigned Align = MBB.getAlignment();
+    unsigned Num = MBB.getNumber();
     assert(BlockInfo[Num].Offset % (1u << Align) == 0);
     assert(!Num || BlockInfo[PrevNum].postOffset() <= BlockInfo[Num].Offset);
     PrevNum = Num;
@@ -133,14 +132,12 @@ static bool BBHasFallthrough(MachineBasicBlock *MBB) {
   // Get the next machine basic block in the function.
   MachineFunction::iterator MBBI = MBB;
   // Can't fall off end of function.
-  if (std::next(MBBI) == MBB->getParent()->end())
+  MachineBasicBlock *NextBB = std::next(MBBI);
+  if (NextBB == MBB->getParent()->end())
     return false;
 
-  MachineBasicBlock *NextBB = std::next(MBBI);
-  for (MachineBasicBlock::succ_iterator I = MBB->succ_begin(),
-                                        E = MBB->succ_end();
-       I != E; ++I)
-    if (*I == NextBB)
+  for (MachineBasicBlock *S : MBB->successors()) 
+    if (S == NextBB)
       return true;
 
   return false;
@@ -156,21 +153,20 @@ void ARM64BranchRelaxation::scanFunction() {
   // has any inline assembly in it. If so, we have to be conservative about
   // alignment assumptions, as we don't know for sure the size of any
   // instructions in the inline assembly.
-  for (MachineFunction::iterator I = MF->begin(), E = MF->end(); I != E; ++I)
-    computeBlockSize(I);
+  for (MachineBasicBlock &MBB : *MF)
+    computeBlockSize(MBB);
 
   // Compute block offsets and known bits.
-  adjustBlockOffsets(MF->begin());
+  adjustBlockOffsets(*MF->begin());
 }
 
 /// computeBlockSize - Compute the size for MBB.
 /// This function updates BlockInfo directly.
-void ARM64BranchRelaxation::computeBlockSize(MachineBasicBlock *MBB) {
+void ARM64BranchRelaxation::computeBlockSize(const MachineBasicBlock &MBB) {
   unsigned Size = 0;
-  for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end(); I != E;
-       ++I)
-    Size += TII->GetInstSizeInBytes(I);
-  BlockInfo[MBB->getNumber()].Size = Size;
+  for (const MachineInstr &MI : MBB)
+    Size += TII->GetInstSizeInBytes(&MI);
+  BlockInfo[MBB.getNumber()].Size = Size;
 }
 
 /// getInstrOffset - Return the current offset of the specified machine
@@ -192,17 +188,15 @@ unsigned ARM64BranchRelaxation::getInstrOffset(MachineInstr *MI) const {
   return Offset;
 }
 
-void ARM64BranchRelaxation::adjustBlockOffsets(MachineBasicBlock *Start) {
-  unsigned PrevNum = Start->getNumber();
-  MachineFunction::iterator MBBI = Start, E = MF->end();
-  for (++MBBI; MBBI != E; ++MBBI) {
-    MachineBasicBlock *MBB = MBBI;
-    unsigned Num = MBB->getNumber();
+void ARM64BranchRelaxation::adjustBlockOffsets(MachineBasicBlock &Start) {
+  unsigned PrevNum = Start.getNumber();
+  for (auto &MBB : make_range(MachineFunction::iterator(Start), MF->end())) {
+    unsigned Num = MBB.getNumber();
     if (!Num) // block zero is never changed from offset zero.
       continue;
     // Get the offset and known bits at the end of the layout predecessor.
     // Include the alignment of the current block.
-    unsigned LogAlign = MBBI->getAlignment();
+    unsigned LogAlign = MBB.getAlignment();
     BlockInfo[Num].Offset = BlockInfo[PrevNum].postOffset(LogAlign);
     PrevNum = Num;
   }
@@ -242,14 +236,14 @@ ARM64BranchRelaxation::splitBlockBeforeInstr(MachineInstr *MI) {
   // the new jump we added.  (It should be possible to do this without
   // recounting everything, but it's very confusing, and this is rarely
   // executed.)
-  computeBlockSize(OrigBB);
+  computeBlockSize(*OrigBB);
 
   // Figure out how large the NewMBB is.  As the second half of the original
   // block, it may contain a tablejump.
-  computeBlockSize(NewBB);
+  computeBlockSize(*NewBB);
 
   // All BBOffsets following these blocks must be modified.
-  adjustBlockOffsets(OrigBB);
+  adjustBlockOffsets(*OrigBB);
 
   ++NumSplit;
 
@@ -281,8 +275,10 @@ static bool isConditionalBranch(unsigned Opc) {
   switch (Opc) {
   default:
     return false;
-  case ARM64::TBZ:
-  case ARM64::TBNZ:
+  case ARM64::TBZW:
+  case ARM64::TBNZW:
+  case ARM64::TBZX:
+  case ARM64::TBNZX:
   case ARM64::CBZW:
   case ARM64::CBNZW:
   case ARM64::CBZX:
@@ -296,8 +292,10 @@ static MachineBasicBlock *getDestBlock(MachineInstr *MI) {
   switch (MI->getOpcode()) {
   default:
     assert(0 && "unexpected opcode!");
-  case ARM64::TBZ:
-  case ARM64::TBNZ:
+  case ARM64::TBZW:
+  case ARM64::TBNZW:
+  case ARM64::TBZX:
+  case ARM64::TBNZX:
     return MI->getOperand(2).getMBB();
   case ARM64::CBZW:
   case ARM64::CBNZW:
@@ -312,8 +310,10 @@ static unsigned getOppositeConditionOpcode(unsigned Opc) {
   switch (Opc) {
   default:
     assert(0 && "unexpected opcode!");
-  case ARM64::TBNZ:    return ARM64::TBZ;
-  case ARM64::TBZ:     return ARM64::TBNZ;
+  case ARM64::TBNZW:   return ARM64::TBZW;
+  case ARM64::TBNZX:   return ARM64::TBZX;
+  case ARM64::TBZW:    return ARM64::TBNZW;
+  case ARM64::TBZX:    return ARM64::TBNZX;
   case ARM64::CBNZW:   return ARM64::CBZW;
   case ARM64::CBNZX:   return ARM64::CBZX;
   case ARM64::CBZW:    return ARM64::CBNZW;
@@ -326,8 +326,10 @@ static unsigned getBranchDisplacementBits(unsigned Opc) {
   switch (Opc) {
   default:
     assert(0 && "unexpected opcode!");
-  case ARM64::TBNZ:
-  case ARM64::TBZ:
+  case ARM64::TBNZW:
+  case ARM64::TBZW:
+  case ARM64::TBNZX:
+  case ARM64::TBZX:
     return TBZDisplacementBits;
   case ARM64::CBNZW:
   case ARM64::CBZW:
@@ -385,7 +387,8 @@ bool ARM64BranchRelaxation::fixupConditionalBranch(MachineInstr *MI) {
                      << *BMI);
         BMI->getOperand(0).setMBB(DestBB);
         unsigned OpNum =
-            (MI->getOpcode() == ARM64::TBZ || MI->getOpcode() == ARM64::TBNZ)
+            (MI->getOpcode() == ARM64::TBZW || MI->getOpcode() == ARM64::TBNZW ||
+             MI->getOpcode() == ARM64::TBZX || MI->getOpcode() == ARM64::TBNZX)
                 ? 2
                 : 1;
         MI->getOperand(OpNum).setMBB(NewDest);
@@ -426,7 +429,8 @@ bool ARM64BranchRelaxation::fixupConditionalBranch(MachineInstr *MI) {
   MachineInstrBuilder MIB = BuildMI(
       MBB, DebugLoc(), TII->get(getOppositeConditionOpcode(MI->getOpcode())))
                                 .addOperand(MI->getOperand(0));
-  if (MI->getOpcode() == ARM64::TBZ || MI->getOpcode() == ARM64::TBNZ)
+  if (MI->getOpcode() == ARM64::TBZW || MI->getOpcode() == ARM64::TBNZW ||
+      MI->getOpcode() == ARM64::TBZX || MI->getOpcode() == ARM64::TBNZX)
     MIB.addOperand(MI->getOperand(1));
   if (MI->getOpcode() == ARM64::Bcc)
     invertBccCondition(MIB);
@@ -440,7 +444,7 @@ bool ARM64BranchRelaxation::fixupConditionalBranch(MachineInstr *MI) {
   MI->eraseFromParent();
 
   // Finally, keep the block offsets up to date.
-  adjustBlockOffsets(MBB);
+  adjustBlockOffsets(*MBB);
   return true;
 }
 

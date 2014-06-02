@@ -21,6 +21,7 @@
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCTargetOptions.h"
 #include "llvm/MC/SectionKind.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Target/TargetLowering.h"
@@ -32,7 +33,6 @@ using namespace llvm;
 //
 
 namespace llvm {
-  bool HasDivModLibcall;
   bool AsmVerbosityDefault(false);
 }
 
@@ -53,12 +53,7 @@ TargetMachine::TargetMachine(const Target &T,
                              StringRef TT, StringRef CPU, StringRef FS,
                              const TargetOptions &Options)
   : TheTarget(T), TargetTriple(TT), TargetCPU(CPU), TargetFS(FS),
-    CodeGenInfo(0), AsmInfo(0),
-    MCRelaxAll(false),
-    MCNoExecStack(false),
-    MCSaveTempLabels(false),
-    MCUseCFI(true),
-    MCUseDwarfDirectory(false),
+    CodeGenInfo(nullptr), AsmInfo(nullptr),
     RequireStructuredCFG(false),
     Options(Options) {
 }
@@ -89,6 +84,8 @@ void TargetMachine::resetTargetOptions(const MachineFunction *MF) const {
   RESET_OPTION(NoNaNsFPMath, "no-nans-fp-math");
   RESET_OPTION(UseSoftFloat, "use-soft-float");
   RESET_OPTION(DisableTailCalls, "disable-tail-calls");
+
+  TO.MCOptions.SanitizeAddress = F->hasFnAttribute(Attribute::SanitizeAddress);
 }
 
 /// getRelocationModel - Returns the code generation relocation model. The
@@ -129,7 +126,7 @@ TLSModel::Model TargetMachine::getTLSModel(const GlobalValue *GV) const {
   // If GV is an alias then use the aliasee for determining
   // thread-localness.
   if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
-    GV = GA->getAliasedGlobal();
+    GV = GA->getAliasee();
   const GlobalVariable *Var = cast<GlobalVariable>(GV);
 
   bool isLocal = Var->hasLocalLinkage();

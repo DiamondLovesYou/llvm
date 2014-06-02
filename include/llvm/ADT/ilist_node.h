@@ -60,7 +60,7 @@ public:
 
     // Check for sentinel.
     if (!Prev->getNext())
-      return 0;
+      return nullptr;
 
     return Prev;
   }
@@ -71,7 +71,7 @@ public:
 
     // Check for sentinel.
     if (!Prev->getNext())
-      return 0;
+      return nullptr;
 
     return Prev;
   }
@@ -82,7 +82,7 @@ public:
 
     // Check for sentinel.
     if (!Next->getNext())
-      return 0;
+      return nullptr;
 
     return Next;
   }
@@ -93,7 +93,7 @@ public:
 
     // Check for sentinel.
     if (!Next->getNext())
-      return 0;
+      return nullptr;
 
     return Next;
   }

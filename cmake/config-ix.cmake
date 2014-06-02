@@ -486,7 +486,7 @@ set(LLVM_PREFIX ${CMAKE_INSTALL_PREFIX})
 
 if (LLVM_ENABLE_DOXYGEN)
   message(STATUS "Doxygen enabled.")
-  find_package(Doxygen)
+  find_package(Doxygen REQUIRED)
 
   if (DOXYGEN_FOUND)
     # If we find doxygen and we want to enable doxygen by default create a
@@ -504,4 +504,14 @@ if (LLVM_ENABLE_DOXYGEN)
   endif()
 else()
   message(STATUS "Doxygen disabled.")
+endif()
+
+if (LLVM_ENABLE_SPHINX)
+  message(STATUS "Sphinx enabled.")
+  find_package(Sphinx REQUIRED)
+  if (LLVM_BUILD_DOCS)
+    add_custom_target(sphinx ALL)
+  endif()
+else()
+  message(STATUS "Sphinx disabled.")
 endif()

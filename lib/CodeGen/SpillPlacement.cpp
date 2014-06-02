@@ -27,7 +27,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "spillplacement"
 #include "SpillPlacement.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/CodeGen/EdgeBundles.h"
@@ -40,6 +39,8 @@
 #include "llvm/Support/Format.h"
 
 using namespace llvm;
+
+#define DEBUG_TYPE "spillplacement"
 
 char SpillPlacement::ID = 0;
 INITIALIZE_PASS_BEGIN(SpillPlacement, "spill-code-placement",
@@ -218,7 +219,7 @@ bool SpillPlacement::runOnMachineFunction(MachineFunction &mf) {
 
 void SpillPlacement::releaseMemory() {
   delete[] nodes;
-  nodes = 0;
+  nodes = nullptr;
 }
 
 /// activate - mark node n as active if it wasn't already.
@@ -393,6 +394,6 @@ SpillPlacement::finish() {
       ActiveNodes->reset(n);
       Perfect = false;
     }
-  ActiveNodes = 0;
+  ActiveNodes = nullptr;
   return Perfect;
 }

@@ -19,6 +19,7 @@
 // Bitcode Writer to generate the corresponding LLVM bitcode file.
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/DataStream.h"
 #include "llvm/Support/ManagedStatic.h"

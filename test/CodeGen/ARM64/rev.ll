@@ -36,10 +36,13 @@ entry:
   ret i32 %tmp14
 }
 
+; 64-bit REV16 is *not* a swap then a 16-bit rotation:
+;   01234567 ->(bswap) 76543210 ->(rotr) 10765432
+;   01234567 ->(rev16) 10325476
 define i64 @test_rev16_x(i64 %a) nounwind {
 entry:
 ; CHECK-LABEL: test_rev16_x:
-; CHECK: rev16 x0, x0
+; CHECK-NOT: rev16 x0, x0
   %0 = tail call i64 @llvm.bswap.i64(i64 %a)
   %1 = lshr i64 %0, 16
   %2 = shl i64 %0, 48
@@ -219,3 +222,14 @@ entry:
   ret void
 }
 
+
+define <4 x i32> @test_vrev32_bswap(<4 x i32> %source) nounwind {
+; CHECK-LABEL: test_vrev32_bswap:
+; CHECK: rev32.16b
+; CHECK-NOT: rev
+; CHECK: ret
+  %bswap = call <4 x i32> @llvm.bswap.v4i32(<4 x i32> %source)
+  ret <4 x i32> %bswap
+}
+
+declare <4 x i32> @llvm.bswap.v4i32(<4 x i32>) nounwind readnone

@@ -115,6 +115,17 @@ void *LLVMContext::getDiagnosticContext() const {
   return pImpl->DiagnosticContext;
 }
 
+void LLVMContext::setYieldCallback(YieldCallbackTy Callback, void *OpaqueHandle)
+{
+  pImpl->YieldCallback = Callback;
+  pImpl->YieldOpaqueHandle = OpaqueHandle;
+}
+
+void LLVMContext::yield() {
+  if (pImpl->YieldCallback)
+    pImpl->YieldCallback(this, pImpl->YieldOpaqueHandle);
+}
+
 void LLVMContext::emitError(const Twine &ErrorStr) {
   diagnose(DiagnosticInfoInlineAsm(ErrorStr));
 }
@@ -130,6 +141,16 @@ void LLVMContext::diagnose(const DiagnosticInfo &DI) {
     pImpl->DiagnosticHandler(DI, pImpl->DiagnosticContext);
     return;
   }
+
+  // Optimization remarks are selective. They need to check whether
+  // the regexp pattern, passed via -pass-remarks, matches the name
+  // of the pass that is emitting the diagnostic. If there is no match,
+  // ignore the diagnostic and return.
+  if (DI.getKind() == llvm::DK_OptimizationRemark &&
+      !pImpl->optimizationRemarksEnabledFor(
+          cast<DiagnosticInfoOptimizationRemark>(DI).getPassName()))
+    return;
+
   // Otherwise, print the message with a prefix based on the severity.
   std::string MsgStorage;
   raw_string_ostream Stream(MsgStorage);
@@ -160,8 +181,7 @@ void LLVMContext::emitOptimizationRemark(const char *PassName,
                                          const Function &Fn,
                                          const DebugLoc &DLoc,
                                          const Twine &Msg) {
-  if (pImpl->optimizationRemarksEnabledFor(PassName))
-    diagnose(DiagnosticInfoOptimizationRemark(PassName, Fn, DLoc, Msg));
+  diagnose(DiagnosticInfoOptimizationRemark(PassName, Fn, DLoc, Msg));
 }
 
 //===----------------------------------------------------------------------===//

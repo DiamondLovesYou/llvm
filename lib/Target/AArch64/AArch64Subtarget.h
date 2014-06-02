@@ -16,11 +16,10 @@
 
 #include "llvm/ADT/Triple.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
+#include <string>
 
 #define GET_SUBTARGETINFO_HEADER
 #include "AArch64GenSubtargetInfo.inc"
-
-#include <string>
 
 namespace llvm {
 class StringRef;
@@ -37,6 +36,11 @@ protected:
   bool HasFPARMv8;
   bool HasNEON;
   bool HasCrypto;
+
+  /// AllowsUnalignedMem - If true, the subtarget allows unaligned memory
+  /// accesses for some types.  For details, see
+  /// AArch64TargetLowering::allowsUnalignedMemoryAccesses().
+  bool AllowsUnalignedMem;
 
   /// TargetTriple - What processor and OS we're targeting.
   Triple TargetTriple;
@@ -57,7 +61,7 @@ public:
   AArch64Subtarget(StringRef TT, StringRef CPU, StringRef FS,
                    bool LittleEndian);
 
-  virtual bool enableMachineScheduler() const {
+  bool enableMachineScheduler() const override {
     return true;
   }
 
@@ -76,6 +80,8 @@ public:
   bool hasFPARMv8() const { return HasFPARMv8; }
   bool hasNEON() const { return HasNEON; }
   bool hasCrypto() const { return HasCrypto; }
+
+  bool allowsUnalignedMem() const { return AllowsUnalignedMem; }
 
   bool isLittle() const { return IsLittleEndian; }
 

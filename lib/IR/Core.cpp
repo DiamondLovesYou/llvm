@@ -17,6 +17,8 @@
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -28,6 +30,7 @@
 #include "llvm/PassManager.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Threading.h"
@@ -38,6 +41,8 @@
 #include <cstring>
 
 using namespace llvm;
+
+#define DEBUG_TYPE "ir"
 
 void llvm::initializeCore(PassRegistry &Registry) {
   initializeDominatorTreeWrapperPassPass(Registry);
@@ -76,6 +81,21 @@ LLVMContextRef LLVMGetGlobalContext() {
   return wrap(&getGlobalContext());
 }
 
+void LLVMContextSetDiagnosticHandler(LLVMContextRef C,
+                                     LLVMDiagnosticHandler Handler,
+                                     void *DiagnosticContext) {
+  unwrap(C)->setDiagnosticHandler(
+      LLVM_EXTENSION reinterpret_cast<LLVMContext::DiagnosticHandlerTy>(Handler),
+      DiagnosticContext);
+}
+
+void LLVMContextSetYieldCallback(LLVMContextRef C, LLVMYieldCallback Callback,
+                                 void *OpaqueHandle) {
+  auto YieldCallback =
+    LLVM_EXTENSION reinterpret_cast<LLVMContext::YieldCallbackTy>(Callback);
+  unwrap(C)->setYieldCallback(YieldCallback, OpaqueHandle);
+}
+
 void LLVMContextDispose(LLVMContextRef C) {
   delete unwrap(C);
 }
@@ -88,6 +108,40 @@ unsigned LLVMGetMDKindIDInContext(LLVMContextRef C, const char* Name,
 unsigned LLVMGetMDKindID(const char* Name, unsigned SLen) {
   return LLVMGetMDKindIDInContext(LLVMGetGlobalContext(), Name, SLen);
 }
+
+char *LLVMGetDiagInfoDescription(LLVMDiagnosticInfoRef DI) {
+  std::string MsgStorage;
+  raw_string_ostream Stream(MsgStorage);
+  DiagnosticPrinterRawOStream DP(Stream);
+
+  unwrap(DI)->print(DP);
+  Stream.flush();
+
+  return LLVMCreateMessage(MsgStorage.c_str());
+}
+
+LLVMDiagnosticSeverity LLVMGetDiagInfoSeverity(LLVMDiagnosticInfoRef DI){
+    LLVMDiagnosticSeverity severity;
+
+    switch(unwrap(DI)->getSeverity()) {
+    default:
+      severity = LLVMDSError;
+      break;
+    case DS_Warning:
+      severity = LLVMDSWarning;
+      break;
+    case DS_Remark:
+      severity = LLVMDSRemark;
+      break;
+    case DS_Note:
+      severity = LLVMDSNote;
+      break;
+    }
+
+    return severity;
+}
+
+
 
 
 /*===-- Operations on modules ---------------------------------------------===*/
@@ -1236,7 +1290,7 @@ const char *LLVMGetSection(LLVMValueRef Global) {
 }
 
 void LLVMSetSection(LLVMValueRef Global, const char *Section) {
-  unwrap<GlobalValue>(Global)->setSection(Section);
+  unwrap<GlobalObject>(Global)->setSection(Section);
 }
 
 LLVMVisibility LLVMGetVisibility(LLVMValueRef Global) {
@@ -1286,7 +1340,7 @@ unsigned LLVMGetAlignment(LLVMValueRef V) {
 
 void LLVMSetAlignment(LLVMValueRef V, unsigned Bytes) {
   Value *P = unwrap<Value>(V);
-  if (GlobalValue *GV = dyn_cast<GlobalValue>(P))
+  if (GlobalObject *GV = dyn_cast<GlobalObject>(P))
     GV->setAlignment(Bytes);
   else if (AllocaInst *AI = dyn_cast<AllocaInst>(P))
     AI->setAlignment(Bytes);
@@ -1434,8 +1488,10 @@ void LLVMSetExternallyInitialized(LLVMValueRef GlobalVar, LLVMBool IsExtInit) {
 
 LLVMValueRef LLVMAddAlias(LLVMModuleRef M, LLVMTypeRef Ty, LLVMValueRef Aliasee,
                           const char *Name) {
-  return wrap(new GlobalAlias(unwrap(Ty), GlobalValue::ExternalLinkage, Name,
-                              unwrap<Constant>(Aliasee), unwrap (M)));
+  auto *PTy = cast<PointerType>(unwrap(Ty));
+  return wrap(GlobalAlias::create(PTy->getElementType(), PTy->getAddressSpace(),
+                                  GlobalValue::ExternalLinkage, Name,
+                                  unwrap<GlobalObject>(Aliasee), unwrap(M)));
 }
 
 /*--.. Operations on functions .............................................--*/

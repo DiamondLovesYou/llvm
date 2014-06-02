@@ -67,6 +67,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/system_error.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/FileSystem.h"
 #include <set>
 #include <map>
 
@@ -124,7 +125,7 @@ static void PrintAbbrev(raw_ostream &Stream,
 }
 
 // Reads the input file into the given buffer.
-static bool ReadAndBuffer(OwningPtr<MemoryBuffer> &MemBuf) {
+static bool ReadAndBuffer(std::unique_ptr<MemoryBuffer> &MemBuf) {
   if (error_code ec =
       MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), MemBuf)) {
     return Error("Error reading '" + InputFilename + "': " + ec.message());
@@ -1239,7 +1240,7 @@ static void DisplayAbbreviationFrequencies(
 
 // Read in bitcode, analyze data, and figure out set of abbreviations
 // to use, from memory buffer MemBuf containing the input bitcode file.
-static bool AnalyzeBitcode(OwningPtr<MemoryBuffer> &MemBuf,
+static bool AnalyzeBitcode(std::unique_ptr<MemoryBuffer> &MemBuf,
                            BlockAbbrevsMapType &BlockAbbrevsMap) {
   // TODO(kschimpf): The current code only extracts abbreviations
   // defined in the bitcode file. This code needs to be updated to
@@ -1440,7 +1441,7 @@ bool NaClBitcodeCopyParser::ParseBlock(unsigned BlockID) {
 // Read in bitcode, and write it back out using the abbreviations in
 // BlockAbbrevsMap, from memory buffer MemBuf containing the input
 // bitcode file.
-static bool CopyBitcode(OwningPtr<MemoryBuffer> &MemBuf,
+static bool CopyBitcode(std::unique_ptr<MemoryBuffer> &MemBuf,
                         BlockAbbrevsMapType &BlockAbbrevsMap) {
 
   const unsigned char *BufPtr = (const unsigned char *)MemBuf->getBufferStart();
@@ -1508,7 +1509,7 @@ int main(int argc, char **argv) {
   llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
   cl::ParseCommandLineOptions(argc, argv, "pnacl-bccompress file analyzer\n");
 
-  OwningPtr<MemoryBuffer> MemBuf;
+  std::unique_ptr<MemoryBuffer> MemBuf;
   if (ReadAndBuffer(MemBuf)) return 1;
   BlockAbbrevsMapType BlockAbbrevsMap;
   if (AnalyzeBitcode(MemBuf, BlockAbbrevsMap)) return 1;

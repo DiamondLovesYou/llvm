@@ -1,12 +1,11 @@
-; RUN: llc < %s -march=arm64 -verify-machineinstrs | FileCheck %s
+; RUN: llc < %s -march=arm64 -verify-machineinstrs -mcpu=cyclone | FileCheck %s
 
 define i32 @val_compare_and_swap(i32* %p) {
 ; CHECK-LABEL: val_compare_and_swap:
 ; CHECK: orr    [[NEWVAL_REG:w[0-9]+]], wzr, #0x4
-; CHECK: orr    [[OLDVAL_REG:w[0-9]+]], wzr, #0x7
 ; CHECK: [[LABEL:.?LBB[0-9]+_[0-9]+]]:
 ; CHECK: ldaxr   [[RESULT:w[0-9]+]], [x0]
-; CHECK: cmp    [[RESULT]], [[OLDVAL_REG]]
+; CHECK: cmp    [[RESULT]], #7
 ; CHECK: b.ne   [[LABEL2:.?LBB[0-9]+_[0-9]+]]
 ; CHECK: stxr   [[SCRATCH_REG:w[0-9]+]], [[NEWVAL_REG]], [x0]
 ; CHECK: cbnz   [[SCRATCH_REG]], [[LABEL]]
@@ -17,14 +16,13 @@ define i32 @val_compare_and_swap(i32* %p) {
 
 define i64 @val_compare_and_swap_64(i64* %p) {
 ; CHECK-LABEL: val_compare_and_swap_64:
-; CHECK: orr    [[NEWVAL_REG:x[0-9]+]], xzr, #0x4
-; CHECK: orr    [[OLDVAL_REG:x[0-9]+]], xzr, #0x7
+; CHECK: orr    w[[NEWVAL_REG:[0-9]+]], wzr, #0x4
 ; CHECK: [[LABEL:.?LBB[0-9]+_[0-9]+]]:
 ; CHECK: ldxr   [[RESULT:x[0-9]+]], [x0]
-; CHECK: cmp    [[RESULT]], [[OLDVAL_REG]]
+; CHECK: cmp    [[RESULT]], #7
 ; CHECK: b.ne   [[LABEL2:.?LBB[0-9]+_[0-9]+]]
-; CHECK-NOT: stxr [[NEWVAL_REG]], [[NEWVAL_REG]]
-; CHECK: stxr   [[SCRATCH_REG:w[0-9]+]], [[NEWVAL_REG]], [x0]
+; CHECK-NOT: stxr x[[NEWVAL_REG]], x[[NEWVAL_REG]]
+; CHECK: stxr   [[SCRATCH_REG:w[0-9]+]], x[[NEWVAL_REG]], [x0]
 ; CHECK: cbnz   [[SCRATCH_REG]], [[LABEL]]
 ; CHECK: [[LABEL2]]:
   %val = cmpxchg i64* %p, i64 7, i64 4 monotonic monotonic
@@ -33,10 +31,9 @@ define i64 @val_compare_and_swap_64(i64* %p) {
 
 define i32 @fetch_and_nand(i32* %p) {
 ; CHECK-LABEL: fetch_and_nand:
-; CHECK: orr    [[OLDVAL_REG:w[0-9]+]], wzr, #0x7
 ; CHECK: [[LABEL:.?LBB[0-9]+_[0-9]+]]:
 ; CHECK: ldxr   w[[DEST_REG:[0-9]+]], [x0]
-; CHECK: bic    [[SCRATCH2_REG:w[0-9]+]], [[OLDVAL_REG]], w[[DEST_REG]]
+; CHECK: and    [[SCRATCH2_REG:w[0-9]+]], w[[DEST_REG]], #0xfffffff8
 ; CHECK-NOT: stlxr [[SCRATCH2_REG]], [[SCRATCH2_REG]]
 ; CHECK: stlxr   [[SCRATCH_REG:w[0-9]+]], [[SCRATCH2_REG]], [x0]
 ; CHECK: cbnz   [[SCRATCH_REG]], [[LABEL]]
@@ -47,20 +44,20 @@ define i32 @fetch_and_nand(i32* %p) {
 
 define i64 @fetch_and_nand_64(i64* %p) {
 ; CHECK-LABEL: fetch_and_nand_64:
-; CHECK: orr    [[OLDVAL_REG:x[0-9]+]], xzr, #0x7
+; CHECK: mov    x[[ADDR:[0-9]+]], x0
 ; CHECK: [[LABEL:.?LBB[0-9]+_[0-9]+]]:
-; CHECK: ldaxr   [[DEST_REG:x[0-9]+]], [x0]
-; CHECK: bic    [[SCRATCH2_REG:x[0-9]+]], [[OLDVAL_REG]], [[DEST_REG]]
-; CHECK: stlxr   [[SCRATCH_REG:w[0-9]+]], [[SCRATCH2_REG]], [x0]
+; CHECK: ldaxr   [[DEST_REG:x[0-9]+]], [x[[ADDR]]]
+; CHECK: and    [[SCRATCH2_REG:x[0-9]+]], [[DEST_REG]], #0xfffffffffffffff8
+; CHECK: stlxr   [[SCRATCH_REG:w[0-9]+]], [[SCRATCH2_REG]], [x[[ADDR]]]
 ; CHECK: cbnz   [[SCRATCH_REG]], [[LABEL]]
-; CHECK: mov    x0, [[DEST_REG]]
+
   %val = atomicrmw nand i64* %p, i64 7 acq_rel
   ret i64 %val
 }
 
 define i32 @fetch_and_or(i32* %p) {
 ; CHECK-LABEL: fetch_and_or:
-; CHECK: movz   [[OLDVAL_REG:w[0-9]+]], #5
+; CHECK: movz   [[OLDVAL_REG:w[0-9]+]], #0x5
 ; CHECK: [[LABEL:.?LBB[0-9]+_[0-9]+]]:
 ; CHECK: ldaxr   w[[DEST_REG:[0-9]+]], [x0]
 ; CHECK: orr    [[SCRATCH2_REG:w[0-9]+]], w[[DEST_REG]], [[OLDVAL_REG]]
@@ -74,13 +71,12 @@ define i32 @fetch_and_or(i32* %p) {
 
 define i64 @fetch_and_or_64(i64* %p) {
 ; CHECK: fetch_and_or_64:
-; CHECK: orr    [[OLDVAL_REG:x[0-9]+]], xzr, #0x7
+; CHECK: mov    x[[ADDR:[0-9]+]], x0
 ; CHECK: [[LABEL:.?LBB[0-9]+_[0-9]+]]:
-; CHECK: ldxr   [[DEST_REG:x[0-9]+]], [x0]
-; CHECK: orr    [[SCRATCH2_REG:x[0-9]+]], [[DEST_REG]], [[OLDVAL_REG]]
-; CHECK: stxr   [[SCRATCH_REG:w[0-9]+]], [[SCRATCH2_REG]], [x0]
+; CHECK: ldxr   [[DEST_REG:x[0-9]+]], [x[[ADDR]]]
+; CHECK: orr    [[SCRATCH2_REG:x[0-9]+]], [[DEST_REG]], #0x7
+; CHECK: stxr   [[SCRATCH_REG:w[0-9]+]], [[SCRATCH2_REG]], [x[[ADDR]]]
 ; CHECK: cbnz   [[SCRATCH_REG]], [[LABEL]]
-; CHECK: mov    x0, [[DEST_REG]]
   %val = atomicrmw or i64* %p, i64 7 monotonic
   ret i64 %val
 }
@@ -122,8 +118,7 @@ define i8 @atomic_load_relaxed_8(i8* %p, i32 %off32) {
   %ptr_regoff = getelementptr i8* %p, i32 %off32
   %val_regoff = load atomic i8* %ptr_regoff unordered, align 1
   %tot1 = add i8 %val_unsigned, %val_regoff
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: ldrb {{w[0-9]+}}, [x0, x1, sxtw]
+; CHECK: ldrb {{w[0-9]+}}, [x0, w1, sxtw]
 
   %ptr_unscaled = getelementptr i8* %p, i32 -256
   %val_unscaled = load atomic i8* %ptr_unscaled monotonic, align 1
@@ -133,7 +128,7 @@ define i8 @atomic_load_relaxed_8(i8* %p, i32 %off32) {
   %ptr_random = getelementptr i8* %p, i32 1191936 ; 0x123000 (i.e. ADD imm)
   %val_random = load atomic i8* %ptr_random unordered, align 1
   %tot3 = add i8 %tot2, %val_random
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: ldrb {{w[0-9]+}}, [x[[ADDR]]]
 
   ret i8 %tot3
@@ -148,8 +143,7 @@ define i16 @atomic_load_relaxed_16(i16* %p, i32 %off32) {
   %ptr_regoff = getelementptr i16* %p, i32 %off32
   %val_regoff = load atomic i16* %ptr_regoff unordered, align 2
   %tot1 = add i16 %val_unsigned, %val_regoff
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: ldrh {{w[0-9]+}}, [x0, x1, sxtw #1]
+; CHECK: ldrh {{w[0-9]+}}, [x0, w1, sxtw #1]
 
   %ptr_unscaled = getelementptr i16* %p, i32 -128
   %val_unscaled = load atomic i16* %ptr_unscaled monotonic, align 2
@@ -159,7 +153,7 @@ define i16 @atomic_load_relaxed_16(i16* %p, i32 %off32) {
   %ptr_random = getelementptr i16* %p, i32 595968 ; 0x123000/2 (i.e. ADD imm)
   %val_random = load atomic i16* %ptr_random unordered, align 2
   %tot3 = add i16 %tot2, %val_random
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: ldrh {{w[0-9]+}}, [x[[ADDR]]]
 
   ret i16 %tot3
@@ -174,8 +168,7 @@ define i32 @atomic_load_relaxed_32(i32* %p, i32 %off32) {
   %ptr_regoff = getelementptr i32* %p, i32 %off32
   %val_regoff = load atomic i32* %ptr_regoff unordered, align 4
   %tot1 = add i32 %val_unsigned, %val_regoff
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: ldr {{w[0-9]+}}, [x0, x1, sxtw #2]
+; CHECK: ldr {{w[0-9]+}}, [x0, w1, sxtw #2]
 
   %ptr_unscaled = getelementptr i32* %p, i32 -64
   %val_unscaled = load atomic i32* %ptr_unscaled monotonic, align 4
@@ -185,7 +178,7 @@ define i32 @atomic_load_relaxed_32(i32* %p, i32 %off32) {
   %ptr_random = getelementptr i32* %p, i32 297984 ; 0x123000/4 (i.e. ADD imm)
   %val_random = load atomic i32* %ptr_random unordered, align 4
   %tot3 = add i32 %tot2, %val_random
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: ldr {{w[0-9]+}}, [x[[ADDR]]]
 
   ret i32 %tot3
@@ -200,8 +193,7 @@ define i64 @atomic_load_relaxed_64(i64* %p, i32 %off32) {
   %ptr_regoff = getelementptr i64* %p, i32 %off32
   %val_regoff = load atomic i64* %ptr_regoff unordered, align 8
   %tot1 = add i64 %val_unsigned, %val_regoff
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: ldr {{x[0-9]+}}, [x0, x1, sxtw #3]
+; CHECK: ldr {{x[0-9]+}}, [x0, w1, sxtw #3]
 
   %ptr_unscaled = getelementptr i64* %p, i32 -32
   %val_unscaled = load atomic i64* %ptr_unscaled monotonic, align 8
@@ -211,7 +203,7 @@ define i64 @atomic_load_relaxed_64(i64* %p, i32 %off32) {
   %ptr_random = getelementptr i64* %p, i32 148992 ; 0x123000/8 (i.e. ADD imm)
   %val_random = load atomic i64* %ptr_random unordered, align 8
   %tot3 = add i64 %tot2, %val_random
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: ldr {{x[0-9]+}}, [x[[ADDR]]]
 
   ret i64 %tot3
@@ -233,8 +225,7 @@ define void @atomic_store_relaxed_8(i8* %p, i32 %off32, i8 %val) {
 
   %ptr_regoff = getelementptr i8* %p, i32 %off32
   store atomic i8 %val, i8* %ptr_regoff unordered, align 1
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: strb {{w[0-9]+}}, [x0, x1, sxtw]
+; CHECK: strb {{w[0-9]+}}, [x0, w1, sxtw]
 
   %ptr_unscaled = getelementptr i8* %p, i32 -256
   store atomic i8 %val, i8* %ptr_unscaled monotonic, align 1
@@ -242,7 +233,7 @@ define void @atomic_store_relaxed_8(i8* %p, i32 %off32, i8 %val) {
 
   %ptr_random = getelementptr i8* %p, i32 1191936 ; 0x123000 (i.e. ADD imm)
   store atomic i8 %val, i8* %ptr_random unordered, align 1
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: strb {{w[0-9]+}}, [x[[ADDR]]]
 
   ret void
@@ -256,8 +247,7 @@ define void @atomic_store_relaxed_16(i16* %p, i32 %off32, i16 %val) {
 
   %ptr_regoff = getelementptr i16* %p, i32 %off32
   store atomic i16 %val, i16* %ptr_regoff unordered, align 2
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: strh {{w[0-9]+}}, [x0, x1, sxtw #1]
+; CHECK: strh {{w[0-9]+}}, [x0, w1, sxtw #1]
 
   %ptr_unscaled = getelementptr i16* %p, i32 -128
   store atomic i16 %val, i16* %ptr_unscaled monotonic, align 2
@@ -265,7 +255,7 @@ define void @atomic_store_relaxed_16(i16* %p, i32 %off32, i16 %val) {
 
   %ptr_random = getelementptr i16* %p, i32 595968 ; 0x123000/2 (i.e. ADD imm)
   store atomic i16 %val, i16* %ptr_random unordered, align 2
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: strh {{w[0-9]+}}, [x[[ADDR]]]
 
   ret void
@@ -279,8 +269,7 @@ define void @atomic_store_relaxed_32(i32* %p, i32 %off32, i32 %val) {
 
   %ptr_regoff = getelementptr i32* %p, i32 %off32
   store atomic i32 %val, i32* %ptr_regoff unordered, align 4
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: str {{w[0-9]+}}, [x0, x1, sxtw #2]
+; CHECK: str {{w[0-9]+}}, [x0, w1, sxtw #2]
 
   %ptr_unscaled = getelementptr i32* %p, i32 -64
   store atomic i32 %val, i32* %ptr_unscaled monotonic, align 4
@@ -288,7 +277,7 @@ define void @atomic_store_relaxed_32(i32* %p, i32 %off32, i32 %val) {
 
   %ptr_random = getelementptr i32* %p, i32 297984 ; 0x123000/4 (i.e. ADD imm)
   store atomic i32 %val, i32* %ptr_random unordered, align 4
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: str {{w[0-9]+}}, [x[[ADDR]]]
 
   ret void
@@ -302,8 +291,7 @@ define void @atomic_store_relaxed_64(i64* %p, i32 %off32, i64 %val) {
 
   %ptr_regoff = getelementptr i64* %p, i32 %off32
   store atomic i64 %val, i64* %ptr_regoff unordered, align 8
-  ; FIXME: syntax is incorrect: "sxtw" should not be able to go with an x-reg.
-; CHECK: str {{x[0-9]+}}, [x0, x1, sxtw #3]
+; CHECK: str {{x[0-9]+}}, [x0, w1, sxtw #3]
 
   %ptr_unscaled = getelementptr i64* %p, i32 -32
   store atomic i64 %val, i64* %ptr_unscaled monotonic, align 8
@@ -311,7 +299,7 @@ define void @atomic_store_relaxed_64(i64* %p, i32 %off32, i64 %val) {
 
   %ptr_random = getelementptr i64* %p, i32 148992 ; 0x123000/8 (i.e. ADD imm)
   store atomic i64 %val, i64* %ptr_random unordered, align 8
-; CHECK: add x[[ADDR:[0-9]+]], x0, #1191936
+; CHECK: add x[[ADDR:[0-9]+]], x0, #291, lsl #12
 ; CHECK: str {{x[0-9]+}}, [x[[ADDR]]]
 
   ret void

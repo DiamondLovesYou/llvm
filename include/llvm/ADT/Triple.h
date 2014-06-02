@@ -48,7 +48,8 @@ public:
 
     arm,        // ARM (little endian): arm, armv.*, xscale
     armeb,      // ARM (big endian): armeb
-    arm64,      // ARM: arm64
+    arm64,      // ARM64 (little endian): arm64
+    arm64_be,   // ARM64 (big endian): arm64_be
     aarch64,    // AArch64 (little endian): aarch64
     aarch64_be, // AArch64 (big endian): aarch64_be
     hexagon,    // Hexagon: hexagon
@@ -333,6 +334,10 @@ public:
   /// isOSDarwin - Is this a "Darwin" OS (OS X or iOS).
   bool isOSDarwin() const {
     return isMacOSX() || isiOS();
+  }
+
+  bool isOSFreeBSD() const {
+    return getOS() == Triple::FreeBSD;
   }
 
   bool isWindowsMSVCEnvironment() const {

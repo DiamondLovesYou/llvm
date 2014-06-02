@@ -38,6 +38,8 @@
 using namespace llvm;
 using namespace cl;
 
+#define DEBUG_TYPE "commandline"
+
 //===----------------------------------------------------------------------===//
 // Template instantiations and anchors.
 //
@@ -103,7 +105,7 @@ void cl::MarkOptionsChanged() {
 static Option *RegisteredOptionList = nullptr;
 
 void Option::addArgument() {
-  assert(NextRegistered == 0 && "argument multiply registered!");
+  assert(!NextRegistered && "argument multiply registered!");
 
   NextRegistered = RegisteredOptionList;
   RegisteredOptionList = this;
@@ -111,7 +113,7 @@ void Option::addArgument() {
 }
 
 void Option::removeArgument() {
-  assert(NextRegistered != 0 && "argument never registered");
+  assert(NextRegistered && "argument never registered");
   assert(RegisteredOptionList == this && "argument is not the last registered");
   RegisteredOptionList = NextRegistered;
   MarkOptionsChanged();
@@ -746,7 +748,7 @@ void cl::ParseCommandLineOptions(int argc, const char * const *argv,
   argc = static_cast<int>(newArgv.size());
 
   // Copy the program name into ProgName, making sure not to overflow it.
-  std::string ProgName = sys::path::filename(argv[0]);
+  StringRef ProgName = sys::path::filename(argv[0]);
   size_t Len = std::min(ProgName.size(), size_t(79));
   memcpy(ProgramName, ProgName.data(), Len);
   ProgramName[Len] = '\0';

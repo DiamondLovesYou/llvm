@@ -16,21 +16,3 @@ define void @usefuncalias() {
   %1 = call i32* @funcalias()
   ret void
 }
-
-@bc1 = global i8* bitcast (i32* @r1 to i8*)
-@bcalias = alias i8* bitcast (i32* @r1 to i8*)
-
-; CHECK: @usebcalias
-define i8* @usebcalias() {
-; CHECK: ret i8* bitcast (i32* @r1 to i8*)
-  ret i8* @bcalias
-}
-
-
-@fa2 = alias i32* ()* @funcalias
-; CHECK: @usefa2
-define void @usefa2() {
-; CHECK: call i32* @usea1
-  call i32* @fa2()
-  ret void
-}

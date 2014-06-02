@@ -21,7 +21,6 @@
 // FIXME: This pass may be useful for other targets too.
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "arm64-promote-const"
 #include "ARM64.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/DenseMap.h"
@@ -41,6 +40,8 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+#define DEBUG_TYPE "arm64-promote-const"
 
 // Stress testing mode - disable heuristics.
 static cl::opt<bool> Stress("arm64-stress-promote-const", cl::Hidden,
@@ -86,11 +87,11 @@ public:
   static char ID;
   ARM64PromoteConstant() : ModulePass(ID) {}
 
-  virtual const char *getPassName() const { return "ARM64 Promote Constant"; }
+  const char *getPassName() const override { return "ARM64 Promote Constant"; }
 
   /// Iterate over the functions and promote the interesting constants into
   /// global variables with module scope.
-  bool runOnModule(Module &M) {
+  bool runOnModule(Module &M) override {
     DEBUG(dbgs() << getPassName() << '\n');
     bool Changed = false;
     for (auto &MF : M) {
@@ -106,7 +107,7 @@ private:
   bool runOnFunction(Function &F);
 
   // This transformation requires dominator info
-  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addPreserved<DominatorTreeWrapperPass>();
@@ -488,8 +489,8 @@ ARM64PromoteConstant::insertDefinitions(Constant *Cst,
         ModuleToMergedGV.find(M);
     if (MapIt == ModuleToMergedGV.end()) {
       PromotedGV = new GlobalVariable(
-          *M, Cst->getType(), true, GlobalValue::InternalLinkage, 0,
-          "_PromotedConst", 0, GlobalVariable::NotThreadLocal);
+          *M, Cst->getType(), true, GlobalValue::InternalLinkage, nullptr,
+          "_PromotedConst", nullptr, GlobalVariable::NotThreadLocal);
       PromotedGV->setInitializer(Cst);
       ModuleToMergedGV[M] = PromotedGV;
       DEBUG(dbgs() << "Global replacement: ");
@@ -514,19 +515,17 @@ ARM64PromoteConstant::insertDefinitions(Constant *Cst,
 
       // Update the dominated uses.
       Users &DominatedUsers = IPI->second;
-      for (Users::iterator UseIt = DominatedUsers.begin(),
-                           EndIt = DominatedUsers.end();
-           UseIt != EndIt; ++UseIt) {
+      for (Value::user_iterator Use : DominatedUsers) {
 #ifndef NDEBUG
-        assert((DT.dominates(LoadedCst, cast<Instruction>(**UseIt)) ||
-                (isa<PHINode>(**UseIt) &&
-                 DT.dominates(LoadedCst, findInsertionPoint(*UseIt)))) &&
+        assert((DT.dominates(LoadedCst, cast<Instruction>(*Use)) ||
+                (isa<PHINode>(*Use) &&
+                 DT.dominates(LoadedCst, findInsertionPoint(Use)))) &&
                "Inserted definition does not dominate all its uses!");
 #endif
-        DEBUG(dbgs() << "Use to update " << UseIt->getOperandNo() << ":");
-        DEBUG((*UseIt)->print(dbgs()));
+        DEBUG(dbgs() << "Use to update " << Use.getOperandNo() << ":");
+        DEBUG(Use->print(dbgs()));
         DEBUG(dbgs() << '\n');
-        (*UseIt)->setOperand(UseIt->getOperandNo(), LoadedCst);
+        Use->setOperand(Use.getOperandNo(), LoadedCst);
         ++NumPromotedUses;
       }
     }

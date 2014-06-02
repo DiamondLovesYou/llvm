@@ -14,7 +14,7 @@ declare %struct* @addr_taken_func(%struct*)
 ; CHECK: @blockaddr = global i8* blockaddress(@indirectbr, %l1)
 
 
-define i8* @pointer_arg(i8* %ptr, i64 %non_ptr) {
+define i8* @pointer_arg(i8* nonnull %ptr, i64 %non_ptr) {
   ret i8* %ptr
 }
 ; CHECK-LABEL: define i32 @pointer_arg(i32 %ptr, i64 %non_ptr) {
@@ -22,7 +22,7 @@ define i8* @pointer_arg(i8* %ptr, i64 %non_ptr) {
 ; CHECK-NEXT: }
 
 
-declare i8* @declared_func(i8*, i64)
+declare i8* @declared_func(i8* nonnull, i64)
 ; CHECK-LABEL: declare i32 @declared_func(i32, i64)
 
 

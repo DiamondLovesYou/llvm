@@ -35,7 +35,7 @@ MCContext::MCContext(const MCAsmInfo *mai, const MCRegisterInfo *mri,
     : SrcMgr(mgr), MAI(mai), MRI(mri), MOFI(mofi), Allocator(),
       Symbols(Allocator), UsedNames(Allocator), NextUniqueID(0),
       CurrentDwarfLoc(0, 0, 0, DWARF2_FLAG_IS_STMT, 0, 0), DwarfLocSeen(false),
-      GenDwarfForAssembly(false), GenDwarfFileNumber(0),
+      GenDwarfForAssembly(false), GenDwarfFileNumber(0), DwarfVersion(4),
       AllowTemporaryLabels(true), DwarfCompileUnitID(0),
       AutoReset(DoAutoReset) {
 
@@ -44,7 +44,7 @@ MCContext::MCContext(const MCAsmInfo *mai, const MCRegisterInfo *mri,
     CompilationDir.clear();
 
   SecureLogFile = getenv("AS_SECURE_LOG_FILE");
-  SecureLog = 0;
+  SecureLog = nullptr;
   SecureLogUsed = false;
 
   if (SrcMgr && SrcMgr->getNumBuffers() > 0)
@@ -241,7 +241,8 @@ void MCContext::renameELFSection(const MCSectionELF *Section, StringRef Name) {
   auto I =
       ELFUniquingMap.insert(std::make_pair(SectionGroupPair(Name, GroupName),
                                            Section)).first;
-  const_cast<MCSectionELF*>(Section)->setSectionName(I->first.first);
+  StringRef CachedName = I->first.first;
+  const_cast<MCSectionELF*>(Section)->setSectionName(CachedName);
 }
 
 const MCSectionELF *MCContext::
@@ -249,7 +250,7 @@ getELFSection(StringRef Section, unsigned Type, unsigned Flags,
               SectionKind Kind, unsigned EntrySize, StringRef Group) {
   // Do the lookup, if we have a hit, return it.
   auto IterBool = ELFUniquingMap.insert(
-      std::make_pair(SectionGroupPair(Section, Group), (MCSectionELF *)0));
+      std::make_pair(SectionGroupPair(Section, Group), nullptr));
   auto &Entry = *IterBool.first;
   if (!IterBool.second) return Entry.second;
 
@@ -258,12 +259,13 @@ getELFSection(StringRef Section, unsigned Type, unsigned Flags,
     EntrySize = MCSectionELF::DetermineEntrySize(Kind);
   }
 
-  MCSymbol *GroupSym = NULL;
+  MCSymbol *GroupSym = nullptr;
   if (!Group.empty())
     GroupSym = GetOrCreateSymbol(Group);
 
-  MCSectionELF *Result = new (*this) MCSectionELF(
-      Entry.first.first, Type, Flags, Kind, EntrySize, GroupSym);
+  StringRef CachedName = Entry.first.first;
+  MCSectionELF *Result = new (*this)
+      MCSectionELF(CachedName, Type, Flags, Kind, EntrySize, GroupSym);
   Entry.second = Result;
   return Result;
 }
@@ -271,7 +273,7 @@ getELFSection(StringRef Section, unsigned Type, unsigned Flags,
 const MCSectionELF *MCContext::CreateELFGroupSection() {
   MCSectionELF *Result =
     new (*this) MCSectionELF(".group", ELF::SHT_GROUP, 0,
-                             SectionKind::getReadOnly(), 4, NULL);
+                             SectionKind::getReadOnly(), 4, nullptr);
   return Result;
 }
 
@@ -282,18 +284,18 @@ MCContext::getCOFFSection(StringRef Section, unsigned Characteristics,
   // Do the lookup, if we have a hit, return it.
 
   SectionGroupPair P(Section, COMDATSymName);
-  auto IterBool = COFFUniquingMap.insert(std::make_pair(P, (MCSectionCOFF *)0));
+  auto IterBool = COFFUniquingMap.insert(std::make_pair(P, nullptr));
   auto Iter = IterBool.first;
   if (!IterBool.second)
     return Iter->second;
 
-  const MCSymbol *COMDATSymbol = NULL;
+  const MCSymbol *COMDATSymbol = nullptr;
   if (!COMDATSymName.empty())
     COMDATSymbol = GetOrCreateSymbol(COMDATSymName);
 
-  MCSectionCOFF *Result =
-      new (*this) MCSectionCOFF(Iter->first.first, Characteristics,
-                                COMDATSymbol, Selection, Assoc, Kind);
+  StringRef CachedName = Iter->first.first;
+  MCSectionCOFF *Result = new (*this) MCSectionCOFF(
+      CachedName, Characteristics, COMDATSymbol, Selection, Assoc, Kind);
 
   Iter->second = Result;
   return Result;
@@ -309,7 +311,7 @@ const MCSectionCOFF *MCContext::getCOFFSection(StringRef Section) {
   SectionGroupPair P(Section, "");
   auto Iter = COFFUniquingMap.find(P);
   if (Iter == COFFUniquingMap.end())
-    return 0;
+    return nullptr;
   return Iter->second;
 }
 
@@ -337,7 +339,7 @@ bool MCContext::isValidDwarfFileNumber(unsigned FileNumber, unsigned CUID) {
   return !MCDwarfFiles[FileNumber].Name.empty();
 }
 
-void MCContext::FatalError(SMLoc Loc, const Twine &Msg) {
+void MCContext::FatalError(SMLoc Loc, const Twine &Msg) const {
   // If we have a source manager and a location, use it. Otherwise just
   // use the generic report_fatal_error().
   if (!SrcMgr || Loc == SMLoc())

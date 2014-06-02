@@ -122,7 +122,7 @@ Pass *createLICMPass();
 //
 Pass *createLoopStrengthReducePass();
 
-Pass *createGlobalMergePass(const TargetMachine *TM = 0);
+Pass *createGlobalMergePass(const TargetMachine *TM = nullptr);
 
 //===----------------------------------------------------------------------===//
 //
@@ -376,6 +376,12 @@ FunctionPass *createScalarizerPass();
 //
 // AddDiscriminators - Add DWARF path discriminators to the IR.
 FunctionPass *createAddDiscriminatorsPass();
+
+//===----------------------------------------------------------------------===//
+//
+// SeparateConstOffsetFromGEP - Split GEPs for better CSE
+//
+FunctionPass *createSeparateConstOffsetFromGEPPass();
 
 } // End llvm namespace
 
