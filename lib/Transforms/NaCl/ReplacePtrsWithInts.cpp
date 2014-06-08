@@ -626,6 +626,14 @@ bool ReplacePtrsWithInts::runOnModule(Module &M) {
     // that they don't interfere with StripDeadPrototypes.
     Func->removeDeadConstantUsers();
   }
+
+  // Patch up alias types:
+  for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
+       I != E; ) {
+    GlobalAlias *Alias = I++;
+    Alias->mutateType(Alias->getAliasee()->getType());
+  }
+
   return true;
 }
 
