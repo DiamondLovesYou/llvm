@@ -871,8 +871,8 @@ Value* PromoteSimpleStructs::ConversionState::convertEVOrIVInstruction(Instructi
   return Converted;
 }
 
-void FlushOffset(Instruction **Ptr, uint64_t *CurrentOffset,
-		 Instruction *InsertPt, Type *PtrType);
+Value* FlushOffset(Value* Ptr, uint64_t *CurrentOffset,
+                   Instruction *InsertPt, Type *PtrType);
 Value *CastToPtrSize(Value *Val, Instruction *InsertPt, Type *PtrType);
 
 Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPtrInst* Inst,
@@ -905,7 +905,7 @@ Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPt
       DataLayout DL(m_f->getParent());
       IntegerType* IntPtrTy = DL.getIntPtrType(PointerOp->getContext());
       Instruction *Ptr = CopyDebug(new PtrToIntInst(PointerOp,
-						    IntPtrTy),
+                                                    IntPtrTy),
 				   Inst);
       Ptr->insertAfter(Inst);
 
@@ -926,7 +926,7 @@ Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPt
 	    CurrentOffset += C->getSExtValue() * ElementSize;
 	  } else {
 	    Instruction* Prev = Ptr;
-	    FlushOffset(&Ptr, &CurrentOffset, NULL, IntPtrTy);
+	    Ptr = cast<Instruction>(FlushOffset(Ptr, &CurrentOffset, NULL, IntPtrTy));
 	    if(Ptr->getParent() == NULL) {
 	      Ptr->insertAfter(Prev);
 	      Prev = Ptr;
@@ -959,7 +959,7 @@ Value* PromoteSimpleStructs::ConversionState::convertGEPInstruction(GetElementPt
 	}
       }
       Instruction* PrevPtr = Ptr;
-      FlushOffset(&Ptr, &CurrentOffset, NULL, IntPtrTy);
+      Ptr = cast<Instruction>(FlushOffset(Ptr, &CurrentOffset, NULL, IntPtrTy));
       if(Ptr->getParent() == NULL) {
 	Ptr->insertAfter(PrevPtr);
       }

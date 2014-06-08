@@ -63,28 +63,46 @@ Value *CastToPtrSize(Value *Val, Instruction *InsertPt, Type *PtrType) {
   return CopyDebug(Inst, InsertPt);
 }
 
-void FlushOffset(Instruction **Ptr, uint64_t *CurrentOffset,
-		 Instruction *InsertPt, Type *PtrType) {
+Value* FlushOffset(Value* Ptr, uint64_t *CurrentOffset,
+                   Instruction *InsertPt, Type *PtrType) {
   if (*CurrentOffset) {
-    *Ptr = BinaryOperator::Create(Instruction::Add, *Ptr,
+    Ptr = BinaryOperator::Create(Instruction::Add, Ptr,
                                   ConstantInt::get(PtrType, *CurrentOffset),
                                   "gep", InsertPt);
-    CopyDebug(*Ptr, InsertPt);
+    CopyDebug(Ptr, InsertPt);
     *CurrentOffset = 0;
   }
+  return Ptr;
 }
 
 static void ExpandGEP(GetElementPtrInst *GEP, DataLayout *DL, Type *PtrType) {
-  Instruction *Ptr = new PtrToIntInst(GEP->getPointerOperand(), PtrType,
-                                      "gep_int", GEP);
-  CopyDebug(Ptr, GEP);
 
-  Type *CurrentTy = GEP->getPointerOperand()->getType();
   // We do some limited constant folding ourselves.  An alternative
   // would be to generate verbose, unfolded output (e.g. multiple
-  // adds; adds of zero constants) and use a later pass such as
+  // adds; adds of zero constants, multiple unneeded casts) and use a later pass such as
   // "-instcombine" to clean that up.  However, "-instcombine" can
   // reintroduce GetElementPtr instructions.
+
+  Value* Operand = GEP->getPointerOperand();
+  BitCastInst* BC = nullptr; // Delete this afterwards if it's otherwise dead.
+  if((BC = dyn_cast<BitCastInst>(Operand))) {
+    // If GEP's operand is a bitcast, use the BC's operand instead.
+    Operand = BC->getOperand(0);
+  }
+  Value *Ptr = nullptr;
+  IntToPtrInst* ITP = dyn_cast<IntToPtrInst>(Operand);
+  if(ITP != nullptr && ITP->getOperand(0)->getType() == PtrType) {
+    // If GEP's ptr operand is a ptrtoint, and the inttoptr's operand's type matches PtrType,
+    // use the inttoptr's operand as our Ptr.
+    Ptr = ITP->getOperand(0);
+  } else {
+    Ptr = new PtrToIntInst(Operand, PtrType,
+                           "gep_int", GEP);
+    CopyDebug(Ptr, GEP);
+  }
+  Value* OriginalPtr = Ptr;
+
+  Type *CurrentTy = GEP->getPointerOperand()->getType();
   uint64_t CurrentOffset = 0;
 
   for (GetElementPtrInst::op_iterator Op = GEP->op_begin() + 1;
@@ -101,7 +119,7 @@ static void ExpandGEP(GetElementPtrInst *GEP, DataLayout *DL, Type *PtrType) {
       if (ConstantInt *C = dyn_cast<ConstantInt>(Index)) {
         CurrentOffset += C->getSExtValue() * ElementSize;
       } else {
-        FlushOffset(&Ptr, &CurrentOffset, GEP, PtrType);
+        Ptr = FlushOffset(Ptr, &CurrentOffset, GEP, PtrType);
         Index = CastToPtrSize(Index, GEP, PtrType);
         if (ElementSize != 1) {
           Index = CopyDebug(
@@ -116,14 +134,38 @@ static void ExpandGEP(GetElementPtrInst *GEP, DataLayout *DL, Type *PtrType) {
       }
     }
   }
-  FlushOffset(&Ptr, &CurrentOffset, GEP, PtrType);
+  Ptr = FlushOffset(Ptr, &CurrentOffset, GEP, PtrType);
 
   assert(CurrentTy == GEP->getType()->getElementType());
-  Instruction *Result = new IntToPtrInst(Ptr, GEP->getType(), "", GEP);
-  CopyDebug(Result, GEP);
-  Result->takeName(GEP);
+  Value* Result = nullptr;
+  if(OriginalPtr != Ptr) {
+    Result = new IntToPtrInst(Ptr, GEP->getType(), "", GEP);
+    CopyDebug(Result, GEP);
+    Result->takeName(GEP);
+  } else if(Operand->getType() != GEP->getType()) {
+    // This means the ptr offset is zero. Obviously, the types are different, so bitcast.
+    Result = new BitCastInst(Operand, GEP->getType(), "", GEP);
+    CopyDebug(Result, GEP);
+    Result->takeName(GEP);
+  } else {
+    // This is a no-op GEP (ptr offset is zero).
+    Result = Operand;
+  }
+
+  // Erase an unused Ptr (this can happen if we created a ptrtoint inst) if needed.
+  if(Ptr->getNumUses() == 0 && isa<Instruction>(Ptr)) {
+    cast<Instruction>(Ptr)->eraseFromParent();
+  }
+
   GEP->replaceAllUsesWith(Result);
   GEP->eraseFromParent();
+
+  if(BC != nullptr && BC->getNumUses() == 0) {
+    BC->eraseFromParent();
+  }
+  if(ITP != nullptr && ITP->getNumUses() == 0) {
+    ITP->eraseFromParent();
+  }
 }
 
 bool ExpandGetElementPtr::runOnBasicBlock(BasicBlock &BB) {

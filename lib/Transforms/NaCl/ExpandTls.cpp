@@ -215,8 +215,8 @@ static PointerType *buildTlsTemplate(Module &M, std::vector<VarInfo> *TlsVars) {
 }
 
 // From ExpandGetElementPtr.cpp:
-void FlushOffset(Instruction **Ptr, uint64_t *CurrentOffset,
-		 Instruction *InsertPt, Type *PtrType);
+Value* FlushOffset(Value* Ptr, uint64_t *CurrentOffset,
+                   Instruction *InsertPt, Type *PtrType);
 Value *CastToPtrSize(Value *Val, Instruction *InsertPt, Type *PtrType);
 
 static Instruction* ExpandGEP(Value* PtrOperand,
@@ -227,8 +227,8 @@ static Instruction* ExpandGEP(Value* PtrOperand,
                               const DataLayout *DL,
                               Type *PtrType,
                               Type *FinalType) {
-  Instruction *Ptr = new PtrToIntInst(PtrOperand, PtrType,
-                                      "gep_int", InsertPt);
+  Value *Ptr = new PtrToIntInst(PtrOperand, PtrType,
+                                "gep_int", InsertPt);
   CopyDebug(Ptr, InsertPt);
 
   // We do some limited constant folding ourselves.  An alternative
@@ -250,7 +250,7 @@ static Instruction* ExpandGEP(Value* PtrOperand,
       CurrentOffset += (*Op) * ElementSize;
     }
   }
-  FlushOffset(&Ptr, &CurrentOffset, InsertPt, PtrType);
+  Ptr = FlushOffset(Ptr, &CurrentOffset, InsertPt, PtrType);
 
   Instruction *Result = new IntToPtrInst(Ptr, FinalType, "", InsertPt);
   CopyDebug(Result, InsertPt);
