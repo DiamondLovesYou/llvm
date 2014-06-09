@@ -469,7 +469,7 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
     FC->recordConvertedAndErase(Call, NewCall);
   } else if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Inst)) {
     Type *ElementTy = Inst->getType()->getPointerElementType();
-    Constant *ElementSize = ConstantInt::get(IntPtrType,
+    Constant *ElementSize = ConstantInt::get(Alloca->getArraySize()->getType(),
                                              DL->getTypeAllocSize(ElementTy));
     // Expand out alloca's built-in multiplication.
     Value *MulSize;
@@ -627,11 +627,18 @@ bool ReplacePtrsWithInts::runOnModule(Module &M) {
     Func->removeDeadConstantUsers();
   }
 
+  std::unique_ptr<Argument> Placeholder(new Argument(IntPtrType));
   // Patch up alias types:
   for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
        I != E; ) {
     GlobalAlias *Alias = I++;
-    Alias->mutateType(Alias->getAliasee()->getType());
+    Type* OriginalType = Alias->getType();
+    Type* PromotedType = Alias->getAliasee()->getType();
+    Placeholder->mutateType(OriginalType);
+    Alias->replaceAllUsesWith(Placeholder.get());
+    Alias->mutateType(PromotedType);
+    Constant* Cast = ConstantExpr::getPointerCast(Alias, OriginalType);
+    Placeholder->replaceAllUsesWith(Cast);
   }
 
   return true;
