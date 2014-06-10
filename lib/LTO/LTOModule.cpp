@@ -148,6 +148,13 @@ LTOModule *LTOModule::makeLTOModule(MemoryBuffer *buffer,
   std::unique_ptr<Module> m(ModuleOrErr.get());
 
   std::string TripleStr = m->getTargetTriple();
+
+  // Pretend that we are ARM for name mangling and assembly conventions.
+  // https://code.google.com/p/nativeclient/issues/detail?id=2554
+  if (TripleStr == "le32-unknown-nacl") {
+    TripleStr = "armv7a-none-nacl-gnueabi";
+  }
+
   if (TripleStr.empty())
     TripleStr = sys::getDefaultTargetTriple();
   llvm::Triple Triple(TripleStr);
