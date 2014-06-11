@@ -346,6 +346,24 @@ define i16 @load_global_bitcast() {
 ; CHECK-NEXT:    ret i16 %val
 
 
+declare void @receive_vector_alloca(<4 x i32>* %ptr)
+define void @alloca_fixed_vector() {
+  %buf = alloca <4 x i32>, align 128
+  call void @receive_vector_alloca(<4 x i32>* %buf)
+  ret void
+}
+; CHECK: define void @alloca_fixed_vector() {
+; CHECK-NEXT: %buf = alloca i8, i32 16, align 128
+; CHECK-NEXT: %buf.asint = ptrtoint i8* %buf to i32
+; CHECK-NEXT: call void @receive_vector_alloca(i32 %buf.asint)
+
+
+define void @alloca_alignment_vector() {
+  %buf = alloca <4 x i32>
+  ret void
+}
+; CHECK: void @alloca_alignment_vector() {
+; CHECK-NEXT: alloca i8, i32 16, align 16
 define i1 @compare(i8* %ptr1, i8* %ptr2) {
   %cmp = icmp ult i8* %ptr1, %ptr2
   ret i1 %cmp

@@ -55,11 +55,14 @@ class PNaClABIVerifyFunctions : public FunctionPass {
     AtomicIntrinsics.reset(new NaCl::AtomicIntrinsics(M.getContext()));
     return false;
   }
+  virtual void getAnalysisUsage(AnalysisUsage &Info) const {
+    Info.setPreservesAll();
+  }
   bool runOnFunction(Function &F);
   virtual void print(raw_ostream &O, const Module *M) const;
  private:
   bool IsWhitelistedMetadata(unsigned MDKind);
-  const char *checkInstruction(const Instruction *Inst);
+  const char *checkInstruction(const DataLayout *DL, const Instruction *Inst);
   PNaClABIErrorReporter *Reporter;
   bool ReporterIsOwned;
   std::unique_ptr<NaCl::AtomicIntrinsics> AtomicIntrinsics;
@@ -87,20 +90,21 @@ bool PNaClABIVerifyFunctions::IsWhitelistedMetadata(unsigned MDKind) {
 
 // A valid pointer type is either:
 //  * a pointer to a valid PNaCl scalar type (except i1), or
+//  * a pointer to a valid PNaCl vector type (except i1), or
 //  * a function pointer (with valid argument and return types).
 //
 // i1 is disallowed so that all loads and stores are a whole number of
 // bytes, and so that we do not need to define whether a store of i1
 // zero-extends.
-//
-// Vector pointer types aren't currently allowed because vector memory
-// accesses go through their scalar elements.
 static bool isValidPointerType(Type *Ty) {
   if (PointerType *PtrTy = dyn_cast<PointerType>(Ty)) {
     if (PtrTy->getAddressSpace() != 0)
       return false;
     Type *EltTy = PtrTy->getElementType();
     if (PNaClABITypeChecker::isValidScalarType(EltTy) && !EltTy->isIntegerTy(1))
+      return true;
+    if (PNaClABITypeChecker::isValidVectorType(EltTy) &&
+        !cast<VectorType>(EltTy)->getElementType()->isIntegerTy(1))
       return true;
     if (FunctionType *FTy = dyn_cast<FunctionType>(EltTy))
       return PNaClABITypeChecker::isValidFunctionType(FTy);
@@ -165,23 +169,32 @@ static bool isValidVectorOperand(const Value *Val) {
          isa<UndefValue>(Val);
 }
 
-static bool isAllowedAlignment(unsigned Alignment, Type *Ty) {
-  // Non-atomic integer operations must always use "align 1", since we
-  // do not want the backend to generate code with non-portable
-  // undefined behaviour (such as misaligned access faults) if user
-  // code specifies "align 4" but uses a misaligned pointer.  As a
-  // concession to performance, we allow larger alignment values for
-  // floating point types.
+static bool isAllowedAlignment(const DataLayout *DL, uint64_t Alignment,
+                               Type *Ty) {
+  // Non-atomic integer operations must always use "align 1", since we do not
+  // want the backend to generate code with non-portable undefined behaviour
+  // (such as misaligned access faults) if user code specifies "align 4" but
+  // uses a misaligned pointer.  As a concession to performance, we allow larger
+  // alignment values for floating point types, and we only allow vectors to be
+  // aligned by their element's size.
   //
-  // To reduce the set of alignment values that need to be encoded in
-  // pexes, we disallow other alignment values.  We require alignments
-  // to be explicit by disallowing Alignment == 0.
+  // TODO(jfb) Allow vectors to be marked as align == 1. This requires proper
+  //           testing on each supported ISA, and is probably not as common as
+  //           align == elemsize.
   //
-  // Vector memory accesses go through their scalar elements, there is
-  // therefore no such thing as vector alignment.
-  return Alignment == 1 ||
-         (Ty->isDoubleTy() && Alignment == 8) ||
-         (Ty->isFloatTy() && Alignment == 4);
+  // To reduce the set of alignment values that need to be encoded in pexes, we
+  // disallow other alignment values.  We require alignments to be explicit by
+  // disallowing Alignment == 0.
+  if (Alignment > std::numeric_limits<uint64_t>::max() / CHAR_BIT)
+    return false; // No overflow assumed below.
+  else if (VectorType *VTy = dyn_cast<VectorType>(Ty))
+    return !VTy->getElementType()->isIntegerTy(1) &&
+           (Alignment * CHAR_BIT ==
+            DL->getTypeSizeInBits(VTy->getElementType()));
+  else
+    return Alignment == 1 ||
+           (Ty->isDoubleTy() && Alignment == 8) ||
+           (Ty->isFloatTy() && Alignment == 4);
 }
 
 static bool hasAllowedAtomicRMWOperation(
@@ -252,7 +265,8 @@ static bool hasAllowedLockFreeByteSize(const CallInst *Call) {
 //
 // This returns an error string if the instruction is rejected, or
 // NULL if the instruction is allowed.
-const char *PNaClABIVerifyFunctions::checkInstruction(const Instruction *Inst) {
+const char *PNaClABIVerifyFunctions::checkInstruction(const DataLayout *DL,
+                                                      const Instruction *Inst) {
   // If the instruction has a single pointer operand, PtrOperandIndex is
   // set to its operand index.
   unsigned PtrOperandIndex = -1;
@@ -363,8 +377,7 @@ const char *PNaClABIVerifyFunctions::checkInstruction(const Instruction *Inst) {
         return "volatile load";
       if (!isNormalizedPtr(Inst->getOperand(PtrOperandIndex)))
         return "bad pointer";
-      if (!isAllowedAlignment(Load->getAlignment(),
-                              Load->getType()))
+      if (!isAllowedAlignment(DL, Load->getAlignment(), Load->getType()))
         return "bad alignment";
       break;
     }
@@ -377,7 +390,7 @@ const char *PNaClABIVerifyFunctions::checkInstruction(const Instruction *Inst) {
         return "volatile store";
       if (!isNormalizedPtr(Inst->getOperand(PtrOperandIndex)))
         return "bad pointer";
-      if (!isAllowedAlignment(Store->getAlignment(),
+      if (!isAllowedAlignment(DL, Store->getAlignment(),
                               Store->getValueOperand()->getType()))
         return "bad alignment";
       break;
@@ -540,6 +553,7 @@ const char *PNaClABIVerifyFunctions::checkInstruction(const Instruction *Inst) {
 }
 
 bool PNaClABIVerifyFunctions::runOnFunction(Function &F) {
+  const DataLayout *DL = F.getParent()->getDataLayout();
   SmallVector<StringRef, 8> MDNames;
   F.getContext().getMDKindNames(MDNames);
 
@@ -552,7 +566,7 @@ bool PNaClABIVerifyFunctions::runOnFunction(Function &F) {
       // because some instruction opcodes must be rejected out of hand
       // (regardless of the instruction's result type) and the tests
       // check the reason for rejection.
-      const char *Error = checkInstruction(BBI);
+      const char *Error = checkInstruction(DL, BBI);
       // Check the instruction's result type.
       bool BadResult = false;
       if (!Error && !(PNaClABITypeChecker::isValidScalarType(Inst->getType()) ||
