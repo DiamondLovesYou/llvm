@@ -528,6 +528,14 @@ LTOModule::addPotentialUndefinedSymbol(const GlobalValue *decl, bool isFunc) {
   if (decl->getName().startswith("llvm."))
     return;
 
+  // Bitcode modules may have declarations for functions or globals
+  // which are unused. Ignore them here so that gold does not mistake
+  // them for undefined symbols.
+  // This haxor is most unfortunate; however, it seams NaCl is dependent on
+  // it to build properly.
+  if (decl->use_empty())
+    return;
+
   // ignore all aliases
   if (isa<GlobalAlias>(decl))
     return;
