@@ -469,12 +469,15 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
     FC->recordConvertedAndErase(Call, NewCall);
   } else if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Inst)) {
     Type *ElementTy = Inst->getType()->getPointerElementType();
-    Constant *ElementSize = ConstantInt::get(Alloca->getArraySize()->getType(),
+    Constant *ElementSize = ConstantInt::get(IntPtrType,
                                              DL->getTypeAllocSize(ElementTy));
     // Expand out alloca's built-in multiplication.
     Value *MulSize;
     if (ConstantInt *C = dyn_cast<ConstantInt>(Alloca->getArraySize())) {
-      MulSize = ConstantExpr::getMul(ElementSize, C);
+      const auto Value = C->getValue().zextOrTrunc(IntPtrType->getScalarSizeInBits());
+      MulSize = ConstantExpr::getMul(ElementSize,
+                                     ConstantInt::get(IntPtrType,
+                                                      Value));
     } else {
       MulSize = CopyDebug(BinaryOperator::Create(Instruction::Mul,
                                                  ElementSize,
@@ -524,6 +527,16 @@ static void SimplifyCasts(Instruction *Inst, Type *IntPtrType) {
       Value *V = Cast2->getPointerOperand();
       if (V->getType() != Cast1->getType())
         V = CopyDebug(new BitCastInst(V, Cast1->getType(), V->getName() + ".bc", Cast1), Inst);
+      Cast1->replaceAllUsesWith(V);
+      if (Cast1->use_empty())
+        Cast1->eraseFromParent();
+      if (Cast2->use_empty())
+        Cast2->eraseFromParent();
+    }
+  } else if(PtrToIntInst *Cast1 = dyn_cast<PtrToIntInst>(Inst)) {
+    if(IntToPtrInst *Cast2 = dyn_cast<IntToPtrInst>(Cast1->getOperand(0))) {
+      assert(Cast1->getType() == IntPtrType);
+      Value* V = Cast2->getOperand(0);
       Cast1->replaceAllUsesWith(V);
       if (Cast1->use_empty())
         Cast1->eraseFromParent();

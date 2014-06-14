@@ -632,5 +632,20 @@ define void @typeid_for() {
 ; CHECK-NEXT: %typeid.bc = bitcast i32* @typeid to i8*
 ; CHECK-NEXT: call i32 @llvm.eh.typeid.for(i8* %typeid.bc)
 
+define i32 @simplify_casts(i32) {
+  %expanded10 = inttoptr i32 %0 to %struct*
+  %expanded10.asint = ptrtoint %struct* %expanded10 to i32
+  ret i32 %expanded10.asint
+}
+; CHECK-LABEL: define i32 @simplify_casts(i32)
+; CHECK-NEXT: ret i32 %0
+
+define void @i64_alloca() {
+  %1 = alloca i8, i64 1024
+  ret void
+}
+; CHECK-LABEL: define void @i64_alloca()
+; CHECK-NEXT: %1 = alloca i8, i32 1024
+; CHECK-NEXT: ret void
 
 ; CHECK: attributes {{.*}}[[NOUNWIND]] = { nounwind }
