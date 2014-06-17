@@ -168,6 +168,9 @@ static void ExpandGEP(GetElementPtrInst *GEP, DataLayout *DL, Type *PtrType) {
   }
 }
 
+// From ReplacePtrsWithInts.cpp:
+void SimplifyCasts(Instruction *Inst, Type *IntPtrType, bool* Modified);
+
 bool ExpandGetElementPtr::runOnBasicBlock(BasicBlock &BB) {
   bool Modified = false;
   DataLayout DL(BB.getParent()->getParent());
@@ -179,6 +182,8 @@ bool ExpandGetElementPtr::runOnBasicBlock(BasicBlock &BB) {
     if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Inst)) {
       Modified = true;
       ExpandGEP(GEP, &DL, PtrType);
+    } else {
+      SimplifyCasts(Inst, PtrType, &Modified);
     }
   }
   return Modified;

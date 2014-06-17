@@ -520,7 +520,7 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
 // ptrtoint+inttoptr, in particular:
 //  * llvm.lifetime.start/end (although we strip these out)
 //  * llvm.eh.typeid.for
-static void SimplifyCasts(Instruction *Inst, Type *IntPtrType) {
+void SimplifyCasts(Instruction *Inst, Type *IntPtrType, bool* Modified = nullptr) {
   if (IntToPtrInst *Cast1 = dyn_cast<IntToPtrInst>(Inst)) {
     if (PtrToIntInst *Cast2 = dyn_cast<PtrToIntInst>(Cast1->getOperand(0))) {
       assert(Cast2->getType() == IntPtrType);
@@ -532,6 +532,11 @@ static void SimplifyCasts(Instruction *Inst, Type *IntPtrType) {
         Cast1->eraseFromParent();
       if (Cast2->use_empty())
         Cast2->eraseFromParent();
+
+
+      if(Modified != nullptr) {
+        *Modified = true;
+      }
     }
   } else if(PtrToIntInst *Cast1 = dyn_cast<PtrToIntInst>(Inst)) {
     if(IntToPtrInst *Cast2 = dyn_cast<IntToPtrInst>(Cast1->getOperand(0))) {
@@ -542,6 +547,11 @@ static void SimplifyCasts(Instruction *Inst, Type *IntPtrType) {
         Cast1->eraseFromParent();
       if (Cast2->use_empty())
         Cast2->eraseFromParent();
+
+
+      if(Modified != nullptr) {
+        *Modified = true;
+      }
     }
   }
 }
