@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
         DisplayFilename, Buffer.release(), Context,
         &ErrorMessage, /*AcceptSupportedOnly=*/false));
 
-    error_code result = M->materializeAll();
+    std::error_code result = M->materializeAll();
     if(M.get() != 0 && result)
       M.reset();
     if(result)

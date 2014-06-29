@@ -359,6 +359,7 @@ int main(int argc, char **argv) {
 
   InitializeAllTargets();
   InitializeAllTargetMCs();
+  InitializeAllAsmPrinters();
 
   // Initialize passes
   PassRegistry &Registry = *PassRegistry::getPassRegistry();

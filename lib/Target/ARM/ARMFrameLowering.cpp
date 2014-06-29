@@ -222,7 +222,7 @@ void ARMFrameLowering::emitPrologue(MachineFunction &MF) const {
     case ARM::R10:
     case ARM::R11:
     case ARM::R12:
-      if (STI.isTargetMachO()) {
+      if (STI.isTargetDarwin()) {
         GPRCS2Size += 4;
         break;
       }
@@ -382,7 +382,7 @@ void ARMFrameLowering::emitPrologue(MachineFunction &MF) const {
       case ARM::R10:
       case ARM::R11:
       case ARM::R12:
-        if (STI.isTargetMachO())
+        if (STI.isTargetDarwin())
           break;
         // fallthrough
       case ARM::R0:
@@ -447,7 +447,7 @@ void ARMFrameLowering::emitPrologue(MachineFunction &MF) const {
       case ARM::R10:
       case ARM::R11:
       case ARM::R12:
-        if (STI.isTargetMachO()) {
+        if (STI.isTargetDarwin()) {
           unsigned DwarfReg =  MRI->getDwarfRegNum(Reg, true);
           unsigned Offset = MFI->getObjectOffset(FI);
           unsigned CFIIndex = MMI.addFrameInst(
@@ -812,7 +812,7 @@ void ARMFrameLowering::emitPushInst(MachineBasicBlock &MBB,
     unsigned LastReg = 0;
     for (; i != 0; --i) {
       unsigned Reg = CSI[i-1].getReg();
-      if (!(Func)(Reg, STI.isTargetMachO())) continue;
+      if (!(Func)(Reg, STI.isTargetDarwin())) continue;
 
       // D-registers in the aligned area DPRCS2 are NOT spilled here.
       if (Reg >= ARM::D8 && Reg < ARM::D8 + NumAlignedDPRCS2Regs)
@@ -890,7 +890,7 @@ void ARMFrameLowering::emitPopInst(MachineBasicBlock &MBB,
     bool DeleteRet = false;
     for (; i != 0; --i) {
       unsigned Reg = CSI[i-1].getReg();
-      if (!(Func)(Reg, STI.isTargetMachO())) continue;
+      if (!(Func)(Reg, STI.isTargetDarwin())) continue;
 
       // The aligned reloads from area DPRCS2 are not inserted here.
       if (Reg >= ARM::D8 && Reg < ARM::D8 + NumAlignedDPRCS2Regs)
@@ -1440,7 +1440,7 @@ ARMFrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
     if (Spilled) {
       NumGPRSpills++;
 
-      if (!STI.isTargetMachO()) {
+      if (!STI.isTargetDarwin()) {
         if (Reg == ARM::LR)
           LRSpilled = true;
         CS1Spilled = true;
@@ -1462,7 +1462,7 @@ ARMFrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
         break;
       }
     } else {
-      if (!STI.isTargetMachO()) {
+      if (!STI.isTargetDarwin()) {
         UnspilledCS1GPRs.push_back(Reg);
         continue;
       }
@@ -1748,6 +1748,12 @@ void ARMFrameLowering::adjustForSegmentedStacks(MachineFunction &MF) const {
   ARMFunctionInfo *ARMFI = MF.getInfo<ARMFunctionInfo>();
   DebugLoc DL;
 
+  uint64_t StackSize = MFI->getStackSize();
+
+  // Do not generate a prologue for functions with a stack of size zero
+  if (StackSize == 0)
+    return;
+
   // Use R4 and R5 as scratch registers.
   // We save R4 and R5 before use and restore them before leaving the function.
   unsigned ScratchReg0 = ARM::R4;
@@ -1777,8 +1783,6 @@ void ARMFrameLowering::adjustForSegmentedStacks(MachineFunction &MF) const {
   MF.push_front(PrevStackMBB);
 
   // The required stack size that is aligned to ARM constant criterion.
-  uint64_t StackSize = MFI->getStackSize();
-
   AlignedStackSize = alignToARMConstant(StackSize);
 
   // When the frame size is less than 256 we just compare the stack

@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
       DisplayFilename = InputFilename;
     M.reset(getStreamedBitcodeModule(DisplayFilename, Buffer.release(), Context,
                                      &ErrorMessage));
-    error_code result = M->materializeAll();
+    std::error_code result = M->materializeAll();
     if(M.get() != 0 && result)
       M.reset();
     if(result)

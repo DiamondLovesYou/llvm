@@ -269,6 +269,10 @@ private:
 				  Failure,
 				  SS,
 				  Call);
+        I = ExtractValueInst::Create(I,
+                                     std::vector<unsigned>(1, 0),
+                                     "",
+                                     Call);
       }
       break;
     case Intrinsic::nacl_atomic_fence:
@@ -462,7 +466,10 @@ private:
                                 Call);
       OldVal->setName("oldval");
       // Test that the entire 32-bit value didn't change during the operation.
-      Value *Success = CopyDebug(IRB.CreateICmpEQ(OldVal, Loaded, "success"), Call);
+      Value *Success = CopyDebug(IRB.CreateExtractValue(OldVal,
+                                                        std::vector<unsigned>(1, 1),
+                                                        "success"),
+                                 Call);
       CopyDebug(IRB.CreateCondBr(Success, Successor, Aligned32BB), Call);
     }
 
@@ -524,22 +531,30 @@ private:
                                                         SingleThread), Call);
       OldVal->setName("oldval");
       // Test that the entire 32-bit value didn't change during the operation.
-      Value *Success = CopyDebug(IRB.CreateICmpEQ(OldVal, Loaded, "success"), Call);
+      Value *Success = CopyDebug(IRB.CreateExtractValue(OldVal,
+                                                        std::vector<unsigned>(1, 1),
+                                                        "success"),
+                                 Call);
       CopyDebug(IRB.CreateCondBr(Success, Successor, Aligned16BB), Call);
     }
+
+    // Finish everything with another compiler fence.
+    CopyDebug(CallInst::Create(InlineAsm::get(FTy,
+                                              AsmString,
+                                              Constraints,
+                                              HasSideEffect),
+                               "",
+                               Successor->getFirstInsertionPt()),
+              Call);
 
     // Merge the value, and remove the original intrinsic Call.
     IRB.SetInsertPoint(Successor->getFirstInsertionPt());
     PHINode *PHI = CopyDebug(IRB.CreatePHI(I16, 2), Call);
     PHI->addIncoming(Ret32, Aligned32BB);
     PHI->addIncoming(Ret16, Aligned16BB);
+
     Call->replaceAllUsesWith(PHI);
     Call->eraseFromParent();
-
-    // Finish everything with another compiler fence.
-    CopyDebug(CallInst::Create(InlineAsm::get(
-        FTy, AsmString, Constraints, HasSideEffect), "",
-                               Successor->getFirstInsertionPt()), Call);
   }
   // ===========================================================================
   // End hacks.

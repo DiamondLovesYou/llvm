@@ -41,7 +41,7 @@ define i16 @test_fetch_and_add_i16(i16* %ptr, i16 %value) {
 ; CHECK-NEXT:  %maskedloaded = and i32 %loaded, -65536
 ; CHECK-NEXT:  %finalres = or i32 %mergeres, %maskedloaded
 ; CHECK-NEXT:  %oldval = cmpxchg i32* %ptr32, i32 %loaded, i32 %finalres singlethread seq_cst seq_cst
-; CHECK-NEXT:  %success = icmp eq i32 %oldval, %loaded
+; CHECK-NEXT:  %success = extractvalue { i32, i1 } %oldval, 1
 ; CHECK-NEXT:  br i1 %success, label %atomic16successor, label %atomic16aligned32
 ;
 ; CHECK: atomic16aligned16:
@@ -54,7 +54,7 @@ define i16 @test_fetch_and_add_i16(i16* %ptr, i16 %value) {
 ; CHECK-NEXT:  %maskedloaded4 = and i32 %loaded1, 65535
 ; CHECK-NEXT:  %finalres5 = or i32 %mergeres3, %maskedloaded4
 ; CHECK-NEXT:  %oldval6 = cmpxchg i32* %ptr32, i32 %loaded1, i32 %finalres5 singlethread seq_cst seq_cst
-; CHECK-NEXT:  %success7 = icmp eq i32 %oldval6, %loaded1
+; CHECK-NEXT:  %success7 = extractvalue { i32, i1 } %oldval6, 1
 ; CHECK-NEXT:  br i1 %success7, label %atomic16successor, label %atomic16aligned16
   %1 = call i16 @llvm.nacl.atomic.rmw.i16(i32 1, i16* %ptr, i16 %value, i32 6)
   ret i16 %1
@@ -116,7 +116,7 @@ define i16 @test_val_compare_and_swap_i16(i16* %ptr, i16 %oldval, i16 %newval) {
 ; CHECK-NEXT:  %zext = zext i16 %oldval to i32
 ; CHECK-NEXT:  %expected = or i32 %maskedloaded, %zext
 ; CHECK-NEXT:  %oldval1 = cmpxchg i32* %ptr32, i32 %expected, i32 %finalres singlethread seq_cst seq_cst
-; CHECK-NEXT:  %success = icmp eq i32 %oldval1, %loaded
+; CHECK-NEXT:  %success = extractvalue { i32, i1 } %oldval1, 1
 ; CHECK-NEXT:  br i1 %success, label %atomic16successor, label %atomic16aligned32
 ;
 ; CHECK: atomic16aligned16:
@@ -131,7 +131,7 @@ define i16 @test_val_compare_and_swap_i16(i16* %ptr, i16 %oldval, i16 %newval) {
 ; CHECK-NEXT:  %shl = shl i32 %zext7, 16
 ; CHECK-NEXT:  %expected8 = or i32 %maskedloaded5, %shl
 ; CHECK-NEXT:  %oldval9 = cmpxchg i32* %ptr32, i32 %expected8, i32 %finalres6 singlethread seq_cst seq_cst
-; CHECK-NEXT:  %success10 = icmp eq i32 %oldval9, %loaded2
+; CHECK-NEXT:  %success10 = extractvalue { i32, i1 } %oldval9, 1
 ; CHECK-NEXT:  br i1 %success10, label %atomic16successor, label %atomic16aligned16
  %1 = call i16 @llvm.nacl.atomic.cmpxchg.i16(i16* %ptr, i16 %oldval, i16 %newval, i32 6, i32 6)
   ret i16 %1

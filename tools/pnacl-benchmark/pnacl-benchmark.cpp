@@ -30,7 +30,6 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/system_error.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Timer.h"
 #include <memory>
@@ -126,7 +125,7 @@ private:
 void BenchmarkIRParsing() {
   outs() << "Benchmarking IR parsing...\n";
   std::unique_ptr<MemoryBuffer> FileBuf;
-  error_code ec = MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), FileBuf);
+  std::error_code ec = MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), FileBuf);
   if (ec) {
     report_fatal_error("Could not open input file: " + ec.message());
   }

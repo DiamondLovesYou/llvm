@@ -576,8 +576,9 @@ bool PromoteReturnedStructs::runOnModule(Module& M) {
   for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
        I != E; ++I) {
     auto* Aliasee = I->getAliasee();
-    promoteGlobal(Aliasee);
-    I->mutateType(Aliasee->getType());
+    auto* NewAliasee = promoteConstant(Aliasee);
+    I->mutateType(NewAliasee->getType());
+    I->setAliasee(NewAliasee);
   }
 
   // remove dangling consts:

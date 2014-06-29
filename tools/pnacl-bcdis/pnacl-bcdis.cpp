@@ -27,7 +27,6 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/system_error.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 namespace llvm {
@@ -1482,7 +1481,7 @@ bool NaClDisParser::ParseBlock(unsigned BlockID) {
 static bool DisassembleBitcode() {
   // Open the bitcode file and put into a buffer.
   std::unique_ptr<MemoryBuffer> MemBuf;
-  if (error_code ec =
+  if (std::error_code ec =
       MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), MemBuf)) {
     errs() << "Error reading '" << InputFilename << "': "
            << ec.message() << "\n";

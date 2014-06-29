@@ -65,7 +65,6 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/system_error.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/FileSystem.h"
 #include <set>
@@ -126,7 +125,7 @@ static void PrintAbbrev(raw_ostream &Stream,
 
 // Reads the input file into the given buffer.
 static bool ReadAndBuffer(std::unique_ptr<MemoryBuffer> &MemBuf) {
-  if (error_code ec =
+  if (std::error_code ec =
       MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), MemBuf)) {
     return Error("Error reading '" + InputFilename + "': " + ec.message());
   }

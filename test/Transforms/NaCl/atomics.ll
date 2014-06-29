@@ -179,35 +179,47 @@ define i64 @test_fetch_and_xor_i64(i64* %ptr, i64 %value) {
 }
 
 ; CHECK: @test_val_compare_and_swap_i8
-define zeroext i8 @test_val_compare_and_swap_i8(i8* %ptr, i8 zeroext %oldval, i8 zeroext %newval) {
+define { i8, i1 } @test_val_compare_and_swap_i8(i8* %ptr, i8 zeroext %oldval, i8 zeroext %newval) {
   ; CHECK-NEXT: %res = call i8 @llvm.nacl.atomic.cmpxchg.i8(i8* %ptr, i8 %oldval, i8 %newval, i32 6, i32 6)
-  ; CHECK-NEXT: ret i8 %res
+  ; CHECK-NEXT: %1 = icmp eq i8 %newval, %res
+  ; CHECK-NEXT: %2 = insertvalue { i8, i1 } undef, i8 %res, 0
+  ; CHECK-NEXT: %3 = insertvalue { i8, i1 } %2, i1 %1, 1
+  ; CHECK-NEXT: ret { i8, i1 } %3
   %res = cmpxchg i8* %ptr, i8 %oldval, i8 %newval seq_cst seq_cst
-  ret i8 %res
+  ret { i8, i1 } %res
 }
 
 ; CHECK: @test_val_compare_and_swap_i16
-define zeroext i16 @test_val_compare_and_swap_i16(i16* %ptr, i16 zeroext %oldval, i16 zeroext %newval) {
+define { i16, i1 } @test_val_compare_and_swap_i16(i16* %ptr, i16 zeroext %oldval, i16 zeroext %newval) {
   ; CHECK-NEXT: %res = call i16 @llvm.nacl.atomic.cmpxchg.i16(i16* %ptr, i16 %oldval, i16 %newval, i32 6, i32 6)
-  ; CHECK-NEXT: ret i16 %res
+  ; CHECK-NEXT: %1 = icmp eq i16 %newval, %res
+  ; CHECK-NEXT: %2 = insertvalue { i16, i1 } undef, i16 %res, 0
+  ; CHECK-NEXT: %3 = insertvalue { i16, i1 } %2, i1 %1, 1
+  ; CHECK-NEXT: ret { i16, i1 } %3
   %res = cmpxchg i16* %ptr, i16 %oldval, i16 %newval seq_cst seq_cst
-  ret i16 %res
+  ret { i16, i1 } %res
 }
 
 ; CHECK: @test_val_compare_and_swap_i32
-define i32 @test_val_compare_and_swap_i32(i32* %ptr, i32 %oldval, i32 %newval) {
+define { i32, i1 } @test_val_compare_and_swap_i32(i32* %ptr, i32 %oldval, i32 %newval) {
   ; CHECK-NEXT: %res = call i32 @llvm.nacl.atomic.cmpxchg.i32(i32* %ptr, i32 %oldval, i32 %newval, i32 6, i32 6)
-  ; CHECK-NEXT: ret i32 %res
+  ; CHECK-NEXT: %1 = icmp eq i32 %newval, %res
+  ; CHECK-NEXT: %2 = insertvalue { i32, i1 } undef, i32 %res, 0
+  ; CHECK-NEXT: %3 = insertvalue { i32, i1 } %2, i1 %1, 1
+  ; CHECK-NEXT: ret { i32, i1 } %3
   %res = cmpxchg i32* %ptr, i32 %oldval, i32 %newval seq_cst seq_cst
-  ret i32 %res
+  ret { i32, i1 } %res
 }
 
 ; CHECK: @test_val_compare_and_swap_i64
-define i64 @test_val_compare_and_swap_i64(i64* %ptr, i64 %oldval, i64 %newval) {
+define { i64, i1 } @test_val_compare_and_swap_i64(i64* %ptr, i64 %oldval, i64 %newval) {
   ; CHECK-NEXT: %res = call i64 @llvm.nacl.atomic.cmpxchg.i64(i64* %ptr, i64 %oldval, i64 %newval, i32 6, i32 6)
-  ; CHECK-NEXT: ret i64 %res
+  ; CHECK-NEXT: %1 = icmp eq i64 %newval, %res
+  ; CHECK-NEXT: %2 = insertvalue { i64, i1 } undef, i64 %res, 0
+  ; CHECK-NEXT: %3 = insertvalue { i64, i1 } %2, i1 %1, 1
+  ; CHECK-NEXT: ret { i64, i1 } %3
   %res = cmpxchg i64* %ptr, i64 %oldval, i64 %newval seq_cst seq_cst
-  ret i64 %res
+  ret { i64, i1 } %res
 }
 
 ; This patterns gets emitted by C11/C++11 atomic thread fences.

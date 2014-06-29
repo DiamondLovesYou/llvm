@@ -19,7 +19,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/system_error.h"
+#include <system_error>
 
 using namespace llvm;
 
@@ -53,7 +53,7 @@ Module *llvm::getLazyIRModule(MemoryBuffer *Buffer, SMDiagnostic &Err,
     if (!Assembly) {
       std::string ErrMsg;
       ErrorOr<Module *> ModuleOrErr = getLazyBitcodeModule(Buffer, Context);
-      if (error_code EC = ModuleOrErr.getError()) {
+      if (std::error_code EC = ModuleOrErr.getError()) {
         Err = SMDiagnostic(Buffer->getBufferIdentifier(), SourceMgr::DK_Error,
                            EC.message());
         // ParseBitcodeFile does not take ownership of the Buffer in the
@@ -85,7 +85,7 @@ Module *llvm::getLazyIRModule(MemoryBuffer *Buffer, SMDiagnostic &Err,
 Module *llvm::getLazyIRFileModule(const std::string &Filename, SMDiagnostic &Err,
                                   LLVMContext &Context, FileFormat Format) {
   std::unique_ptr<MemoryBuffer> File;
-  if (error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, File)) {
+  if (std::error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, File)) {
     Err = SMDiagnostic(Filename, SourceMgr::DK_Error,
                        "Could not open input file: " + ec.message());
     return nullptr;
@@ -119,7 +119,7 @@ Module *llvm::ParseIR(MemoryBuffer *Buffer, SMDiagnostic &Err,
     if (!Assembly) {
       ErrorOr<Module *> ModuleOrErr = parseBitcodeFile(Buffer, Context);
       Module *M = nullptr;
-      if (error_code EC = ModuleOrErr.getError())
+      if (std::error_code EC = ModuleOrErr.getError())
         Err = SMDiagnostic(Buffer->getBufferIdentifier(), SourceMgr::DK_Error,
                            EC.message());
       else
@@ -150,7 +150,7 @@ Module *llvm::ParseIR(MemoryBuffer *Buffer, SMDiagnostic &Err,
 Module *llvm::ParseIRFile(const std::string &Filename, SMDiagnostic &Err,
                           LLVMContext &Context, FileFormat Format) {
   std::unique_ptr<MemoryBuffer> File;
-  if (error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, File)) {
+  if (std::error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, File)) {
     Err = SMDiagnostic(Filename, SourceMgr::DK_Error,
                        "Could not open input file: " + ec.message());
     return nullptr;

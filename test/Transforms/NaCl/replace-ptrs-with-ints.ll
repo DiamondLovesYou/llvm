@@ -13,8 +13,8 @@ declare %struct* @addr_taken_func(%struct*)
 @blockaddr = global i8* blockaddress(@indirectbr, %l1)
 ; CHECK: @blockaddr = global i8* blockaddress(@indirectbr, %l1)
 
-@function_alias = alias internal i8* (i8*, i64), i8* (i8*, i64)* @pointer_arg
-; CHECK: @function_alias = alias internal i32 (i32, i64)* @pointer_arg
+@function_alias = alias internal i8* (i8*, i64)* @pointer_arg
+; CHECK: @function_alias = alias internal bitcast (i32 (i32, i64)* @pointer_arg to i8* (i8*, i64)*)
 
 define i8* @pointer_arg(i8* nonnull %ptr, i64 %non_ptr) {
   ret i8* %ptr
@@ -264,11 +264,11 @@ define void @store_attrs(i8* %ptr, i8 %val) {
 ; CHECK-NEXT: store atomic volatile i8 %val, i8* %ptr.asptr singlethread release, align 256
 
 
-define i32 @cmpxchg(i32* %ptr, i32 %a, i32 %b) {
+define { i32, i1 } @cmpxchg(i32* %ptr, i32 %a, i32 %b) {
   %r = cmpxchg i32* %ptr, i32 %a, i32 %b seq_cst seq_cst
-  ret i32 %r
+  ret { i32, i1 } %r
 }
-; CHECK-LABEL: define i32 @cmpxchg(i32 %ptr, i32 %a, i32 %b) {
+; CHECK-LABEL: define { i32, i1 } @cmpxchg(i32 %ptr, i32 %a, i32 %b) {
 ; CHECK-NEXT: %ptr.asptr = inttoptr i32 %ptr to i32*
 ; CHECK-NEXT: %r = cmpxchg i32* %ptr.asptr, i32 %a, i32 %b seq_cst seq_cst
 

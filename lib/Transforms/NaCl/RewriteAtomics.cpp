@@ -119,7 +119,8 @@ private:
   /// DstType, if different from \p OverloadedType.
   void replaceInstructionWithIntrinsicCall(Instruction &I, Intrinsic::ID ID,
                                            Type *DstType, Type *OverloadedType,
-                                           ArrayRef<Value *> Args);
+                                           ArrayRef<Value *> Args,
+                                           Instruction** Out = nullptr);
 
   /// Most atomics instructions deal with at least one pointer, this
   /// struct automates some of this and has generic sanity checks.
@@ -319,18 +320,21 @@ CastInst *RewriteAtomics::createCast(Instruction &I, Value *Src, Type *Dst,
 
 void RewriteAtomics::replaceInstructionWithIntrinsicCall(
     Instruction &I, Intrinsic::ID ID, Type *DstType, Type *OverloadedType,
-    ArrayRef<Value *> Args) {
-  std::string Name(I.getName());
+    ArrayRef<Value *> Args, Instruction** Out) {
   Function *F = AI->find(ID, OverloadedType)->getDeclaration(M);
   CallInst *Call = CopyDebug(CallInst::Create(F, Args, "", &I), &I);
   Instruction *Res = Call;
   if (!Call->getType()->isVoidTy() && DstType != OverloadedType) {
     // The call returns a value which needs to be cast to a non-integer.
-    Res = CopyDebug(createCast(I, Call, DstType, Name + ".cast"), &I);
+    Res = CopyDebug(createCast(I, Call, DstType, I.getName() + ".cast"), &I);
   }
-  I.replaceAllUsesWith(Res);
-  I.eraseFromParent();
-  Call->setName(Name);
+  Call->takeName(&I);
+  if(Out != nullptr) {
+    *Out = Res;
+  } else {
+    I.replaceAllUsesWith(Res);
+    I.eraseFromParent();
+  }
   ModifiedModule = true;
 }
 
@@ -410,8 +414,36 @@ void RewriteAtomics::visitAtomicCmpXchgInst(AtomicCmpXchgInst &I) {
   Value *Args[] = { PH.P, I.getCompareOperand(), I.getNewValOperand(),
                     freezeMemoryOrder(I, I.getSuccessOrdering()),
 		    freezeMemoryOrder(I, I.getFailureOrdering()) };
+  Instruction* Res = nullptr;
   replaceInstructionWithIntrinsicCall(I, Intrinsic::nacl_atomic_cmpxchg,
-                                      PH.OriginalPET, PH.PET, Args);
+                                      PH.OriginalPET, PH.PET, Args,
+                                      &Res);
+  const auto StructTypes = std::vector<Type*>
+    ({
+      I.getNewValOperand()->getType(),
+      Type::getInt1Ty(*C)
+    });
+  Value* Undef = UndefValue::get(I.getType());
+  Instruction* ICmp = CopyDebug(CmpInst::Create(Instruction::ICmp,
+                                                CmpInst::ICMP_EQ,
+                                                I.getNewValOperand(),
+                                                Res,
+                                                "",
+                                                &I),
+                                &I);
+
+  Res = CopyDebug(InsertValueInst::Create(Undef, Res, std::vector<unsigned>(1, 0), "", &I), &I);
+  Res = CopyDebug(InsertValueInst::Create(Res,
+                                          ICmp,
+                                          std::vector<unsigned>(1, 1),
+                                          "",
+                                          &I),
+                  &I);
+  I.replaceAllUsesWith(Res);
+  I.eraseFromParent();
+  ModifiedModule = true;
+  
+
 }
 
 ///   fence memory_order

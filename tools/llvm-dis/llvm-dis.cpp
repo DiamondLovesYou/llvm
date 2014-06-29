@@ -35,7 +35,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/StreamableMemoryObject.h" // @LOCALMOD
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/system_error.h"
+#include <system_error>
 using namespace llvm;
 
 static cl::opt<std::string>
@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
     }
 
     if(M.get() != 0) {
-      if (error_code EC = M->materializeAllPermanently()) {
+      if(std::error_code EC = M->materializeAllPermanently()) {
         ErrorMessage = EC.message();
         M.reset();
       }
