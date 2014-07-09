@@ -650,18 +650,15 @@ bool ReplacePtrsWithInts::runOnModule(Module &M) {
     Func->removeDeadConstantUsers();
   }
 
-  std::unique_ptr<Argument> Placeholder(new Argument(IntPtrType));
   // Patch up alias types:
   for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
        I != E; ) {
     GlobalAlias *Alias = I++;
     Type* OriginalType = Alias->getType();
     Type* PromotedType = Alias->getAliasee()->getType();
-    Placeholder->mutateType(OriginalType);
-    Alias->replaceAllUsesWith(Placeholder.get());
-    Alias->mutateType(PromotedType);
-    Constant* Cast = ConstantExpr::getPointerCast(Alias, OriginalType);
-    Placeholder->replaceAllUsesWith(Cast);
+    if(OriginalType == PromotedType) continue;
+    Constant* Cast = ConstantExpr::getPointerCast(Alias->getAliasee(), OriginalType);
+    Alias->replaceAllUsesWith(Cast);
   }
 
   return true;
