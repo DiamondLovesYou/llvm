@@ -423,6 +423,12 @@ GlobalValue* PromoteSimpleStructs::getPromoted(GlobalValue* F) {
       promoteFunction(*cast<Function>(F), true);
     } else if(isa<GlobalVariable>(F)) {
       promoteGlobal(cast<GlobalVariable>(F));
+    } else if(GlobalAlias* GA = dyn_cast<GlobalAlias>(F)) {
+      m_promoted.insert(F);
+      auto* Aliasee = GA->getAliasee();
+      Aliasee = getPromotedConstant(Aliasee);
+      mutateAndReplace(GA, GA, GA->getType(), Aliasee->getType());
+      GA->setAliasee(Aliasee);
     }
   }
   return F;
@@ -1454,10 +1460,9 @@ bool PromoteSimpleStructs::runOnModule(Module& M) {
   for (Module::alias_iterator I = M.alias_begin(), E = M.alias_end();
        I != E; ++I) {
     auto* Aliasee = I->getAliasee();
-    if(auto* A = dyn_cast<GlobalVariable>(Aliasee)) {
-      promoteGlobal(A);
-    }
+    Aliasee = getPromotedConstant(Aliasee);
     I->mutateType(Aliasee->getType());
+    I->setAliasee(Aliasee);
   }
 
   // remove dangling consts:
