@@ -29,6 +29,22 @@
 using namespace llvm;
 
 //---------------------------------------------------------------------------
+namespace llvm {
+  bool TLSUseCall;
+}
+// Use a function call to get the thread pointer for TLS accesses,
+// instead of using inline code.
+static cl::opt<bool, true>
+EnableTLSUseCall("mtls-use-call",
+                 cl::desc("Use a function call to get the thread pointer for TLS accesses."),
+                 cl::location(TLSUseCall),
+                 cl::init(false));
+
+static cl::opt<bool>
+ForceTLSNonPIC("force-tls-non-pic",
+               cl::desc("Force TLS to use non-PIC models"),
+               cl::init(false));
+
 // TargetMachine Class
 //
 
@@ -115,7 +131,7 @@ TLSModel::Model TargetMachine::getTLSModel(const GlobalValue *GV) const {
   bool isHidden = GV->hasHiddenVisibility();
 
   TLSModel::Model Model;
-  if (isPIC && !isPIE) {
+  if (isPIC && !isPIE && !ForceTLSNonPIC) {
     if (isLocal || isHidden)
       Model = TLSModel::LocalDynamic;
     else

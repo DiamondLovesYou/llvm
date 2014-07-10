@@ -1518,6 +1518,10 @@ Instruction *InstCombiner::visitICmpInstWithInstAndIntCst(ICmpInst &ICI,
     // smaller constant, which will be target friendly.
     unsigned Amt = ShAmt->getLimitedValue(TypeBits-1);
     if (LHSI->hasOneUse() &&
+        // Don't introduce non-power-of-two integer sizes for PNaCl, which isn't
+        // part of the stable wire format.
+        (AllowNonPowerOfTwoInts || (isPowerOf2_32(TypeBits - Amt) &&
+                                    (TypeBits - Amt) >= 8)) &&
         Amt != 0 && RHSV.countTrailingZeros() >= Amt) {
       Type *NTy = IntegerType::get(ICI.getContext(), TypeBits - Amt);
       Constant *NCI = ConstantExpr::getTrunc(

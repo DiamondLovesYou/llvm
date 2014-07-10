@@ -315,6 +315,8 @@ namespace X86II {
     MRM_F9 = 76, MRM_FA = 77, MRM_FB = 78, MRM_FC = 79,
     MRM_FD = 80, MRM_FE = 81, MRM_FF = 82,
 
+    CustomFrm = 126,
+
     FormMask       = 127,
 
     //===------------------------------------------------------------------===//
@@ -660,6 +662,7 @@ namespace X86II {
     case X86II::RawFrmSrc:
     case X86II::RawFrmDst:
     case X86II::RawFrmDstSrc:
+    case X86II::CustomFrm:
        return -1;
     case X86II::MRMDestMem:
       return 0;

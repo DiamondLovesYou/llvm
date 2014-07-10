@@ -230,6 +230,15 @@ namespace llvm {
       // of the TLS block for the current module.
       TLSBASEADDR,
 
+      // TLSADDR_LE - Thread Local Storage. (Local Exec Model)
+      TLSADDR_LE,
+
+      // TLSADDR_IE - Thread Local Storage. (Initial Exec Model)
+      TLSADDR_IE,
+
+      // THREAD_POINTER_FROM_GS - Read thread pointer from %gs:0 on x86-32.
+      THREAD_POINTER_FROM_GS,
+
       // TLSCALL - Thread Local Storage.  When calling to an OS provided
       // thunk at the address from an earlier relocation.
       TLSCALL,
@@ -923,6 +932,7 @@ namespace llvm {
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerWin64_i128OP(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue
       LowerFormalArguments(SDValue Chain,
@@ -984,6 +994,9 @@ namespace llvm {
     MachineBasicBlock *EmitLoweredSegAlloca(MachineInstr *MI,
                                             MachineBasicBlock *BB,
                                             bool Is64Bit) const;
+
+    MachineBasicBlock *EmitLoweredThreadPointerFromGs(MachineInstr *MI,
+                                                      MachineBasicBlock *BB) const;
 
     MachineBasicBlock *EmitLoweredTLSCall(MachineInstr *MI,
                                           MachineBasicBlock *BB) const;

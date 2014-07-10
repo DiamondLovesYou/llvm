@@ -9,6 +9,7 @@
 
 #include "MCTargetDesc/X86BaseInfo.h"
 #include "MCTargetDesc/X86FixupKinds.h"
+#include "MCTargetDesc/X86MCNaCl.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAssembler.h"
@@ -75,9 +76,10 @@ public:
 class X86AsmBackend : public MCAsmBackend {
   StringRef CPU;
   bool HasNopl;
+  bool AllowNegativeAddends = false;
 public:
-  X86AsmBackend(const Target &T, StringRef _CPU)
-    : MCAsmBackend(), CPU(_CPU) {
+  X86AsmBackend(const Target &T, StringRef _CPU, const bool _AllowNegativeAddends = false)
+    : MCAsmBackend(), CPU(_CPU), AllowNegativeAddends(_AllowNegativeAddends) {
     HasNopl = CPU != "generic" && CPU != "i386" && CPU != "i486" &&
               CPU != "i586" && CPU != "pentium" && CPU != "pentium-mmx" &&
               CPU != "i686" && CPU != "k6" && CPU != "k6-2" && CPU != "k6-3" &&
@@ -116,7 +118,10 @@ public:
     // Specifically ignore overflow/underflow as long as the leakage is
     // limited to the lower bits. This is to remain compatible with
     // other assemblers.
-    assert(isIntN(Size * 8 + 1, Value) &&
+    // This check breaks negative addends on x86-32.  It makes x86-32
+    // behaviour inconsistent with x86-64 and ARM.
+    // See: https://code.google.com/p/nativeclient/issues/detail?id=3548
+    assert((AllowNegativeAddends || isIntN(Size * 8 + 1, Value)) &&
            "Value does not fit in the Fixup field");
 
     for (unsigned i = 0; i != Size; ++i)
@@ -351,14 +356,16 @@ namespace {
 class ELFX86AsmBackend : public X86AsmBackend {
 public:
   uint8_t OSABI;
-  ELFX86AsmBackend(const Target &T, uint8_t _OSABI, StringRef CPU)
-      : X86AsmBackend(T, CPU), OSABI(_OSABI) {}
+  ELFX86AsmBackend(const Target &T, uint8_t _OSABI, StringRef CPU,
+                   const bool AllowNegativeAddends = false)
+    : X86AsmBackend(T, CPU, AllowNegativeAddends), OSABI(_OSABI) {}
 };
 
 class ELFX86_32AsmBackend : public ELFX86AsmBackend {
 public:
-  ELFX86_32AsmBackend(const Target &T, uint8_t OSABI, StringRef CPU)
-    : ELFX86AsmBackend(T, OSABI, CPU) {}
+  ELFX86_32AsmBackend(const Target &T, uint8_t OSABI, StringRef CPU,
+                      const bool AllowNegativeAddends = false)
+    : ELFX86AsmBackend(T, OSABI, CPU, AllowNegativeAddends) {}
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const override {
     return createX86ELFObjectWriter(OS, /*IsELF64*/ false, OSABI, ELF::EM_386);
@@ -367,12 +374,47 @@ public:
 
 class ELFX86_64AsmBackend : public ELFX86AsmBackend {
 public:
-  ELFX86_64AsmBackend(const Target &T, uint8_t OSABI, StringRef CPU)
-    : ELFX86AsmBackend(T, OSABI, CPU) {}
+  ELFX86_64AsmBackend(const Target &T, uint8_t OSABI, StringRef CPU,
+                      const bool AllowNegativeAddends = false)
+    : ELFX86AsmBackend(T, OSABI, CPU, AllowNegativeAddends) {}
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const override {
     return createX86ELFObjectWriter(OS, /*IsELF64*/ true, OSABI, ELF::EM_X86_64);
   }
+};
+
+class NaClX86_32AsmBackend : public ELFX86_32AsmBackend {
+public:
+  NaClX86_32AsmBackend(const Target &T, uint8_t OSABI, StringRef CPU)
+    : ELFX86_32AsmBackend(T, OSABI, CPU, true) {
+    State.PrefixSaved = 0;
+    State.PrefixPass = false;
+  }
+
+  bool CustomExpandInst(const MCInst &Inst,
+                        MCStreamer &Out,
+                        const MCSubtargetInfo &STI) override {
+    return CustomExpandInstNaClX86(Inst, Out, STI, State);
+  }
+ private:
+  X86MCNaClSFIState State;
+};
+
+class NaClX86_64AsmBackend : public ELFX86_64AsmBackend {
+public:
+  NaClX86_64AsmBackend(const Target &T, uint8_t OSABI, StringRef CPU)
+    : ELFX86_64AsmBackend(T, OSABI, CPU, true) {
+    State.PrefixSaved = 0;
+    State.PrefixPass = false;
+  }
+
+  bool CustomExpandInst(const MCInst &Inst,
+                        MCStreamer &Out,
+                        const MCSubtargetInfo &STI) override {
+    return CustomExpandInstNaClX86(Inst, Out, STI, State);
+  }
+ private:
+  X86MCNaClSFIState State;
 };
 
 class WindowsX86AsmBackend : public X86AsmBackend {
@@ -809,7 +851,11 @@ MCAsmBackend *llvm::createX86_32AsmBackend(const Target &T,
     return new WindowsX86AsmBackend(T, false, CPU);
 
   uint8_t OSABI = MCELFObjectTargetWriter::getOSABI(TheTriple.getOS());
-  return new ELFX86_32AsmBackend(T, OSABI, CPU);
+
+  if (TheTriple.isOSNaCl())
+    return new NaClX86_32AsmBackend(T, OSABI, CPU);
+  else
+    return new ELFX86_32AsmBackend(T, OSABI, CPU);
 }
 
 MCAsmBackend *llvm::createX86_64AsmBackend(const Target &T,
@@ -832,5 +878,9 @@ MCAsmBackend *llvm::createX86_64AsmBackend(const Target &T,
     return new WindowsX86AsmBackend(T, true, CPU);
 
   uint8_t OSABI = MCELFObjectTargetWriter::getOSABI(TheTriple.getOS());
-  return new ELFX86_64AsmBackend(T, OSABI, CPU);
+
+  if (TheTriple.isOSNaCl())
+    return new NaClX86_64AsmBackend(T, OSABI, CPU);
+  else
+    return new ELFX86_64AsmBackend(T, OSABI, CPU);
 }

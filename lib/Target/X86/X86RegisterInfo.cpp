@@ -16,6 +16,7 @@
 #include "X86RegisterInfo.h"
 #include "X86InstrBuilder.h"
 #include "X86MachineFunctionInfo.h"
+#include "X86NaClDecls.h"
 #include "X86Subtarget.h"
 #include "X86TargetMachine.h"
 #include "llvm/ADT/BitVector.h"
@@ -273,6 +274,12 @@ X86RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   if (Is64Bit) {
     if (IsWin64)
       return CSR_Win64_SaveList;
+    if (Subtarget.isTargetNaCl()) {
+      if (CallsEHReturn)
+        return CSR_NaCl64EHRet_SaveList;
+      return CSR_NaCl64_SaveList;
+    }
+
     if (CallsEHReturn)
       return CSR_64EHRet_SaveList;
     return CSR_64_SaveList;
@@ -407,6 +414,32 @@ BitVector X86RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
     for (unsigned n = 16; n != 32; ++n) {
       for (MCRegAliasIterator AI(X86::XMM0 + n, this, true); AI.isValid(); ++AI)
         Reserved.set(*AI);
+    }
+  }
+
+  const X86Subtarget& Subtarget = MF.getTarget().getSubtarget<X86Subtarget>();
+  const bool RestrictR15 = FlagRestrictR15;
+  assert(FlagUseZeroBasedSandbox || RestrictR15);
+  if (Subtarget.isTargetNaCl64()) {
+    if (RestrictR15) {
+      Reserved.set(X86::R15);
+      Reserved.set(X86::R15D);
+      Reserved.set(X86::R15W);
+      Reserved.set(X86::R15B);
+    }
+    Reserved.set(X86::RBP);
+    Reserved.set(X86::EBP);
+    Reserved.set(X86::BP);
+    Reserved.set(X86::BPL);
+    const bool RestrictR11 = FlagHideSandboxBase && !FlagUseZeroBasedSandbox;
+    if (RestrictR11) {
+      // Restrict r11 so that it can be used for indirect jump
+      // sequences that don't leak the sandbox base address onto the
+      // stack.
+      Reserved.set(X86::R11);
+      Reserved.set(X86::R11D);
+      Reserved.set(X86::R11W);
+      Reserved.set(X86::R11B);
     }
   }
 
@@ -679,6 +712,9 @@ unsigned getX86SubSuperRegister(unsigned Reg, MVT::SimpleValueType VT,
       return X86::R14D;
     case X86::R15B: case X86::R15W: case X86::R15D: case X86::R15:
       return X86::R15D;
+
+    case X86::EIP: case X86::RIP:
+      return X86::EIP;
     }
   case MVT::i64:
     switch (Reg) {
@@ -715,6 +751,9 @@ unsigned getX86SubSuperRegister(unsigned Reg, MVT::SimpleValueType VT,
       return X86::R14;
     case X86::R15B: case X86::R15W: case X86::R15D: case X86::R15:
       return X86::R15;
+
+    case X86::EIP: case X86::RIP:
+      return X86::RIP;
     }
   }
 }

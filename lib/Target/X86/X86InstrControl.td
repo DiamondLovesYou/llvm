@@ -136,7 +136,7 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
                    OpSize32, Sched<[WriteJump]>;
   def JMP32m     : I<0xFF, MRM4m, (outs), (ins i32mem:$dst), "jmp{l}\t{*}$dst",
                      [(brind (loadi32 addr:$dst))], IIC_JMP_MEM>,
-                   Requires<[Not64BitMode]>, OpSize32, Sched<[WriteJumpLd]>;
+                   Requires<[Not64BitMode, NotNaCl]>, OpSize32, Sched<[WriteJumpLd]>;
 
   def JMP64r     : I<0xFF, MRM4r, (outs), (ins GR64:$dst), "jmp{q}\t{*}$dst",
                      [(brind GR64:$dst)], IIC_JMP_REG>, Requires<[In64BitMode]>,
@@ -155,7 +155,7 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
                           IIC_JMP_FAR_PTR>, OpSize32, Sched<[WriteJump]>;
   def FARJMP64   : RI<0xFF, MRM5m, (outs), (ins opaque80mem:$dst),
                       "ljmp{q}\t{*}$dst", [], IIC_JMP_FAR_MEM>,
-                   Sched<[WriteJump]>;
+                   Requires<[NotNaCl]>, Sched<[WriteJump]>;
 
   def FARJMP16m  : I<0xFF, MRM5m, (outs), (ins opaque32mem:$dst),
                      "ljmp{w}\t{*}$dst", [], IIC_JMP_FAR_MEM>, OpSize16,
@@ -189,7 +189,7 @@ let isCall = 1 in
     def CALLpcrel16 : Ii16PCRel<0xE8, RawFrm,
                            (outs), (ins i16imm_pcrel:$dst),
                            "call{w}\t$dst", [], IIC_CALL_RI>, OpSize16,
-                      Sched<[WriteJump]>;
+                      Requires<[NotNaCl]>, Sched<[WriteJump]>;
     def CALL16r     : I<0xFF, MRM2r, (outs), (ins GR16:$dst),
                         "call{w}\t{*}$dst", [(X86call GR16:$dst)], IIC_CALL_RI>,
                       OpSize16, Requires<[Not64BitMode]>, Sched<[WriteJump]>;
@@ -204,7 +204,7 @@ let isCall = 1 in
     def CALL32m     : I<0xFF, MRM2m, (outs), (ins i32mem:$dst),
                         "call{l}\t{*}$dst", [(X86call (loadi32 addr:$dst))],
                         IIC_CALL_MEM>, OpSize32,
-                      Requires<[Not64BitMode,FavorMemIndirectCall]>,
+                      Requires<[Not64BitMode,NotNaCl,FavorMemIndirectCall]>,
                       Sched<[WriteJumpLd]>;
 
     def FARCALL16i  : Iseg16<0x9A, RawFrmImm16, (outs),
@@ -248,7 +248,7 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1,
                    "", [], IIC_JMP_REG>;  // FIXME: Remove encoding when JIT is dead.
   let mayLoad = 1 in
   def TAILJMPm : I<0xFF, MRM4m, (outs), (ins i32mem_TC:$dst),
-                   "jmp{l}\t{*}$dst  # TAILCALL", [], IIC_JMP_MEM>;
+                   "jmp{l}\t{*}$dst  # TAILCALL", [], IIC_JMP_MEM>, Requires<[NotNaCl]>;
 }
 
 
@@ -266,7 +266,7 @@ let isCall = 1, Uses = [RSP], SchedRW = [WriteJump] in {
   def CALL64pcrel32 : Ii32PCRel<0xE8, RawFrm,
                         (outs), (ins i64i32imm_pcrel:$dst),
                         "call{q}\t$dst", [], IIC_CALL_RI>, OpSize32,
-                      Requires<[In64BitMode]>;
+                      Requires<[In64BitMode, NotNaCl]>;
   def CALL64r       : I<0xFF, MRM2r, (outs), (ins GR64:$dst),
                         "call{q}\t{*}$dst", [(X86call GR64:$dst)],
                         IIC_CALL_RI>,
@@ -274,10 +274,11 @@ let isCall = 1, Uses = [RSP], SchedRW = [WriteJump] in {
   def CALL64m       : I<0xFF, MRM2m, (outs), (ins i64mem:$dst),
                         "call{q}\t{*}$dst", [(X86call (loadi64 addr:$dst))],
                         IIC_CALL_MEM>,
-                      Requires<[In64BitMode,FavorMemIndirectCall]>;
+                      Requires<[In64BitMode, NotNaCl, FavorMemIndirectCall]>;
 
   def FARCALL64   : RI<0xFF, MRM3m, (outs), (ins opaque80mem:$dst),
-                       "lcall{q}\t{*}$dst", [], IIC_CALL_FAR_MEM>;
+                       "lcall{q}\t{*}$dst", [], IIC_CALL_FAR_MEM>,
+                       Requires<[NotNaCl]>;
 }
 
 let isCall = 1, isCodeGenOnly = 1 in
@@ -311,5 +312,6 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1,
 
   let mayLoad = 1 in
   def TAILJMPm64 : I<0xFF, MRM4m, (outs), (ins i64mem_TC:$dst),
-                     "jmp{q}\t{*}$dst  # TAILCALL", [], IIC_JMP_MEM>;
+                     "jmp{q}\t{*}$dst  # TAILCALL", [], IIC_JMP_MEM>,
+                   Requires<[NotNaCl]>;
 }

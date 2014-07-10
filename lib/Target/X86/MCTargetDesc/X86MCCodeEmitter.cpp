@@ -1266,6 +1266,8 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
     llvm_unreachable("Unknown FormMask value in X86MCCodeEmitter!");
   case X86II::Pseudo:
     llvm_unreachable("Pseudo instruction shouldn't be emitted");
+  case X86II::CustomFrm:
+    llvm_unreachable("CustomFrm instruction shouldn't be emitted");
   case X86II::RawFrmDstSrc: {
     unsigned siReg = MI.getOperand(1).getReg();
     assert(((siReg == X86::SI && MI.getOperand(0).getReg() == X86::DI) ||

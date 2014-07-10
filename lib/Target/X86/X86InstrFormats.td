@@ -50,6 +50,7 @@ def MRM_F4 : Format<71>; def MRM_F5 : Format<72>; def MRM_F6 : Format<73>;
 def MRM_F7 : Format<74>; def MRM_F8 : Format<75>; def MRM_F9 : Format<76>;
 def MRM_FA : Format<77>; def MRM_FB : Format<78>; def MRM_FC : Format<79>;
 def MRM_FD : Format<80>; def MRM_FE : Format<81>; def MRM_FF : Format<82>;
+def CustomFrm : Format<126>;
 
 // ImmType - This specifies the immediate type used by an instruction. This is
 // part of the ad-hoc solution used to emit machine instruction encodings by our

@@ -41,6 +41,11 @@ namespace llvm {
     const MCExpr *getDebugThreadLocalSymbol(const MCSymbol *Sym) const override;
   };
 
+  class NaClTargetLoweringObjectFile : public TargetLoweringObjectFileELF {
+  public:
+    virtual void Initialize(MCContext &ctx, const TargetMachine &TM);
+  };
+
   /// \brief This implementation is used for Windows targets on x86 and x86-64.
   class X86WindowsTargetObjectFile : public TargetLoweringObjectFileCOFF {
     const MCExpr *

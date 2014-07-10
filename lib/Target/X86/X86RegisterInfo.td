@@ -297,6 +297,8 @@ def CR15 : X86Reg<"cr15", 15>;
 def EIZ : X86Reg<"eiz", 4>;
 def RIZ : X86Reg<"riz", 4>;
 
+def PSEUDO_NACL_SEG : X86Reg<"nacl", 4>;
+
 
 //===----------------------------------------------------------------------===//
 // Register Class Definitions... now that we have all of the pieces, define the
@@ -362,6 +364,8 @@ def GR16_ABCD : RegisterClass<"X86", [i16], 16, (add AX, CX, DX, BX)>;
 def GR32_ABCD : RegisterClass<"X86", [i32], 32, (add EAX, ECX, EDX, EBX)>;
 def GR64_ABCD : RegisterClass<"X86", [i64], 64, (add RAX, RCX, RDX, RBX)>;
 def GR32_TC   : RegisterClass<"X86", [i32], 32, (add EAX, ECX, EDX)>;
+def GR32_TC_64: RegisterClass<"X86", [i32], 32, (add EAX, ECX, EDX, ESI, EDI,
+                                                 R8D, R9D, R11D)>;
 def GR64_TC   : RegisterClass<"X86", [i64], 64, (add RAX, RCX, RDX, RSI, RDI,
                                                      R8, R9, R11, RIP)>;
 def GR64_TCW64 : RegisterClass<"X86", [i64], 64, (add RAX, RCX, RDX,

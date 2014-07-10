@@ -28,6 +28,7 @@ class MCRelaxableFragment;
 class MCObjectWriter;
 class MCSection;
 class MCValue;
+class MCSubtargetInfo;
 class raw_ostream;
 
 /// MCAsmBackend - Generic interface to target specific assembler backends.
@@ -148,6 +149,16 @@ public:
   virtual uint32_t
   generateCompactUnwindEncoding(ArrayRef<MCCFIInstruction>) const {
     return 0;
+  }
+
+  /// CustomExpandInst -
+  ///   If the MCInst instruction has a custom expansion, write it to the
+  /// MCStreamer 'Out'. This can be used to perform "last minute" rewrites of
+  /// MCInst instructions for emission.
+  virtual bool CustomExpandInst(const MCInst &Inst,
+                                MCStreamer &Out,
+                                const MCSubtargetInfo &STI) {
+    return false;
   }
 };
 

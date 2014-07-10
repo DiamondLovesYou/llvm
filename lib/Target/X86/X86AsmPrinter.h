@@ -43,6 +43,12 @@ class LLVM_LIBRARY_VISIBILITY X86AsmPrinter : public AsmPrinter {
 
   void EmitInstruction(const MachineInstr *MI) override;
 
+  bool UseReadOnlyJumpTables() const override;
+
+  unsigned GetTargetBasicBlockAlign() const override;
+
+  unsigned GetTargetLabelAlign(const MachineInstr *MI) const override;
+
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                        unsigned AsmVariant, const char *ExtraCode,
                        raw_ostream &OS) override;

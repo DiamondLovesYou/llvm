@@ -34,7 +34,6 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Transforms/NaCl.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -44,6 +43,7 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/NaCl.h"
 #include <memory>
 using namespace llvm;
 
@@ -324,16 +324,29 @@ static int compileModule(char **argv, LLVMContext &Context) {
   // Build up all of the passes that we want to do to the module.
   PassManager PM;
 
+  // Add the target data from the target machine, if it exists, or the module.
+  if (const DataLayout *DL = Target.getDataLayout())
+    mod->setDataLayout(DL);
+  PM.add(new DataLayoutPass(mod));
+
+  if (TheTriple.isOSNaCl()) {
+    PM.add(createAddPNaClExternalDeclsPass());
+    // Add the intrinsic resolution pass. It assumes ABI-conformant code.
+    PM.add(createResolvePNaClIntrinsicsPass());
+  }
+
   // Add an appropriate TargetLibraryInfo pass for the module's triple.
   TargetLibraryInfo *TLI = new TargetLibraryInfo(TheTriple);
   if (DisableSimplifyLibCalls)
     TLI->disableAllFunctions();
   PM.add(TLI);
 
-  // Add the target data from the target machine, if it exists, or the module.
-  if (const DataLayout *DL = Target.getDataLayout())
-    mod->setDataLayout(DL);
-  PM.add(new DataLayoutPass(mod));
+
+  if (TheTriple.isOSNaCl()) {
+    // Allow subsequent passes to better optimize vector instructions.
+    // This pass uses the TargetLibraryInfo above.
+    PM.add(createCombineVectorInstructionsPass());
+  }
 
   if (RelaxAll.getNumOccurrences() > 0 &&
       FileType != TargetMachine::CGFT_ObjectFile)

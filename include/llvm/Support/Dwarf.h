@@ -635,6 +635,7 @@ enum SourceLanguage {
 
   DW_LANG_lo_user = 0x8000,
   DW_LANG_Mips_Assembler = 0x8001,
+  DW_LANG_Rust = 0x9000,
   DW_LANG_hi_user = 0xffff
 };
 

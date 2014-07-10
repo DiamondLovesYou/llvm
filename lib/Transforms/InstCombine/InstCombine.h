@@ -93,6 +93,7 @@ class LLVM_LIBRARY_VISIBILITY InstCombiner
   bool MinimizeSize;
   /// Are we allowed to add llvm.*.with.overflow.*?
   bool NoOverflowSafeArithmetric;
+  bool AllowNonPowerOfTwoInts = true;
 public:
   /// Worklist - All of the instructions that need to be simplified.
   InstCombineWorklist Worklist;
@@ -110,6 +111,8 @@ public:
 
 public:
   bool runOnFunction(Function &F) override;
+
+  bool doInitialization(Module &M) override;
 
   bool DoOneIteration(Function &F, unsigned ItNum);
 

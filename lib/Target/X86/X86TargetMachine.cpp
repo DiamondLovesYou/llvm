@@ -168,6 +168,11 @@ bool X86PassConfig::addPreEmitPass() {
     ShouldPrint = true;
   }
 
+  if (getX86Subtarget().isTargetNaCl()) {
+    addPass(createX86NaClRewritePass());
+    ShouldPrint = true;
+  }
+
   return ShouldPrint;
 }
 

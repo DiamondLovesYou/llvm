@@ -2728,8 +2728,6 @@ bool InstCombiner::runOnFunction(Function &F) {
   MinimizeSize = F.getAttributes().hasAttribute(AttributeSet::FunctionIndex,
                                                 Attribute::MinSize);
 
-  NoOverflowSafeArithmetric = Triple(F.getParent()->getTargetTriple()).isOSNaCl();
-
   /// Builder - This is an IRBuilder that automatically inserts new
   /// instructions into the worklist when they are created.
   IRBuilder<true, TargetFolder, InstCombineIRInserter>
@@ -2753,6 +2751,14 @@ bool InstCombiner::runOnFunction(Function &F) {
 
   Builder = nullptr;
   return EverMadeChange;
+}
+
+bool InstCombiner::doInitialization(Module &M) {
+  Triple TT(M.getTargetTriple());
+  NoOverflowSafeArithmetric = TT.isOSNaCl();
+  AllowNonPowerOfTwoInts = !TT.isOSNaCl();
+
+  return Pass::doInitialization(M);
 }
 
 FunctionPass *llvm::createInstructionCombiningPass() {

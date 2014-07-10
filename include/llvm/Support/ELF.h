@@ -1628,6 +1628,11 @@ enum : unsigned {
   PF_MASKPROC = 0xf0000000 // Bits for processor-specific semantics.
 };
 
+// Note segment descriptor types (for object files).
+enum {
+  NT_VERSION  = 1          // Note contains a version string.
+};
+
 // Dynamic table entry for ELF32.
 struct Elf32_Dyn
 {

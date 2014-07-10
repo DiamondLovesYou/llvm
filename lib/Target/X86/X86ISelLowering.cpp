@@ -187,6 +187,8 @@ static TargetLoweringObjectFile *createTLOF(const Triple &TT) {
 
   if (TT.isOSLinux())
     return new X86LinuxTargetObjectFile();
+  if (TT.isOSNaCl())
+    return new NaClTargetLoweringObjectFile();
   if (TT.isOSBinFormatELF())
     return new TargetLoweringObjectFileELF();
   if (TT.isKnownWindowsMSVCEnvironment())
@@ -243,7 +245,9 @@ void X86TargetLowering::resetOperationActions() {
     setSchedulingPreference(Sched::RegPressure);
   const X86RegisterInfo *RegInfo =
     static_cast<const X86RegisterInfo*>(TM.getRegisterInfo());
-  setStackPointerRegisterToSaveRestore(RegInfo->getStackRegister());
+
+  setStackPointerRegisterToSaveRestore(Subtarget->isTargetNaCl64() ?
+                                       X86::ESP : RegInfo->getStackRegister());
 
   // Bypass expensive divides on Atom when compiling with O2
   if (Subtarget->hasSlowDivide() && TM.getOptLevel() >= CodeGenOpt::Default) {
@@ -611,7 +615,7 @@ void X86TargetLowering::resetOperationActions() {
     setOperationAction(ISD::EH_LABEL, MVT::Other, Expand);
   }
 
-  if (Subtarget->is64Bit()) {
+  if (Subtarget->is64Bit() && !Subtarget->isTarget64BitILP32()) {
     setExceptionPointerRegister(X86::RAX);
     setExceptionSelectorRegister(X86::RDX);
   } else {
@@ -643,8 +647,10 @@ void X86TargetLowering::resetOperationActions() {
   setOperationAction(ISD::STACKSAVE,          MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE,       MVT::Other, Expand);
 
-  setOperationAction(ISD::DYNAMIC_STACKALLOC, Subtarget->is64Bit() ?
-                     MVT::i64 : MVT::i32, Custom);
+  setOperationAction(ISD::DYNAMIC_STACKALLOC,
+                     Subtarget->is64Bit() && !Subtarget->isTargetNaCl() ?
+                     MVT::i64 : MVT::i32,
+                     Custom);
 
   if (!TM.Options.UseSoftFloat && X86ScalarSSEf64) {
     // f32 and f64 use SSE.
@@ -1952,7 +1958,16 @@ X86TargetLowering::LowerReturn(SDValue Chain,
     unsigned RetValReg =
       (Subtarget->is64Bit() && !Subtarget->isTarget64BitILP32()) ?
       X86::RAX : X86::EAX;
-    Chain = DAG.getCopyToReg(Chain, dl, RetValReg, Val, Flag);
+
+    if (Subtarget->isTargetNaCl()) {
+      RetValReg = Subtarget->isTarget64BitILP32() ? X86::EAX : X86::RAX;
+      // NaCl 64 uses 32-bit pointers, so there might be some zero-ext needed.
+      SDValue Zext = DAG.getZExtOrTrunc(Val, dl, MVT::i64);
+      Chain = DAG.getCopyToReg(Chain, dl, X86::RAX, Zext, Flag);
+    } else {
+      Chain = DAG.getCopyToReg(Chain, dl, RetValReg, Val, Flag);
+    }
+
     Flag = Chain.getValue(1);
 
     // RAX/EAX now acts like a return value.
@@ -2725,7 +2740,9 @@ X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     } else if (!IsSibcall && (!isTailCall || isByVal)) {
       assert(VA.isMemLoc());
       if (!StackPtr.getNode())
-        StackPtr = DAG.getCopyFromReg(Chain, dl, RegInfo->getStackRegister(),
+        StackPtr = DAG.getCopyFromReg(Chain, dl,
+                                      Subtarget->isTargetNaCl64() ?
+                                      X86::ESP : RegInfo->getStackRegister(),
                                       getPointerTy());
       MemOpChains.push_back(LowerMemOpCallTo(Chain, StackPtr, Arg,
                                              dl, DAG, VA, Flags));
@@ -2818,7 +2835,8 @@ X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
         SDValue Source = DAG.getIntPtrConstant(VA.getLocMemOffset());
         if (!StackPtr.getNode())
           StackPtr = DAG.getCopyFromReg(Chain, dl,
-                                        RegInfo->getStackRegister(),
+                                        Subtarget->isTargetNaCl64() ?
+                                        X86::ESP : RegInfo->getStackRegister(),
                                         getPointerTy());
         Source = DAG.getNode(ISD::ADD, dl, getPointerTy(), StackPtr, Source);
 
@@ -3442,7 +3460,8 @@ SDValue X86TargetLowering::getReturnAddressFrameIndex(SelectionDAG &DAG) const {
     FuncInfo->setRAIndex(ReturnAddrIndex);
   }
 
-  return DAG.getFrameIndex(ReturnAddrIndex, getPointerTy());
+  return DAG.getFrameIndex(ReturnAddrIndex,
+                           Subtarget->isTargetNaCl64() ? MVT::i64 : getPointerTy());
 }
 
 bool X86::isOffsetSuitableForCodeModel(int64_t Offset, CodeModel::Model M,
@@ -8980,7 +8999,8 @@ X86TargetLowering::LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const {
 static SDValue
 GetTLSADDR(SelectionDAG &DAG, SDValue Chain, GlobalAddressSDNode *GA,
            SDValue *InFlag, const EVT PtrVT, unsigned ReturnReg,
-           unsigned char OperandFlags, bool LocalDynamic = false) {
+           unsigned char OperandFlags, bool LocalDynamic = false,
+           const ISD::NodeType Opcode = ISD::DELETED_NODE) {
   MachineFrameInfo *MFI = DAG.getMachineFunction().getFrameInfo();
   SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
   SDLoc dl(GA);
@@ -8991,6 +9011,10 @@ GetTLSADDR(SelectionDAG &DAG, SDValue Chain, GlobalAddressSDNode *GA,
 
   X86ISD::NodeType CallType = LocalDynamic ? X86ISD::TLSBASEADDR
                                            : X86ISD::TLSADDR;
+
+  // If Opcode was explicitly overridden, use it as the call type.
+  if (Opcode != ISD::DELETED_NODE)
+    CallType = static_cast<X86ISD::NodeType>(Opcode);
 
   if (InFlag) {
     SDValue Ops[] = { Chain,  TGA, *InFlag };
@@ -9123,6 +9147,50 @@ static SDValue LowerToTLSExecModel(GlobalAddressSDNode *GA, SelectionDAG &DAG,
   return DAG.getNode(ISD::ADD, dl, PtrVT, ThreadPointer, Offset);
 }
 
+// Lower ISD::GlobalTLSAddress using the "initial exec" or "local exec" model.
+static SDValue
+LowerToTLSExecCall(GlobalAddressSDNode *GA, SelectionDAG &DAG,
+                   const EVT PtrVT, TLSModel::Model model, bool is64Bit) {
+
+  // See: http://code.google.com/p/nativeclient/issues/detail?id=1685
+  unsigned char TargetFlag;
+  ISD::NodeType Opcode;
+  if (model == TLSModel::LocalExec) {
+    TargetFlag = is64Bit ? X86II::MO_TPOFF : X86II::MO_NTPOFF;
+    Opcode = static_cast<ISD::NodeType>(X86ISD::TLSADDR_LE);
+  } else if (model == TLSModel::InitialExec) {
+    TargetFlag = is64Bit ? X86II::MO_GOTTPOFF : X86II::MO_INDNTPOFF;
+    Opcode = static_cast<ISD::NodeType>(X86ISD::TLSADDR_IE);
+  } else {
+    llvm_unreachable("Unknown TLS model");
+  }
+
+  return GetTLSADDR(DAG, DAG.getEntryNode(), GA, NULL, PtrVT,
+                    X86::EAX, // PtrVT is 32-bit.
+                    TargetFlag, false, Opcode);
+}
+
+// Lower TLS accesses to a function call, rather than use segment registers.
+// Lower ISD::GlobalTLSAddress for NaCl 64 bit.
+static SDValue
+LowerToTLSNaCl64(GlobalAddressSDNode *GA, SelectionDAG &DAG,
+                 const EVT PtrVT, TLSModel::Model model) {
+
+  // See: http://code.google.com/p/nativeclient/issues/detail?id=1685
+  unsigned char TargetFlag;
+  ISD::NodeType Opcode;
+  if (model == TLSModel::GeneralDynamic || model == TLSModel::LocalDynamic) {
+    TargetFlag = X86II::MO_TLSGD;
+    Opcode = static_cast<ISD::NodeType>(X86ISD::TLSADDR);
+  } else {
+    return LowerToTLSExecCall(GA, DAG, PtrVT, model, true);
+  }
+
+  return GetTLSADDR(DAG, DAG.getEntryNode(), GA, nullptr, PtrVT,
+                    X86::EAX, // PtrVT is 32-bit.
+                    TargetFlag, false, Opcode);
+}
+
 SDValue
 X86TargetLowering::LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const {
 
@@ -9131,6 +9199,9 @@ X86TargetLowering::LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const {
 
   if (Subtarget->isTargetELF()) {
     TLSModel::Model model = DAG.getTarget().getTLSModel(GV);
+
+    if (Subtarget->isTargetNaCl64())
+      return LowerToTLSNaCl64(GA, DAG, getPointerTy(), model);
 
     switch (model) {
       case TLSModel::GeneralDynamic:
@@ -9142,9 +9213,14 @@ X86TargetLowering::LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const {
                                            Subtarget->is64Bit());
       case TLSModel::InitialExec:
       case TLSModel::LocalExec:
-        return LowerToTLSExecModel(
-            GA, DAG, getPointerTy(), model, Subtarget->is64Bit(),
-            DAG.getTarget().getRelocationModel() == Reloc::PIC_);
+        if (llvm::TLSUseCall && Subtarget->isTargetNaCl()) {
+          return LowerToTLSExecCall(GA, DAG, getPointerTy(), model,
+                                    Subtarget->is64Bit());
+        } else {
+          return LowerToTLSExecModel(GA, DAG, getPointerTy(),
+                                     model, Subtarget->is64Bit(),
+                                     DAG.getTarget().getRelocationModel() == Reloc::PIC_);
+        }
     }
     llvm_unreachable("Unknown TLS model.");
   }
@@ -10597,6 +10673,11 @@ static bool isAllOnes(SDValue V) {
 /// if it's possible.
 SDValue X86TargetLowering::LowerToBT(SDValue And, ISD::CondCode CC,
                                      SDLoc dl, SelectionDAG &DAG) const {
+
+  // NaCl validator rejects BT, BTS, and BTC.
+  if (Subtarget->isTargetNaCl())
+    return SDValue();
+
   SDValue Op0 = And.getOperand(0);
   SDValue Op1 = And.getOperand(1);
   if (Op0.getOpcode() == ISD::TRUNCATE)
@@ -11771,6 +11852,9 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
                SplitStack;
   SDLoc dl(Op);
 
+  const bool Has64BitPointers = Subtarget->is64Bit() && !Subtarget->isTargetNaCl();
+  MVT SPTy = Has64BitPointers ? MVT::i64 : MVT::i32;
+
   if (!Lower) {
     const TargetLowering &TLI = DAG.getTargetLoweringInfo();
     SDNode* Node = Op.getNode();
@@ -11816,7 +11900,6 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
   EVT VT = Op.getNode()->getValueType(0);
 
   bool Is64Bit = Subtarget->is64Bit();
-  EVT SPTy = Is64Bit ? MVT::i64 : MVT::i32;
 
   if (SplitStack) {
     MachineRegisterInfo &MRI = MF.getRegInfo();
@@ -11833,8 +11916,7 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
                              "have nested arguments.");
     }
 
-    const TargetRegisterClass *AddrRegClass =
-      getRegClassFor(Subtarget->is64Bit() ? MVT::i64:MVT::i32);
+    const TargetRegisterClass *AddrRegClass = getRegClassFor(SPTy);
     unsigned Vreg = MRI.createVirtualRegister(AddrRegClass);
     Chain = DAG.getCopyToReg(Chain, dl, Vreg, Size);
     SDValue Value = DAG.getNode(X86ISD::SEG_ALLOCA, dl, SPTy, Chain,
@@ -11843,7 +11925,7 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
     return DAG.getMergeValues(Ops1, dl);
   } else {
     SDValue Flag;
-    unsigned Reg = (Subtarget->is64Bit() ? X86::RAX : X86::EAX);
+    unsigned Reg = (Has64BitPointers ? X86::RAX : X86::EAX);
 
     Chain = DAG.getCopyToReg(Chain, dl, Reg, Size, Flag);
     Flag = Chain.getValue(1);
@@ -11853,7 +11935,7 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
 
     const X86RegisterInfo *RegInfo =
       static_cast<const X86RegisterInfo*>(DAG.getTarget().getRegisterInfo());
-    unsigned SPReg = RegInfo->getStackRegister();
+    unsigned SPReg = Subtarget->isTargetNaCl64() ? X86::ESP : RegInfo->getStackRegister();
     SDValue SP = DAG.getCopyFromReg(Chain, dl, SPReg, SPTy);
     Chain = SP.getValue(1);
 
@@ -12125,11 +12207,33 @@ static SDValue getTargetVShiftNode(unsigned Opc, SDLoc dl, MVT VT,
   return DAG.getNode(Opc, dl, VT, SrcOp, ShAmt);
 }
 
-static SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) {
+SDValue X86TargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const {
   SDLoc dl(Op);
   unsigned IntNo = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
   switch (IntNo) {
   default: return SDValue();    // Don't custom lower most intrinsics.
+
+  case Intrinsic::nacl_read_tp: {
+    EVT PtrVT = DAG.getTargetLoweringInfo().getPointerTy();
+    if (Subtarget->is64Bit() || llvm::TLSUseCall) {
+      // Call __nacl_read_tp() to get the thread pointer.
+      unsigned PtrSize = PtrVT.getSizeInBits();
+      IntegerType *PtrTy = Type::getIntNTy(*DAG.getContext(), PtrSize);
+      SDValue ReadTpFunction = DAG.getExternalSymbol("__nacl_read_tp", PtrVT);
+      ArgListTy Args;
+      TargetLowering::CallLoweringInfo CLI(DAG);
+      CLI.setChain(DAG.getEntryNode())
+        .setCallee(CallingConv::C, PtrTy, ReadTpFunction,
+                   &Args, 0)
+        .setDebugLoc(dl);
+      std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+      return CallResult.first;
+    } else {
+      // Get %gs:0, which contains the thread pointer on x86-32.
+      return DAG.getNode(X86ISD::THREAD_POINTER_FROM_GS, dl, PtrVT);
+    }
+  }
+
   // Comparison intrinsics.
   case Intrinsic::x86_sse_comieq_ss:
   case Intrinsic::x86_sse_comilt_ss:
@@ -16948,6 +17052,23 @@ X86TargetLowering::EmitLoweredWinAlloca(MachineInstr *MI,
 }
 
 MachineBasicBlock *
+X86TargetLowering::EmitLoweredThreadPointerFromGs(MachineInstr *MI,
+                                                  MachineBasicBlock *BB) const {
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  DebugLoc DL = MI->getDebugLoc();
+  // This generates "movl %gs:0, %DEST", which fetches the thread
+  // pointer on x86-32.
+  BuildMI(*BB, MI, DL, TII->get(X86::MOV32rm), MI->getOperand(0).getReg())
+    .addReg(/*Base=*/0)
+    .addImm(/*Scale=*/1)
+    .addReg(/*IndexReg=*/0)
+    .addImm(/*Disp=*/0)
+    .addReg(/*Segment=*/X86::GS);
+  MI->eraseFromParent();
+  return BB;
+}
+
+MachineBasicBlock *
 X86TargetLowering::EmitLoweredTLSCall(MachineInstr *MI,
                                       MachineBasicBlock *BB) const {
   // This is pretty easy.  We're taking the value that we received from
@@ -17308,6 +17429,8 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
     return EmitLoweredSegAlloca(MI, BB, false);
   case X86::SEG_ALLOCA_64:
     return EmitLoweredSegAlloca(MI, BB, true);
+  case X86::THREAD_POINTER_FROM_GS:
+    return EmitLoweredThreadPointerFromGs(MI, BB);
   case X86::TLSCall_32:
   case X86::TLSCall_64:
     return EmitLoweredTLSCall(MI, BB);
@@ -17507,6 +17630,7 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
     return EmitVAStartSaveXMMRegsWithCustomInserter(MI, BB);
 
   case X86::VAARG_64:
+  case X86::NACL_CG_VAARG_64:
     return EmitVAARG64WithCustomInserter(MI, BB);
 
   case X86::EH_SjLj_SetJmp32:

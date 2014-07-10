@@ -20,6 +20,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
@@ -239,6 +240,18 @@ bool BranchFolder::OptimizeFunction(MachineFunction &MF,
         // Remember that this JT is live.
         JTIsLive.set(Op.getIndex());
       }
+  }
+
+  // This currently only used on ARM targets where the ConstantPool
+  // subclass is overloading getJumpTableIndex()
+  const std::vector<MachineConstantPoolEntry>& CPs =
+    MF.getConstantPool()->getConstants();
+  for (unsigned i = 0, e = CPs.size(); i != e; ++i) {
+    if (!CPs[i].isMachineConstantPoolEntry()) continue;
+    unsigned *JTIndex = CPs[i].Val.MachineCPVal->getJumpTableIndex();
+    if (!JTIndex) continue;
+    // Remember that this JT is live.
+    JTIsLive.set(*JTIndex);
   }
 
   // Finally, remove dead jump tables.  This happens when the

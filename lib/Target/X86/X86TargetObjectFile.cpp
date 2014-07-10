@@ -56,6 +56,31 @@ X86LinuxTargetObjectFile::getDebugThreadLocalSymbol(
   return MCSymbolRefExpr::Create(Sym, MCSymbolRefExpr::VK_DTPOFF, getContext());
 }
 
+// NOTE: this was largely lifted from
+// lib/Target/ARM/ARMTargetObjectFile.cpp
+//
+// The default is .ctors/.dtors while the arm backend uses
+// .init_array/.fini_array
+//
+// Without this the linker defined symbols __fini_array_start and
+// __fini_array_end do not have useful values. c.f.:
+// http://code.google.com/p/nativeclient/issues/detail?id=805
+void NaClTargetLoweringObjectFile::Initialize(MCContext &Ctx,
+                                              const TargetMachine &TM) {
+  TargetLoweringObjectFileELF::Initialize(Ctx, TM);
+
+  StaticCtorSection =
+    getContext().getELFSection(".init_array", ELF::SHT_INIT_ARRAY,
+                               ELF::SHF_WRITE |
+                               ELF::SHF_ALLOC,
+                               SectionKind::getDataRel());
+  StaticDtorSection =
+    getContext().getELFSection(".fini_array", ELF::SHT_FINI_ARRAY,
+                               ELF::SHF_WRITE |
+                               ELF::SHF_ALLOC,
+                               SectionKind::getDataRel());
+}
+
 const MCExpr *X86WindowsTargetObjectFile::getExecutableRelativeSymbol(
     const ConstantExpr *CE, Mangler &Mang, const TargetMachine &TM) const {
   // We are looking for the difference of two symbols, need a subtraction

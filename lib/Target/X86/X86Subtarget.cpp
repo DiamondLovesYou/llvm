@@ -179,7 +179,13 @@ bool X86Subtarget::IsLegalToCallImmediateAddr(const TargetMachine &TM) const {
   // the following check for Win32 should be removed.
   if (In64BitMode || isTargetWin32())
     return false;
-  return isTargetELF() || TM.getRelocationModel() == Reloc::Static;
+
+  // BUG= http://code.google.com/p/nativeclient/issues/detail?id=2367
+  // For NaCl dynamic linking we do not want to generate a text relocation to
+  // an absolute address in PIC mode.  Such a situation arises from
+  // test/CodeGen/X86/call-imm.ll with the default implementation.
+  // For other platforms we retain the default behavior.
+  return (isTargetELF() && !isTargetNaCl()) || TM.getRelocationModel() == Reloc::Static;
 }
 
 void X86Subtarget::resetSubtargetFeatures(const MachineFunction *MF) {
@@ -245,7 +251,8 @@ void X86Subtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
   // 32 and 64 bit) and for all 64-bit targets.
   if (StackAlignOverride)
     stackAlignment = StackAlignOverride;
-  else if (isTargetDarwin() || isTargetLinux() || isTargetSolaris() ||
+  else if (isTargetDarwin() || isTargetLinux() ||
+           isTargetSolaris() || isTargetNaCl() ||
            In64BitMode)
     stackAlignment = 16;
 }

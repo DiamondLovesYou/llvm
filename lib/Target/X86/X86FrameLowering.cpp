@@ -17,6 +17,7 @@
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
 #include "X86TargetMachine.h"
+#include "X86NaClDecls.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -116,6 +117,8 @@ static unsigned findDeadCallerSavedReg(MachineBasicBlock &MBB,
   case X86::TCRETURNmi:
   case X86::TCRETURNdi64:
   case X86::TCRETURNri64:
+  case X86::NACL_CG_TCRETURNdi64:
+  case X86::NACL_CG_TCRETURNri64:
   case X86::TCRETURNmi64:
   case X86::EH_RETURN:
   case X86::EH_RETURN64: {
@@ -507,9 +510,51 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF) const {
     // Update the frame offset adjustment.
     MFI->setOffsetAdjustment(-NumBytes);
 
+    unsigned RegToPush = FramePtr;
+    const bool HideSandboxBase = (FlagHideSandboxBase &&
+                                  STI.isTargetNaCl64() &&
+                                  !FlagUseZeroBasedSandbox);
+    if (HideSandboxBase) {
+      // Hide the sandbox base address by masking off the upper 32
+      // bits of the pushed/saved RBP on the stack, using:
+      //   mov %ebp, %r10d
+      //   push %r10
+      // instead of:
+      //   push %rbp
+      // Additionally, we can use rax instead of r10 when it is not a
+      // varargs function and therefore rax is available, saving one
+      // byte of REX prefix per instruction.
+      // Note that the epilog already adds R15 when restoring RBP.
+
+      // mov %ebp, %r10d
+      unsigned RegToPushLower;
+      if (Fn->isVarArg()) {
+        // Note: This use of r10 in the prolog can't be used with the
+        // gcc "nest" attribute, due to its use of r10.  Example:
+        // target triple = "x86_64-pc-linux-gnu"
+        // define i64 @func(i64 nest %arg) {
+        //   ret i64 %arg
+        // }
+        //
+        // $ clang -m64 llvm_nest_attr.ll -S -o -
+        // ...
+        // func:
+        //     movq    %r10, %rax
+        //     ret
+        RegToPush = X86::R10;
+        RegToPushLower = X86::R10D;
+      } else {
+        RegToPush = X86::RAX;
+        RegToPushLower = X86::EAX;
+      }
+      BuildMI(MBB, MBBI, DL, TII.get(X86::MOV32rr), RegToPushLower)
+        .addReg(FramePtr)
+        .setMIFlag(MachineInstr::FrameSetup);
+    }
+
     // Save EBP/RBP into the appropriate stack slot.
     BuildMI(MBB, MBBI, DL, TII.get(Is64Bit ? X86::PUSH64r : X86::PUSH32r))
-      .addReg(FramePtr, RegState::Kill)
+      .addReg(RegToPush, RegState::Kill)
       .setMIFlag(MachineInstr::FrameSetup);
 
     if (needsFrameMoves) {
@@ -751,6 +796,8 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
   case X86::TCRETURNdi64:
   case X86::TCRETURNri64:
   case X86::TCRETURNmi64:
+  case X86::NACL_CG_TCRETURNdi64:
+  case X86::NACL_CG_TCRETURNri64:
   case X86::EH_RETURN:
   case X86::EH_RETURN64:
     break;  // These are ok
@@ -844,6 +891,8 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
   } else if (RetOpcode == X86::TCRETURNri || RetOpcode == X86::TCRETURNdi ||
              RetOpcode == X86::TCRETURNmi ||
              RetOpcode == X86::TCRETURNri64 || RetOpcode == X86::TCRETURNdi64 ||
+             RetOpcode == X86::NACL_CG_TCRETURNri64 ||
+             RetOpcode == X86::NACL_CG_TCRETURNdi64 ||
              RetOpcode == X86::TCRETURNmi64) {
     bool isMem = RetOpcode == X86::TCRETURNmi || RetOpcode == X86::TCRETURNmi64;
     // Tail call return: adjust the stack pointer and jump to callee.
@@ -870,10 +919,21 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
     }
 
     // Jump to label or value in register.
-    if (RetOpcode == X86::TCRETURNdi || RetOpcode == X86::TCRETURNdi64) {
+    if (RetOpcode == X86::TCRETURNdi || RetOpcode == X86::TCRETURNdi64 ||
+        RetOpcode == X86::NACL_CG_TCRETURNdi64) {
+
+      unsigned TailJmpOpc;
+      switch (RetOpcode) {
+      case X86::TCRETURNdi  : TailJmpOpc = X86::TAILJMPd; break;
+      case X86::TCRETURNdi64: TailJmpOpc = X86::TAILJMPd64; break;
+      case X86::NACL_CG_TCRETURNdi64:
+        TailJmpOpc = X86::NACL_CG_TAILJMPd64;
+        break;
+      default: llvm_unreachable("Unexpected return opcode");
+      }
+
       MachineInstrBuilder MIB =
-        BuildMI(MBB, MBBI, DL, TII.get((RetOpcode == X86::TCRETURNdi)
-                                       ? X86::TAILJMPd : X86::TAILJMPd64));
+        BuildMI(MBB, MBBI, DL, TII.get(TailJmpOpc));
       if (JumpTarget.isGlobal())
         MIB.addGlobalAddress(JumpTarget.getGlobal(), JumpTarget.getOffset(),
                              JumpTarget.getTargetFlags());
@@ -890,6 +950,9 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
         MIB.addOperand(MBBI->getOperand(i));
     } else if (RetOpcode == X86::TCRETURNri64) {
       BuildMI(MBB, MBBI, DL, TII.get(X86::TAILJMPr64)).
+        addReg(JumpTarget.getReg(), RegState::Kill);
+    } else if (RetOpcode == X86::NACL_CG_TCRETURNri64) {
+      BuildMI(MBB, MBBI, DL, TII.get(X86::NACL_CG_TAILJMPr64)).
         addReg(JumpTarget.getReg(), RegState::Kill);
     } else {
       BuildMI(MBB, MBBI, DL, TII.get(X86::TAILJMPr)).
