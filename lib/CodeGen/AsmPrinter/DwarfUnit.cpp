@@ -95,6 +95,7 @@ int64_t DwarfUnit::getDefaultLowerBound() const {
   case dwarf::DW_LANG_C_plus_plus:
   case dwarf::DW_LANG_ObjC:
   case dwarf::DW_LANG_ObjC_plus_plus:
+  case dwarf::DW_LANG_Rust:
     return 0;
 
   case dwarf::DW_LANG_Fortran77:
