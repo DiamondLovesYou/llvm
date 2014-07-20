@@ -187,7 +187,9 @@ define void @testzeroinitializer(<4 x float> %in) {
 ; Czeroinitializer-NEXT: ret void
 
 ; Check that we ignore landingpads.
-; Function Attrs: nounwind
+define i32 @__gxx_personality_v0(i8*) {
+  unreachable
+}
 define i8* @__cxa_allocate_exception(i32 %thrown_size) {
 ; CHECK-LABEL: define i8* @__cxa_allocate_exception(i32 %thrown_size)
 entry:
@@ -211,7 +213,6 @@ lpad:                                             ; preds = %entry
   unreachable
 
 if.end:                                           ; preds = %invoke.cont1
-  tail call void @llvm.memset.p0i8.i32(i8* %call2, i8 0, i32 %add.i, i32 8, i1 false)
   %add.ptr.i = getelementptr inbounds i8* %call2, i32 80
   ret i8* %add.ptr.i
 }
