@@ -185,3 +185,34 @@ define void @testzeroinitializer(<4 x float> %in) {
 ; Czeroinitializer-NEXT: %[[M1:[_a-z0-9]+]] = load <4 x float>* @[[C1]], align 4
 ; Czeroinitializer-NEXT: %id = fadd <4 x float> %in, %[[M1]]
 ; Czeroinitializer-NEXT: ret void
+
+; Check that we ignore landingpads.
+; Function Attrs: nounwind
+define i8* @__cxa_allocate_exception(i32 %thrown_size) {
+; CHECK-LABEL: define i8* @__cxa_allocate_exception(i32 %thrown_size)
+entry:
+  %add.i = add i32 %thrown_size, 80
+  %call2 = invoke fastcc i8* (i32)* null (i32 %add.i)
+          to label %invoke.cont1 unwind label %lpad
+
+invoke.cont1:                                     ; preds = %entry
+  %cmp = icmp eq i8* %call2, null
+  br i1 %cmp, label %if.then, label %if.end
+
+if.then:                                          ; preds = %invoke.cont1
+  unreachable
+
+lpad:                                             ; preds = %entry
+  %0 = landingpad { i8*, i32 } personality i8* bitcast (i32 (i8*)* @__gxx_personality_v0 to i8*)
+          filter [0 x i8*] zeroinitializer
+; CHECK: %0 = landingpad { i8*, i32 } personality i8* bitcast (i32 (i8*)* @__gxx_personality_v0 to i8*)
+; CHECK-NEXT:      filter [0 x i8*] zeroinitializer
+  %1 = extractvalue { i8*, i32 } %0, 0
+  unreachable
+
+if.end:                                           ; preds = %invoke.cont1
+  tail call void @llvm.memset.p0i8.i32(i8* %call2, i8 0, i32 %add.i, i32 8, i1 false)
+  %add.ptr.i = getelementptr inbounds i8* %call2, i32 80
+  ret i8* %add.ptr.i
+}
+
