@@ -63,6 +63,11 @@ void GlobalizeConstantVectors::findConstantVectors(const Function &F,
                                                    Values &CVs) const {
   for (const_inst_iterator II = inst_begin(F), IE = inst_end(F); II != IE;
        ++II) {
+    // A landingpad can only accept ConstantExprs, so it should remain
+    // unmodified. Invokes are replaced at a later time so we need to ignore these cases.
+    if (isa<LandingPadInst>(*II))
+      continue;
+
     for (User::const_op_iterator OI = II->op_begin(), OE = II->op_end();
          OI != OE; ++OI) {
       Value *V = OI->get();
