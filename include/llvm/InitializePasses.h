@@ -276,6 +276,9 @@ void initializeMachineFunctionPrinterPassPass(PassRegistry&);
 void initializeStackMapLivenessPass(PassRegistry&);
 void initializeLoadCombinePass(PassRegistry&);
 
+// Specific to the rust-lang llvm branch:
+void initializeNullCheckEliminationPass(PassRegistry&);
+
 /// NaCl specific passes:
 void initializeAddPNaClExternalDeclsPass(PassRegistry&);
 void initializeCanonicalizeMemIntrinsicsPass(PassRegistry&);
