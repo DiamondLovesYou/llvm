@@ -124,3 +124,34 @@ define i32 @extract_from_constant() {
 }
 ; CHECK-LABEL: define i32 @extract_from_constant() {
 ; CHECK-NEXT: ret i32 888
+
+
+define void @nested() {
+  %a1 = alloca i64
+  %a2 = alloca i32
+  %a3 = alloca { { i32, i64 } }
+  %a = insertvalue { i32, i64 } undef, i32 5, 0
+  %b = insertvalue { i32, i64 } %a, i64 6, 1
+  %c = insertvalue { { i32, i64 } } undef, { i32, i64 } %b, 0
+  %d = insertvalue { { { i32, i64 } }, i64 } undef, { { i32, i64 } } %c, 0
+  %e = insertvalue { { { i32, i64 } }, i64 } undef, { i32, i64 } %b, 0, 0
+
+  %f = extractvalue { { { i32, i64 } }, i64 } %d, 0, 0, 1
+  %g = extractvalue { { { i32, i64 } }, i64 } %e, 0, 0, 0
+  %h = extractvalue { { { i32, i64 } }, i64 } %e, 0
+  store i64 %f, i64* %a1
+  store i32 %g, i32* %a2
+  store { { i32, i64 } } %h, { { i32, i64 } }* %a3
+  unreachable
+}
+; CHECK-LABEL: define void @nested()
+; CHECK-NEXT:    %a1 = alloca i64
+; CHECK-NEXT:    %a2 = alloca i32
+; CHECK-NEXT:    %a3 = alloca { { i32, i64 } }
+; CHECK-NEXT:    store i64 6, i64* %a1
+; CHECK-NEXT:    store i32 5, i32* %a2
+; CHECK-NEXT:    %a3.index = getelementptr { { i32, i64 } }* %a3, i32 0, i32 0
+; CHECK-NEXT:    %a3.index.index = getelementptr { i32, i64 }* %a3.index, i32 0, i32 0
+; CHECK-NEXT:    store i32 5, i32* %a3.index.index, align 1
+; CHECK-NEXT:    %a3.index.index1 = getelementptr { i32, i64 }* %a3.index, i32 0, i32 1
+; CHECK-NEXT:    store i64 6, i64* %a3.index.index1, align 1

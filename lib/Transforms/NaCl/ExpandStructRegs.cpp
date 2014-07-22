@@ -64,8 +64,17 @@ namespace {
 char ExpandStructRegs::ID = 0;
 INITIALIZE_PASS(ExpandStructRegs, "expand-struct-regs",
                 "Expand out variables with struct types", false, false)
+
+
+static bool DoAnotherPass(Type* Ty) {
+  return isa<ArrayType>(Ty) || isa<StructType>(Ty);
+}
+static bool DoAnotherPass(Value* V) {
+  return DoAnotherPass(V->getType());
+}
+
 template <class T>
-static void SplitUpPHINode(PHINode *Phi, T* Ty) {
+static void SplitUpPHINode(PHINode *Phi, T* Ty, bool& NeedsAnotherPass) {
   Value *NewStruct = UndefValue::get(Ty);
   Instruction *NewStructInsertPt = Phi->getParent()->getFirstInsertionPt();
 
@@ -80,6 +89,7 @@ static void SplitUpPHINode(PHINode *Phi, T* Ty) {
     } else if(ArrayType* ATy = dyn_cast<ArrayType>(Ty)) {
       ElemTy = ATy->getElementType();
     }
+    NeedsAnotherPass = NeedsAnotherPass || DoAnotherPass(ElemTy);
 
     PHINode *NewPhi = PHINode::Create(
         ElemTy, Phi->getNumIncomingValues(),
@@ -105,7 +115,7 @@ static void SplitUpPHINode(PHINode *Phi, T* Ty) {
   Phi->eraseFromParent();
 }
 template <class T>
-static void SplitUpSelect(SelectInst *Select, T* Ty) {
+static void SplitUpSelect(SelectInst *Select, T* Ty, bool& NeedsAnotherPass) {
   Value *NewStruct = UndefValue::get(Ty);
 
   // Create a separate SelectInst for each struct field.
@@ -125,6 +135,7 @@ static void SplitUpSelect(SelectInst *Select, T* Ty) {
         SelectInst::Create(Select->getCondition(), TrueVal, FalseVal,
                            Select->getName() + ".index", Select),
         Select);
+    NeedsAnotherPass = NeedsAnotherPass || DoAnotherPass(NewSelect);
 
     // Reconstruct the original struct value.
     NewStruct = CopyDebug(
@@ -151,7 +162,7 @@ static void ProcessLoadOrStoreAttrs(InstType *Dest, InstType *Src) {
   Dest->setAlignment(1);
 }
 template <class T>
-static void SplitUpStore(StoreInst *Store, T* Ty) {
+static void SplitUpStore(StoreInst *Store, T* Ty, bool& NeedsAnotherPass) {
   // Create a separate store instruction for each struct field.
   for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
     SmallVector<Value *, 2> Indexes;
@@ -161,6 +172,8 @@ static void SplitUpStore(StoreInst *Store, T* Ty) {
                                Store->getPointerOperand(), Indexes,
                                Store->getPointerOperand()->getName() + ".index",
                                Store), Store);
+    NeedsAnotherPass = NeedsAnotherPass || DoAnotherPass(GEP->getType()->getContainedType(0));
+
     SmallVector<unsigned, 1> EVIndexes;
     EVIndexes.push_back(Index);
     Value *Field = CopyDebug(ExtractValueInst::Create(Store->getValueOperand(),
@@ -172,7 +185,7 @@ static void SplitUpStore(StoreInst *Store, T* Ty) {
   Store->eraseFromParent();
 }
 template <class T>
-static void SplitUpLoad(LoadInst *Load, T* Ty) {
+static void SplitUpLoad(LoadInst *Load, T* Ty, bool& NeedsAnotherPass) {
   Value *NewStruct = UndefValue::get(Ty);
 
   // Create a separate load instruction for each struct field.
@@ -184,6 +197,7 @@ static void SplitUpLoad(LoadInst *Load, T* Ty) {
         GetElementPtrInst::Create(Load->getPointerOperand(), Indexes,
                                   Load->getName() + ".index", Load), Load);
     LoadInst *NewLoad = new LoadInst(GEP, Load->getName() + ".field", Load);
+    NeedsAnotherPass = NeedsAnotherPass || DoAnotherPass(NewLoad);
     ProcessLoadOrStoreAttrs(NewLoad, Load);
 
     // Reconstruct the struct value.
@@ -197,38 +211,55 @@ static void SplitUpLoad(LoadInst *Load, T* Ty) {
   Load->eraseFromParent();
 }
 
-static void ExpandExtractValue(ExtractValueInst *EV) {
+static void ExpandExtractValue(ExtractValueInst *EV, bool& NeedsAnotherPass) {
   // Search for the insertvalue instruction that inserts the struct
   // field referenced by this extractvalue instruction.
   Value *StructVal = EV->getAggregateOperand();
   Value *ResultField = NULL;
+  size_t I = 0;
   for (;;) {
     if (InsertValueInst *IV = dyn_cast<InsertValueInst>(StructVal)) {
-      if (EV->getIndices().equals(IV->getIndices())) {
-        ResultField = IV->getInsertedValueOperand();
+      size_t J = 0;
+      for(; I < EV->getIndices().size() && J < IV->getIndices().size();
+          ++J, ++I) {
+        const bool Equal = (EV->getIndices()[I] == IV->getIndices()[J]);
+        if(J + 1 == IV->getIndices().size() && Equal) {
+          if(I + 1 == EV->getIndices().size()) {
+            // Match
+            ResultField = IV->getInsertedValueOperand();
+          } else {
+            StructVal = IV->getInsertedValueOperand();
+            ++I;
+          }
+          break;
+        } else if(!Equal) {
+          // No match.  Try the next struct value in the chain.
+          StructVal = IV->getAggregateOperand();
+          break;
+        } 
+      }
+      if(ResultField != nullptr) {
+        break;
+      } else if(I == EV->getIndices().size()) {
+        // We've found an insertvalue that inserts at one or more levels deeper than this extractvalue.
+        NeedsAnotherPass = true;
+        SmallVector<unsigned, 4> Indices(IV->getIndices().begin() + J, IV->getIndices().end());
+        
+        InsertValueInst* Insert = InsertValueInst::Create(UndefValue::get(EV->getType()),
+                                                          IV->getInsertedValueOperand(),
+                                                          Indices,
+                                                          "",
+                                                          EV);
+        ResultField = CopyDebug(Insert, EV);
         break;
       }
-      // No match.  Try the next struct value in the chain.
-      StructVal = IV->getAggregateOperand();
     } else if (Constant *C = dyn_cast<Constant>(StructVal)) {
-      ResultField = ConstantExpr::getExtractValue(C, EV->getIndices());
+      SmallVector<unsigned, 4> Indices(EV->getIndices().begin() + I, EV->getIndices().end());
+      ResultField = ConstantExpr::getExtractValue(C, Indices);
       break;
-    } else if(isa<LoadInst>(StructVal) &&
-	      isa<ArrayType>(StructVal->getType()) &&
-	      EV->getIndices().size() == 1) {
-      LoadInst* Load = cast<LoadInst>(StructVal);
-      Value* Operand = Load->getPointerOperand();
-      SmallVector<Value*, 2> Indexes;
-      Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, 0)));
-      Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, EV->getIndices()[0])));
-      GetElementPtrInst *GEPi = CopyDebug(GetElementPtrInst::Create(Operand,
-								    Indexes,
-								    Load->getName() + ".index",
-								    Load),
-					  Load);
-      LoadInst *NewLoad = new LoadInst(GEPi, Load->getName() + ".field", Load);
-      ProcessLoadOrStoreAttrs(NewLoad, Load);
-      ResultField = NewLoad;
+    } else if(isa<LoadInst>(StructVal)) {
+      ResultField = StructVal;
+      break;
     } else if(isa<LandingPadInst>(StructVal)) {
       // Nothing we can do here. Just leave it to the PNaCl toolchain.
       return;
@@ -256,52 +287,9 @@ static bool HasResumeUse(Instruction* IV) {
   return false;
 }
 
-bool ExpandStructRegs::runOnFunction(Function &Func) {
+static bool ExpandExtractValues(Function& Func) {
   bool Changed = false;
-
-  // Split up aggregate loads, stores and phi nodes into operations on
-  // scalar types.  This inserts extractvalue and insertvalue
-  // instructions which we will expand out later.
-  for (Function::iterator BB = Func.begin(), E = Func.end();
-       BB != E; ++BB) {
-    for (BasicBlock::iterator Iter = BB->begin(), E = BB->end();
-         Iter != E; ) {
-      Instruction *Inst = Iter++;
-      if (StoreInst *Store = dyn_cast<StoreInst>(Inst)) {
-        if (Store->getValueOperand()->getType()->isStructTy()) {
-          SplitUpStore(Store, cast<StructType>(Store->getValueOperand()->getType()));
-          Changed = true;
-	} else if(Store->getValueOperand()->getType()->isArrayTy()) {
-	  SplitUpStore(Store, cast<ArrayType>(Store->getValueOperand()->getType()));
-          Changed = true;
-        }
-      } else if (LoadInst *Load = dyn_cast<LoadInst>(Inst)) {
-        if (Load->getType()->isStructTy()) {
-          SplitUpLoad(Load, cast<StructType>(Load->getType()));
-          Changed = true;
-        } else if(Load->getType()->isArrayTy()) {
-	  SplitUpLoad(Load, cast<ArrayType>(Load->getType()));
-	  Changed = true;
-	}
-      } else if (PHINode *Phi = dyn_cast<PHINode>(Inst)) {
-        if (Phi->getType()->isStructTy()) {
-          SplitUpPHINode(Phi, cast<StructType>(Phi->getType()));
-          Changed = true;
-        } else if(Phi->getType()->isArrayTy()) {
-	  SplitUpPHINode(Phi, cast<ArrayType>(Phi->getType()));
-	  Changed = true;
-	}
-      } else if (SelectInst *Select = dyn_cast<SelectInst>(Inst)) {
-        if (Select->getType()->isStructTy()) {
-          SplitUpSelect(Select, cast<StructType>(Select->getType()));
-          Changed = true;
-        } else if(Select->getType()->isVectorTy()) {
-	  SplitUpSelect(Select, cast<VectorType>(Select->getType()));
-	  Changed = true;
-	}
-      }
-    }
-  }
+  bool NeedsAnotherPass = false;
 
   // Expand out all the extractvalue instructions.  Also collect up
   // the insertvalue instructions for later deletion so that we do not
@@ -313,30 +301,89 @@ bool ExpandStructRegs::runOnFunction(Function &Func) {
          Iter != E; ) {
       Instruction *Inst = Iter++;
       if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(Inst)) {
-        ExpandExtractValue(EV);
+        ExpandExtractValue(EV, NeedsAnotherPass);
         Changed = true;
       } else if (isa<InsertValueInst>(Inst) && !HasResumeUse(Inst)) {
-	// Don't remove if this Inst has a connection to a resume.
+        // Don't remove if this Inst has a connection to a resume.
         ToErase.push_back(Inst);
         Changed = true;
       }
     }
   }
-  // Delete the insertvalue instructions.  These can reference each
-  // other, so we must do dropAllReferences() before doing
-  // eraseFromParent(), otherwise we will try to erase instructions
-  // that are still referenced.
-  for (SmallVectorImpl<Instruction *>::iterator I = ToErase.begin(),
+
+  if(!NeedsAnotherPass) {
+    // Delete the insertvalue instructions.  These can reference each
+    // other, so we must do dropAllReferences() before doing
+    // eraseFromParent(), otherwise we will try to erase instructions
+    // that are still referenced.
+    for (SmallVectorImpl<Instruction *>::iterator I = ToErase.begin(),
            E = ToErase.end();
-       I != E; ++I) {
-    (*I)->dropAllReferences();
-  }
-  for (SmallVectorImpl<Instruction *>::iterator I = ToErase.begin(),
+         I != E; ++I) {
+      (*I)->dropAllReferences();
+    }
+    for (SmallVectorImpl<Instruction *>::iterator I = ToErase.begin(),
            E = ToErase.end();
-       I != E; ++I) {
-    (*I)->eraseFromParent();
+         I != E; ++I) {
+      (*I)->eraseFromParent();
+    }
   }
-  return Changed;
+
+  return (NeedsAnotherPass && ExpandExtractValues(Func)) || Changed;
+}
+
+bool ExpandStructRegs::runOnFunction(Function &Func) {
+  bool Changed = false;
+  bool NeedsAnotherPass = false;
+
+  // Split up aggregate loads, stores and phi nodes into operations on
+  // scalar types.  This inserts extractvalue and insertvalue
+  // instructions which we will expand out later.
+  for (Function::iterator BB = Func.begin(), E = Func.end();
+       BB != E; ++BB) {
+    for (BasicBlock::iterator Iter = BB->begin(), E = BB->end();
+         Iter != E; ) {
+      Instruction *Inst = Iter++;
+      if (StoreInst *Store = dyn_cast<StoreInst>(Inst)) {
+        if (StructType* Ty = dyn_cast<StructType>(Store->getValueOperand()->getType())) {
+          SplitUpStore(Store, Ty, NeedsAnotherPass);
+          Changed = true;
+	} else if(ArrayType* Ty = dyn_cast<ArrayType>(Store->getValueOperand()->getType())) {
+	  SplitUpStore(Store, Ty, NeedsAnotherPass);
+          Changed = true;
+        }
+      } else if (LoadInst *Load = dyn_cast<LoadInst>(Inst)) {
+        if (StructType* Ty = dyn_cast<StructType>(Load->getType())) {
+          SplitUpLoad(Load, Ty, NeedsAnotherPass);
+          Changed = true;
+        } else if(ArrayType* Ty = dyn_cast<ArrayType>(Load->getType())) {
+	  SplitUpLoad(Load, Ty, NeedsAnotherPass);
+	  Changed = true;
+	}
+      } else if (PHINode *Phi = dyn_cast<PHINode>(Inst)) {
+        if (StructType* Ty = dyn_cast<StructType>(Phi->getType())) {
+          SplitUpPHINode(Phi, Ty, NeedsAnotherPass);
+          Changed = true;
+        } else if(ArrayType* Ty = dyn_cast<ArrayType>(Phi->getType())) {
+	  SplitUpPHINode(Phi, Ty, NeedsAnotherPass);
+	  Changed = true;
+	}
+      } else if (SelectInst *Select = dyn_cast<SelectInst>(Inst)) {
+        if (StructType* Ty = dyn_cast<StructType>(Select->getType())) {
+          SplitUpSelect(Select, Ty, NeedsAnotherPass);
+          Changed = true;
+        } else if (ArrayType* Ty = dyn_cast<ArrayType>(Select->getType())) {
+          SplitUpSelect(Select, Ty, NeedsAnotherPass);
+          Changed = true;
+        }
+      }
+    }
+  }
+
+  if(!NeedsAnotherPass) {
+    Changed = ExpandExtractValues(Func) || Changed;
+  }
+
+  return (NeedsAnotherPass && runOnFunction(Func)) || Changed;
 }
 
 FunctionPass *llvm::createExpandStructRegsPass() {
