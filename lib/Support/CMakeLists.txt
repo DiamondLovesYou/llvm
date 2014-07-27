@@ -41,10 +41,13 @@ add_llvm_library(LLVMSupport
   MD5.cpp
   PluginLoader.cpp
   PrettyStackTrace.cpp
+  RandomNumberGenerator.cpp
   Regex.cpp
+  ScaledNumber.cpp
   SmallPtrSet.cpp
   SmallVector.cpp
   SourceMgr.cpp
+  SpecialCaseList.cpp
   Statistic.cpp
   StreamableMemoryObject.cpp
   StringExtras.cpp
@@ -70,7 +73,6 @@ add_llvm_library(LLVMSupport
 
 # System
   Atomic.cpp
-  Disassembler.cpp
   DynamicLibrary.cpp
   Errno.cpp
   Host.cpp

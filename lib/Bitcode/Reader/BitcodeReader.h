@@ -26,6 +26,7 @@
 #include <vector>
 
 namespace llvm {
+  class Comdat;
   class MemoryBuffer;
   class LLVMContext;
 
@@ -125,8 +126,7 @@ public:
 class BitcodeReader : public GVMaterializer {
   LLVMContext &Context;
   Module *TheModule;
-  MemoryBuffer *Buffer;
-  bool BufferOwned;
+  std::unique_ptr<MemoryBuffer> Buffer;
   std::unique_ptr<BitstreamReader> StreamFile;
   BitstreamCursor Stream;
   StreamingMemoryObject *LazyStreamer;
@@ -136,6 +136,7 @@ class BitcodeReader : public GVMaterializer {
   std::vector<Type*> TypeList;
   BitcodeReaderValueList ValueList;
   BitcodeReaderMDValueList MDValueList;
+  std::vector<Comdat *> ComdatList;
   SmallVector<Instruction *, 64> InstructionList;
   SmallVector<SmallVector<uint64_t, 64>, 64> UseListRecords;
 
@@ -223,27 +224,24 @@ public:
     return std::error_code(E, BitcodeErrorCategory());
   }
 
-  explicit BitcodeReader(MemoryBuffer *buffer, LLVMContext &C, bool BufferOwned)
-      : Context(C), TheModule(nullptr), Buffer(buffer),
-        BufferOwned(BufferOwned), LazyStreamer(nullptr), NextUnreadBit(0),
-        SeenValueSymbolTable(false), ValueList(C), MDValueList(C),
-        SeenFirstFunctionBody(false), UseRelativeIDs(false) {}
+  explicit BitcodeReader(MemoryBuffer *buffer, LLVMContext &C)
+      : Context(C), TheModule(nullptr), Buffer(buffer), LazyStreamer(nullptr),
+        NextUnreadBit(0), SeenValueSymbolTable(false), ValueList(C),
+        MDValueList(C), SeenFirstFunctionBody(false), UseRelativeIDs(false) {}
 
   explicit BitcodeReader(StreamingMemoryObject *streamer,
                          LLVMContext &C)
-      : Context(C), TheModule(nullptr), Buffer(nullptr), BufferOwned(false),
-        LazyStreamer(streamer), NextUnreadBit(0), SeenValueSymbolTable(false),
-        ValueList(C), MDValueList(C), SeenFirstFunctionBody(false),
-        UseRelativeIDs(false) {}
+    : Context(C), TheModule(nullptr), Buffer(nullptr),
+      LazyStreamer(streamer), NextUnreadBit(0), SeenValueSymbolTable(false),
+      ValueList(C), MDValueList(C), SeenFirstFunctionBody(false),
+      UseRelativeIDs(false) {}
   ~BitcodeReader() { FreeState(); }
 
   void materializeForwardReferencedFunctions();
 
   void FreeState();
 
-  void releaseBuffer() {
-    Buffer = nullptr;
-  }
+  void releaseBuffer() override;
 
   bool isMaterializable(const GlobalValue *GV) const override;
   bool isDematerializable(const GlobalValue *GV) const override;
@@ -257,7 +255,7 @@ public:
 
   /// @brief Cheap mechanism to just extract module triple
   /// @returns true if an error occurred.
-  std::error_code ParseTriple(std::string &Triple);
+  ErrorOr<std::string> parseTriple();
 
   static uint64_t decodeSignRotatedValue(uint64_t V);
 
@@ -359,7 +357,7 @@ private:
   std::error_code ResolveGlobalAndAliasInits();
   std::error_code ParseMetadata();
   std::error_code ParseMetadataAttachment();
-  std::error_code ParseModuleTriple(std::string &Triple);
+  ErrorOr<std::string> parseModuleTriple();
   std::error_code ParseUseLists();
   std::error_code InitStream();
   std::error_code InitStreamFromBuffer();

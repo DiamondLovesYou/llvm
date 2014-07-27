@@ -39,8 +39,10 @@ FunctionPass *createAMDGPUCFGStructurizerPass();
 FunctionPass *createSITypeRewriter();
 FunctionPass *createSIAnnotateControlFlowPass();
 FunctionPass *createSILowerI1CopiesPass();
+FunctionPass *createSIShrinkInstructionsPass();
 FunctionPass *createSILowerControlFlowPass(TargetMachine &tm);
 FunctionPass *createSIFixSGPRCopiesPass(TargetMachine &tm);
+FunctionPass *createSIFixSGPRLiveRangesPass();
 FunctionPass *createSICodeEmitterPass(formatted_raw_ostream &OS);
 FunctionPass *createSIInsertWaits(TargetMachine &tm);
 
@@ -56,7 +58,19 @@ FunctionPass *createAMDGPUISelDag(TargetMachine &tm);
 ImmutablePass *
 createAMDGPUTargetTransformInfoPass(const AMDGPUTargetMachine *TM);
 
+void initializeSIFixSGPRLiveRangesPass(PassRegistry&);
+extern char &SIFixSGPRLiveRangesID;
+
+
 extern Target TheAMDGPUTarget;
+
+namespace AMDGPU {
+enum TargetIndex {
+  TI_CONSTDATA_START
+};
+}
+
+#define END_OF_TEXT_LABEL_NAME "EndOfTextLabel"
 
 } // End namespace llvm
 

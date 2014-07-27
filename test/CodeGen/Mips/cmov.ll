@@ -18,9 +18,9 @@
 
 ; 32-CMP-DAG:   lw $[[R0:[0-9]+]], %got(i3)
 ; 32-CMP-DAG:   addiu $[[R1:[0-9]+]], ${{[0-9]+}}, %got(i1)
-; 32-CMP-DAG:   seleqz $[[T0:[0-9]+]], $[[R1]], $4
-; 32-CMP-DAG:   selnez $[[T1:[0-9]+]], $[[R0]], $4
-; 32-CMP-DAG:   or $[[T2:[0-9]+]], $[[T1]], $[[T0]]
+; 32-CMP-DAG:   selnez $[[T0:[0-9]+]], $[[R1]], $4
+; 32-CMP-DAG:   seleqz $[[T1:[0-9]+]], $[[R0]], $4
+; 32-CMP-DAG:   or $[[T2:[0-9]+]], $[[T0]], $[[T1]]
 ; 32-CMP-DAG:   lw $2, 0($[[T2]])
 
 ; 64-CMOV-DAG:  ldr $[[R0:[0-9]+]]
@@ -33,9 +33,9 @@
 ;        (setcc's result is i32 so bits 32-63 are undefined). It's not really
 ;        needed.
 ; 64-CMP-DAG:   sll $[[CC:[0-9]+]], $4, 0
-; 64-CMP-DAG:   seleqz $[[T0:[0-9]+]], $[[R1]], $[[CC]]
-; 64-CMP-DAG:   selnez $[[T1:[0-9]+]], $[[R0]], $[[CC]]
-; 64-CMP-DAG:   or $[[T2:[0-9]+]], $[[T1]], $[[T0]]
+; 64-CMP-DAG:   selnez $[[T0:[0-9]+]], $[[R1]], $[[CC]]
+; 64-CMP-DAG:   seleqz $[[T1:[0-9]+]], $[[R0]], $[[CC]]
+; 64-CMP-DAG:   or $[[T2:[0-9]+]], $[[T0]], $[[T1]]
 ; 64-CMP-DAG:   ld $2, 0($[[T2]])
 
 define i32* @cmov1(i32 %s) nounwind readonly {
@@ -58,9 +58,9 @@ entry:
 
 ; 32-CMP-DAG:   addiu $[[R1:[0-9]+]], ${{[0-9]+}}, %got(d)
 ; 32-CMP-DAG:   addiu $[[R0:[0-9]+]], ${{[0-9]+}}, %got(c)
-; 32-CMP-DAG:   seleqz $[[T0:[0-9]+]], $[[R0]], $4
-; 32-CMP-DAG:   selnez $[[T1:[0-9]+]], $[[R1]], $4
-; 32-CMP-DAG:   or $[[T2:[0-9]+]], $[[T1]], $[[T0]]
+; 32-CMP-DAG:   selnez $[[T0:[0-9]+]], $[[R0]], $4
+; 32-CMP-DAG:   seleqz $[[T1:[0-9]+]], $[[R1]], $4
+; 32-CMP-DAG:   or $[[T2:[0-9]+]], $[[T0]], $[[T1]]
 ; 32-CMP-DAG:   lw $2, 0($[[T2]])
 
 ; 64-CMOV:      daddiu $[[R1:[0-9]+]], ${{[0-9]+}}, %got_disp(d)
@@ -73,9 +73,9 @@ entry:
 ;        (setcc's result is i32 so bits 32-63 are undefined). It's not really
 ;        needed.
 ; 64-CMP-DAG:   sll $[[CC:[0-9]+]], $4, 0
-; 64-CMP-DAG:   seleqz $[[T0:[0-9]+]], $[[R0]], $[[CC]]
-; 64-CMP-DAG:   selnez $[[T1:[0-9]+]], $[[R1]], $[[CC]]
-; 64-CMP-DAG:   or $[[T2:[0-9]+]], $[[T1]], $[[T0]]
+; 64-CMP-DAG:   selnez $[[T0:[0-9]+]], $[[R0]], $[[CC]]
+; 64-CMP-DAG:   seleqz $[[T1:[0-9]+]], $[[R1]], $[[CC]]
+; 64-CMP-DAG:   or $[[T2:[0-9]+]], $[[T0]], $[[T1]]
 ; 64-CMP-DAG:   lw $2, 0($[[T2]])
 
 define i32 @cmov2(i32 %s) nounwind readonly {
@@ -97,21 +97,54 @@ entry:
 ; 32-CMOV:      movz ${{[26]}}, $5, $[[R0]]
 
 ; 32-CMP-DAG:   xori $[[CC:[0-9]+]], $4, 234
-; 32-CMP-DAG:   selnez $[[T0:[0-9]+]], $5, $[[CC]]
-; 32-CMP-DAG:   seleqz $[[T1:[0-9]+]], $6, $[[CC]]
+; 32-CMP-DAG:   seleqz $[[T0:[0-9]+]], $5, $[[CC]]
+; 32-CMP-DAG:   selnez $[[T1:[0-9]+]], $6, $[[CC]]
 ; 32-CMP-DAG:   or $2, $[[T0]], $[[T1]]
 
 ; 64-CMOV:      xori $[[R0:[0-9]+]], $4, 234
 ; 64-CMOV:      movz ${{[26]}}, $5, $[[R0]]
 
 ; 64-CMP-DAG:   xori $[[CC:[0-9]+]], $4, 234
-; 64-CMP-DAG:   selnez $[[T0:[0-9]+]], $5, $[[CC]]
-; 64-CMP-DAG:   seleqz $[[T1:[0-9]+]], $6, $[[CC]]
+; 64-CMP-DAG:   seleqz $[[T0:[0-9]+]], $5, $[[CC]]
+; 64-CMP-DAG:   selnez $[[T1:[0-9]+]], $6, $[[CC]]
 ; 64-CMP-DAG:   or $2, $[[T0]], $[[T1]]
 
 define i32 @cmov3(i32 %a, i32 %b, i32 %c) nounwind readnone {
 entry:
   %cmp = icmp eq i32 %a, 234
+  %cond = select i1 %cmp, i32 %b, i32 %c
+  ret i32 %cond
+}
+
+; ALL-LABEL: cmov3_ne:
+
+; We won't check the result register since we can't know if the move is first
+; or last. We do know it will be either one of two registers so we can at least
+; check that.
+
+; FIXME: Use xori instead of addiu+xor.
+; 32-CMOV:      addiu $[[R0:[0-9]+]], $zero, 234
+; 32-CMOV:      xor $[[R1:[0-9]+]], $4, $[[R0]]
+; 32-CMOV:      movn ${{[26]}}, $5, $[[R1]]
+
+; 32-CMP-DAG:   xori $[[CC:[0-9]+]], $4, 234
+; 32-CMP-DAG:   selnez $[[T0:[0-9]+]], $5, $[[CC]]
+; 32-CMP-DAG:   seleqz $[[T1:[0-9]+]], $6, $[[CC]]
+; 32-CMP-DAG:   or $2, $[[T0]], $[[T1]]
+
+; FIXME: Use xori instead of addiu+xor.
+; 64-CMOV:      addiu $[[R0:[0-9]+]], $zero, 234
+; 64-CMOV:      xor $[[R1:[0-9]+]], $4, $[[R0]]
+; 64-CMOV:      movn ${{[26]}}, $5, $[[R1]]
+
+; 64-CMP-DAG:   xori $[[CC:[0-9]+]], $4, 234
+; 64-CMP-DAG:   selnez $[[T0:[0-9]+]], $5, $[[CC]]
+; 64-CMP-DAG:   seleqz $[[T1:[0-9]+]], $6, $[[CC]]
+; 64-CMP-DAG:   or $2, $[[T0]], $[[T1]]
+
+define i32 @cmov3_ne(i32 %a, i32 %b, i32 %c) nounwind readnone {
+entry:
+  %cmp = icmp ne i32 %a, 234
   %cond = select i1 %cmp, i32 %b, i32 %c
   ret i32 %cond
 }
@@ -131,10 +164,10 @@ entry:
 ; 32-CMP-DAG:  xori $[[R0:[0-9]+]], $4, 234
 ; 32-CMP-DAG:  lw $[[R1:[0-9]+]], 16($sp)
 ; 32-CMP-DAG:  lw $[[R2:[0-9]+]], 20($sp)
-; 32-CMP-DAG:  selnez $[[T0:[0-9]+]], $6, $[[R0]]
-; 32-CMP-DAG:  selnez $[[T1:[0-9]+]], $7, $[[R0]]
-; 32-CMP-DAG:  seleqz $[[T2:[0-9]+]], $[[R1]], $[[R0]]
-; 32-CMP-DAG:  seleqz $[[T3:[0-9]+]], $[[R2]], $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T0:[0-9]+]], $6, $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T1:[0-9]+]], $7, $[[R0]]
+; 32-CMP-DAG:  selnez $[[T2:[0-9]+]], $[[R1]], $[[R0]]
+; 32-CMP-DAG:  selnez $[[T3:[0-9]+]], $[[R2]], $[[R0]]
 ; 32-CMP-DAG:  or $2, $[[T0]], $[[T2]]
 ; 32-CMP-DAG:  or $3, $[[T1]], $[[T3]]
 
@@ -142,13 +175,54 @@ entry:
 ; 64-CMOV: movz ${{[26]}}, $5, $[[R0]]
 
 ; 64-CMP-DAG:  xori $[[R0:[0-9]+]], $4, 234
-; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $5, $[[R0]]
-; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $6, $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T0:[0-9]+]], $5, $[[R0]]
+; 64-CMP-DAG:  selnez $[[T1:[0-9]+]], $6, $[[R0]]
 ; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 define i64 @cmov4(i32 %a, i64 %b, i64 %c) nounwind readnone {
 entry:
   %cmp = icmp eq i32 %a, 234
+  %cond = select i1 %cmp, i64 %b, i64 %c
+  ret i64 %cond
+}
+
+; ALL-LABEL: cmov4_ne:
+
+; We won't check the result register since we can't know if the move is first
+; or last. We do know it will be one of two registers so we can at least check
+; that.
+
+; FIXME: Use xori instead of addiu+xor.
+; 32-CMOV-DAG: addiu $[[R0:[0-9]+]], $zero, 234
+; 32-CMOV-DAG: xor $[[R1:[0-9]+]], $4, $[[R0]]
+; 32-CMOV-DAG: lw $[[R2:2]], 16($sp)
+; 32-CMOV-DAG: lw $[[R3:3]], 20($sp)
+; 32-CMOV-DAG: movn $[[R2]], $6, $[[R1]]
+; 32-CMOV-DAG: movn $[[R3]], $7, $[[R1]]
+
+; 32-CMP-DAG:  xori $[[R0:[0-9]+]], $4, 234
+; 32-CMP-DAG:  lw $[[R1:[0-9]+]], 16($sp)
+; 32-CMP-DAG:  lw $[[R2:[0-9]+]], 20($sp)
+; 32-CMP-DAG:  selnez $[[T0:[0-9]+]], $6, $[[R0]]
+; 32-CMP-DAG:  selnez $[[T1:[0-9]+]], $7, $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T2:[0-9]+]], $[[R1]], $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T3:[0-9]+]], $[[R2]], $[[R0]]
+; 32-CMP-DAG:  or $2, $[[T0]], $[[T2]]
+; 32-CMP-DAG:  or $3, $[[T1]], $[[T3]]
+
+; FIXME: Use xori instead of addiu+xor.
+; 64-CMOV: addiu $[[R0:[0-9]+]], $zero, 234
+; 64-CMOV: xor $[[R1:[0-9]+]], $4, $[[R0]]
+; 64-CMOV: movn ${{[26]}}, $5, $[[R1]]
+
+; 64-CMP-DAG:  xori $[[R0:[0-9]+]], $4, 234
+; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $5, $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $6, $[[R0]]
+; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
+
+define i64 @cmov4_ne(i32 %a, i64 %b, i64 %c) nounwind readnone {
+entry:
+  %cmp = icmp ne i32 %a, 234
   %cond = select i1 %cmp, i64 %b, i64 %c
   ret i64 %cond
 }
@@ -172,8 +246,8 @@ entry:
 ; 32-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 32-CMP-DAG:  slti $[[R0:[0-9]+]], $4, 32767
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 32-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 32-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 32-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 32-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 ; 64-CMOV-DAG: addiu $[[I3:[0-9]+]], $zero, 3
@@ -185,8 +259,8 @@ entry:
 ; 64-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 64-CMP-DAG:  slti $[[R0:[0-9]+]], $4, 32767
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 64-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 define i32 @slti0(i32 %a) {
@@ -246,8 +320,8 @@ entry:
 ; 32-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 32-CMP-DAG:  slti $[[R0:[0-9]+]], $4, -32768
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 32-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 32-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 32-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 32-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 ; 64-CMOV-DAG: addiu $[[I3:[0-9]+]], $zero, 3
@@ -259,8 +333,8 @@ entry:
 ; 64-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 64-CMP-DAG:  slti $[[R0:[0-9]+]], $4, -32768
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 64-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 define i32 @slti2(i32 %a) {
@@ -329,8 +403,8 @@ entry:
 ; 32-CMP-DAG:   slt $[[CC0:[0-9]+]], $zero, $4
 ; 32-CMP-DAG:   addiu $[[I32766:[0-9]+]], $zero, 32766
 ; 32-CMP-DAG:   sltu $[[CC1:[0-9]+]], $[[I32766]], $5
-; 32-CMP-DAG:   seleqz $[[CC2:[0-9]+]], $[[CC0]], $4
-; 32-CMP-DAG:   selnez $[[CC3:[0-9]+]], $[[CC1]], $4
+; 32-CMP-DAG:   selnez $[[CC2:[0-9]+]], $[[CC0]], $4
+; 32-CMP-DAG:   seleqz $[[CC3:[0-9]+]], $[[CC1]], $4
 ; 32-CMP:       or $[[CC:[0-9]+]], $[[CC3]], $[[CC2]]
 ; 32-CMP-DAG:   addiu $[[I5:[0-9]+]], $zero, 5
 ; 32-CMP-DAG:   addiu $[[I4:[0-9]+]], $zero, 4
@@ -349,8 +423,8 @@ entry:
 ; 64-CMP-DAG:  slti $[[R0:[0-9]+]], $4, 32767
 ; FIXME: We can do better than this by adding/subtracting the result of slti
 ;        to/from one of the constants.
-; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I5]], $[[R0]]
-; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I4]], $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I5]], $[[R0]]
+; 64-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I4]], $[[R0]]
 ; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 define i64 @slti64_0(i64 %a) {
@@ -374,8 +448,8 @@ entry:
 ; 32-CMP-DAG:   slt $[[CC0:[0-9]+]], $zero, $4
 ; 32-CMP-DAG:   addiu $[[I32766:[0-9]+]], $zero, 32767
 ; 32-CMP-DAG:   sltu $[[CC1:[0-9]+]], $[[I32766]], $5
-; 32-CMP-DAG:   seleqz $[[CC2:[0-9]+]], $[[CC0]], $4
-; 32-CMP-DAG:   selnez $[[CC3:[0-9]+]], $[[CC1]], $4
+; 32-CMP-DAG:   selnez $[[CC2:[0-9]+]], $[[CC0]], $4
+; 32-CMP-DAG:   seleqz $[[CC3:[0-9]+]], $[[CC1]], $4
 ; 32-CMP:       or $[[CC:[0-9]+]], $[[CC3]], $[[CC2]]
 ; 32-CMP-DAG:   addiu $[[I5:[0-9]+]], $zero, 5
 ; 32-CMP-DAG:   addiu $[[I4:[0-9]+]], $zero, 4
@@ -423,8 +497,8 @@ entry:
 ; 64-CMP-DAG:  slti $[[R0:[0-9]+]], $4, -32768
 ; FIXME: We can do better than this by adding/subtracting the result of slti
 ;        to/from one of the constants.
-; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I4]], $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 64-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I4]], $[[R0]]
 ; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 define i64 @slti64_2(i64 %a) {
@@ -476,8 +550,8 @@ entry:
 ; 32-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 32-CMP-DAG:  sltiu $[[R0:[0-9]+]], $4, 32767
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 32-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 32-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 32-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 32-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 ; 64-CMOV-DAG: addiu $[[I3:[0-9]+]], $zero, 3
@@ -489,8 +563,8 @@ entry:
 ; 64-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 64-CMP-DAG:  sltiu $[[R0:[0-9]+]], $4, 32767
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 64-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 define i32 @sltiu0(i32 %a) {
@@ -550,8 +624,8 @@ entry:
 ; 32-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 32-CMP-DAG:  sltiu $[[R0:[0-9]+]], $4, -32768
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 32-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 32-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 32-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 32-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 32-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 ; 64-CMOV-DAG: addiu $[[I3:[0-9]+]], $zero, 3
@@ -563,8 +637,8 @@ entry:
 ; 64-CMP-DAG:  addiu $[[I5:[0-9]+]], $zero, 5
 ; 64-CMP-DAG:  sltiu $[[R0:[0-9]+]], $4, -32768
 ; FIXME: We can do better than this by using selccz to choose between +0 and +2
-; 64-CMP-DAG:  selnez $[[T0:[0-9]+]], $[[I3]], $[[R0]]
-; 64-CMP-DAG:  seleqz $[[T1:[0-9]+]], $[[I5]], $[[R0]]
+; 64-CMP-DAG:  seleqz $[[T0:[0-9]+]], $[[I3]], $[[R0]]
+; 64-CMP-DAG:  selnez $[[T1:[0-9]+]], $[[I5]], $[[R0]]
 ; 64-CMP-DAG:  or $2, $[[T0]], $[[T1]]
 
 define i32 @sltiu2(i32 %a) {

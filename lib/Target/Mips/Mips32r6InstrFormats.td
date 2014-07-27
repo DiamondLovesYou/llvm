@@ -95,6 +95,9 @@ def OPCODE6_CLO      : OPCODE6<0b010001>;
 def OPCODE6_CLZ      : OPCODE6<0b010000>;
 def OPCODE6_DCLO     : OPCODE6<0b010011>;
 def OPCODE6_DCLZ     : OPCODE6<0b010010>;
+def OPCODE6_LSA      : OPCODE6<0b000101>;
+def OPCODE6_DLSA     : OPCODE6<0b010101>;
+def OPCODE6_SDBBP    : OPCODE6<0b001110>;
 
 class FIELD_FMT<bits<5> Val> {
   bits<5> Value = Val;
@@ -105,22 +108,23 @@ def FIELD_FMT_D : FIELD_FMT<0b10001>;
 class FIELD_CMP_COND<bits<5> Val> {
   bits<5> Value = Val;
 }
-def FIELD_CMP_COND_F    : FIELD_CMP_COND<0b00000>;
+// Note: The CMP_COND_FMT names differ from the C_COND_FMT names.
+def FIELD_CMP_COND_AF   : FIELD_CMP_COND<0b00000>;
 def FIELD_CMP_COND_UN   : FIELD_CMP_COND<0b00001>;
 def FIELD_CMP_COND_EQ   : FIELD_CMP_COND<0b00010>;
 def FIELD_CMP_COND_UEQ  : FIELD_CMP_COND<0b00011>;
-def FIELD_CMP_COND_OLT  : FIELD_CMP_COND<0b00100>;
+def FIELD_CMP_COND_LT   : FIELD_CMP_COND<0b00100>;
 def FIELD_CMP_COND_ULT  : FIELD_CMP_COND<0b00101>;
-def FIELD_CMP_COND_OLE  : FIELD_CMP_COND<0b00110>;
+def FIELD_CMP_COND_LE   : FIELD_CMP_COND<0b00110>;
 def FIELD_CMP_COND_ULE  : FIELD_CMP_COND<0b00111>;
-def FIELD_CMP_COND_SF   : FIELD_CMP_COND<0b01000>;
-def FIELD_CMP_COND_NGLE : FIELD_CMP_COND<0b01001>;
+def FIELD_CMP_COND_SAF  : FIELD_CMP_COND<0b01000>;
+def FIELD_CMP_COND_SUN  : FIELD_CMP_COND<0b01001>;
 def FIELD_CMP_COND_SEQ  : FIELD_CMP_COND<0b01010>;
-def FIELD_CMP_COND_NGL  : FIELD_CMP_COND<0b01011>;
-def FIELD_CMP_COND_LT   : FIELD_CMP_COND<0b01100>;
-def FIELD_CMP_COND_NGE  : FIELD_CMP_COND<0b01101>;
-def FIELD_CMP_COND_LE   : FIELD_CMP_COND<0b01110>;
-def FIELD_CMP_COND_NGT  : FIELD_CMP_COND<0b01111>;
+def FIELD_CMP_COND_SUEQ : FIELD_CMP_COND<0b01011>;
+def FIELD_CMP_COND_SLT  : FIELD_CMP_COND<0b01100>;
+def FIELD_CMP_COND_SULT : FIELD_CMP_COND<0b01101>;
+def FIELD_CMP_COND_SLE  : FIELD_CMP_COND<0b01110>;
+def FIELD_CMP_COND_SULE : FIELD_CMP_COND<0b01111>;
 
 class FIELD_CMP_FORMAT<bits<5> Val> {
   bits<5> Value = Val;
@@ -326,6 +330,16 @@ class SPECIAL_3R_FM<bits<5> mulop, bits<6> funct> : MipsR6Inst {
   let Inst{5-0}   = funct;
 }
 
+class SPECIAL_SDBBP_FM : MipsR6Inst {
+  bits<20> code_;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = OPGROUP_SPECIAL.Value;
+  let Inst{25-6}  = code_;
+  let Inst{5-0}   = OPCODE6_SDBBP.Value;
+}
+
 // This class is ambiguous with other branches:
 //   BEQC/BNEC require that rs > rt
 class CMP_BRANCH_2R_OFF16_FM<OPGROUP funct> : MipsR6Inst {
@@ -451,6 +465,23 @@ class SPECIAL3_LL_SC_FM<OPCODE6 Operation> : MipsR6Inst {
   let Inst{5-0} = Operation.Value;
 
   string DecoderMethod = "DecodeSpecial3LlSc";
+}
+
+class SPECIAL_LSA_FM<OPCODE6 Operation> : MipsR6Inst {
+  bits<5> rd;
+  bits<5> rs;
+  bits<5> rt;
+  bits<2> imm2;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = OPGROUP_SPECIAL.Value;
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-8}  = 0b000;
+  let Inst{7-6}   = imm2;
+  let Inst{5-0}   = Operation.Value;
 }
 
 class REGIMM_FM<OPCODE5 Operation> : MipsR6Inst {

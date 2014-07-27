@@ -141,8 +141,7 @@ class NaClBitcodeReader : public GVMaterializer {
   NaClBitcodeHeader Header;  // Header fields of the PNaCl bitcode file.
   LLVMContext &Context;
   Module *TheModule;
-  MemoryBuffer *Buffer;
-  bool BufferOwned;
+  std::unique_ptr<MemoryBuffer> Buffer;
   OwningPtr<NaClBitstreamReader> StreamFile;
   NaClBitstreamCursor Stream;
   StreamingMemoryObject *LazyStreamer;
@@ -197,8 +196,8 @@ class NaClBitcodeReader : public GVMaterializer {
 public:
   explicit NaClBitcodeReader(MemoryBuffer *buffer, LLVMContext &C,
                              bool AcceptSupportedOnly = true)
-    : Context(C), TheModule(0), Buffer(buffer), BufferOwned(false),
-      LazyStreamer(0), NextUnreadBit(0), SeenValueSymbolTable(false),
+    : Context(C), TheModule(nullptr), Buffer(buffer),
+      LazyStreamer(nullptr), NextUnreadBit(0), SeenValueSymbolTable(false),
       ValueList(C),
       SeenFirstFunctionBody(false),
       AcceptSupportedBitcodeOnly(AcceptSupportedOnly),
@@ -207,7 +206,7 @@ public:
   explicit NaClBitcodeReader(StreamingMemoryObject *streamer,
                              LLVMContext &C,
                              bool AcceptSupportedOnly = true)
-    : Context(C), TheModule(0), Buffer(0), BufferOwned(false),
+    : Context(C), TheModule(nullptr), Buffer(nullptr),
       LazyStreamer(streamer), NextUnreadBit(0), SeenValueSymbolTable(false),
       ValueList(C),
       SeenFirstFunctionBody(false),
@@ -219,10 +218,7 @@ public:
   }
 
   void FreeState();
-
-  /// setBufferOwned - If this is true, the reader will destroy the MemoryBuffer
-  /// when the reader is destroyed.
-  void setBufferOwned(bool Owned) { BufferOwned = Owned; }
+  void releaseBuffer() override;
 
   virtual bool isMaterializable(const GlobalValue *GV) const;
   virtual bool isDematerializable(const GlobalValue *GV) const;

@@ -1480,14 +1480,14 @@ bool NaClDisParser::ParseBlock(unsigned BlockID) {
 // if successful, true otherwise.
 static bool DisassembleBitcode() {
   // Open the bitcode file and put into a buffer.
-  std::unique_ptr<MemoryBuffer> MemBuf;
-  if (std::error_code ec =
-      MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), MemBuf)) {
+  auto ec = MemoryBuffer::getFileOrSTDIN(InputFilename.c_str());
+  if (!ec) {
     errs() << "Error reading '" << InputFilename << "': "
-           << ec.message() << "\n";
+           << ec.getError().message() << "\n";
     return true;
   }
 
+  std::unique_ptr<MemoryBuffer>& MemBuf = ec.get();
   if (MemBuf->getBufferSize() % 4 != 0) {
     errs() << "Bitcode stream should be a multiple of 4 bytes in length.\n";
     return true;

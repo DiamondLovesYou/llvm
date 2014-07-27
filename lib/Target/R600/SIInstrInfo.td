@@ -57,6 +57,10 @@ def SIsampleb : SDSample<"AMDGPUISD::SAMPLEB">;
 def SIsampled : SDSample<"AMDGPUISD::SAMPLED">;
 def SIsamplel : SDSample<"AMDGPUISD::SAMPLEL">;
 
+def SIconstdata_ptr : SDNode<
+  "AMDGPUISD::CONST_DATA_PTR", SDTypeProfile <1, 0, [SDTCisVT<0, i64>]>
+>;
+
 // Transformation function, extract the lower 32bit of a 64bit immediate
 def LO32 : SDNodeXForm<imm, [{
   return CurDAG->getTargetConstant(N->getZExtValue() & 0xffffffff, MVT::i32);
@@ -142,9 +146,26 @@ class SGPRImm <dag frag> : PatLeaf<frag, [{
   return false;
 }]>;
 
+//===----------------------------------------------------------------------===//
+// Custom Operands
+//===----------------------------------------------------------------------===//
+
 def FRAMEri32 : Operand<iPTR> {
   let MIOperandInfo = (ops i32:$ptr, i32imm:$index);
 }
+
+def sopp_brtarget : Operand<OtherVT> {
+  let EncoderMethod = "getSOPPBrEncoding";
+  let OperandType = "OPERAND_PCREL";
+}
+
+//===----------------------------------------------------------------------===//
+// Complex patterns
+//===----------------------------------------------------------------------===//
+
+def MUBUFAddr32 : ComplexPattern<i64, 9, "SelectMUBUFAddr32">;
+def MUBUFAddr64 : ComplexPattern<i64, 3, "SelectMUBUFAddr64">;
+def MUBUFScratch : ComplexPattern<i64, 4, "SelectMUBUFScratch">;
 
 //===----------------------------------------------------------------------===//
 // SI assembler operands
@@ -263,16 +284,54 @@ class SIMCInstr <string pseudo, int subtarget> {
   int Subtarget = subtarget;
 }
 
+class VOP3_Pseudo <dag outs, dag ins, list<dag> pattern, string opName> :
+  VOP3Common <outs, ins, "", pattern>,
+  VOP <opName>,
+  SIMCInstr<opName, SISubtarget.NONE> {
+  let isPseudo = 1;
+}
+
+class VOP3_Real_si <bits<9> op, dag outs, dag ins, string asm, string opName> :
+  VOP3 <op, outs, ins, asm, []>,
+  SIMCInstr<opName, SISubtarget.SI>;
+
 multiclass VOP3_m <bits<9> op, dag outs, dag ins, string asm, list<dag> pattern,
                    string opName> {
 
-  def "" : VOP3Common <outs, ins, "", pattern>, VOP <opName>,
-           SIMCInstr<OpName, SISubtarget.NONE> {
-    let isPseudo = 1;
-  }
+  def "" : VOP3_Pseudo <outs, ins, pattern, opName>;
 
-  def _si : VOP3 <op, outs, ins, asm, []>, SIMCInstr<opName, SISubtarget.SI>;
+  def _si : VOP3_Real_si <op, outs, ins, asm, opName>;
 
+}
+
+multiclass VOP3_1_m <bits<8> op, dag outs, dag ins, string asm,
+                     list<dag> pattern, string opName> {
+
+  def "" : VOP3_Pseudo <outs, ins, pattern, opName>;
+
+  let src1 = 0, src1_modifiers = 0, src2 = 0, src2_modifiers = 0 in {
+
+    def _si : VOP3_Real_si <
+      {1, 1, op{6}, op{5}, op{4}, op{3}, op{2}, op{1}, op{0}},
+      outs, ins, asm, opName
+    >;
+
+  } // src1 = 0, src1_modifiers = 0, src2 = 0, src2_modifiers = 0
+}
+
+multiclass VOP3_2_m <bits<6> op, dag outs, dag ins, string asm,
+                     list<dag> pattern, string opName, string revOp> {
+
+  def "" : VOP3_Pseudo <outs, ins, pattern, opName>;
+
+  let src2 = 0, src2_modifiers = 0 in {
+
+    def _si : VOP3_Real_si <
+        {1, 0, 0, op{5}, op{4}, op{3}, op{2}, op{1}, op{0}},
+        outs, ins, asm, opName>,
+        VOP2_REV<revOp#"_e64", !eq(revOp, opName)>;
+
+  } // src2 = 0, src2_modifiers = 0
 }
 
 // This must always be right before the operand being input modified.
@@ -288,15 +347,11 @@ multiclass VOP1_Helper <bits<8> op, RegisterClass drc, RegisterClass src,
     opName#"_e32 $dst, $src0", pattern
   >, VOP <opName>;
 
-  def _e64 : VOP3 <
-    {1, 1, op{6}, op{5}, op{4}, op{3}, op{2}, op{1}, op{0}},
+  defm _e64 : VOP3_1_m <
+    op,
     (outs drc:$dst),
     (ins InputMods:$src0_modifiers, src:$src0, i32imm:$clamp, i32imm:$omod),
-    opName#"_e64 $dst, $src0_modifiers, $clamp, $omod", []
-  >, VOP <opName> {
-    let src1 = SIOperand.ZERO;
-    let src2 = SIOperand.ZERO;
-  }
+    opName#"_e64 $dst, $src0_modifiers, $clamp, $omod", [], opName>;
 }
 
 multiclass VOP1_32 <bits<8> op, string opName, list<dag> pattern>
@@ -318,16 +373,14 @@ multiclass VOP2_Helper <bits<6> op, RegisterClass vrc, RegisterClass arc,
     opName#"_e32 $dst, $src0, $src1", pattern
   >, VOP <opName>, VOP2_REV<revOp#"_e32", !eq(revOp, opName)>;
 
-  def _e64 : VOP3 <
-    {1, 0, 0, op{5}, op{4}, op{3}, op{2}, op{1}, op{0}},
+  defm _e64 : VOP3_2_m <
+    op,
     (outs vrc:$dst),
     (ins InputMods:$src0_modifiers, arc:$src0,
          InputMods:$src1_modifiers, arc:$src1,
          i32imm:$clamp, i32imm:$omod),
-    opName#"_e64 $dst, $src0_modifiers, $src1_modifiers, $clamp, $omod", []
-  >, VOP <opName>, VOP2_REV<revOp#"_e64", !eq(revOp, opName)> {
-    let src2 = SIOperand.ZERO;
-  }
+    opName#"_e64 $dst, $src0_modifiers, $src1_modifiers, $clamp, $omod", [],
+    opName, revOp>;
 }
 
 multiclass VOP2_32 <bits<6> op, string opName, list<dag> pattern,
@@ -354,7 +407,8 @@ multiclass VOP2b_32 <bits<6> op, string opName, list<dag> pattern,
          i32imm:$clamp, i32imm:$omod),
     opName#"_e64 $dst, $src0_modifiers, $src1_modifiers, $clamp, $omod", []
   >, VOP <opName>, VOP2_REV<revOp#"_e64", !eq(revOp, opName)> {
-    let src2 = SIOperand.ZERO;
+    let src2 = 0;
+    let src2_modifiers = 0;
     /* the VOP2 variant puts the carry out into VCC, the VOP3 variant
        can write it into any SGPR. We currently don't use the carry out,
        so for now hardcode it to VCC as well */
@@ -368,7 +422,7 @@ multiclass VOPC_Helper <bits<8> op, RegisterClass vrc, RegisterClass arc,
     op, (ins arc:$src0, vrc:$src1),
     opName#"_e32 $dst, $src0, $src1", []
   >, VOP <opName> {
-    let Defs = !if(defExec, [VCC, EXEC], [VCC]);
+    let Defs = !if(defExec, [EXEC], []);
   }
 
   def _e64 : VOP3 <
@@ -383,7 +437,7 @@ multiclass VOPC_Helper <bits<8> op, RegisterClass vrc, RegisterClass arc,
     )
   >, VOP <opName> {
     let Defs = !if(defExec, [EXEC], []);
-    let src2 = SIOperand.ZERO;
+    let src2 = 0;
     let src2_modifiers = 0;
   }
 }
@@ -418,7 +472,8 @@ class VOP3_64_32 <bits <9> op, string opName, list<dag> pattern> : VOP3 <
   opName#" $dst, $src0, $src1", pattern
 >, VOP <opName> {
 
-  let src2 = SIOperand.ZERO;
+  let src2 = 0;
+  let src2_modifiers = 0;
   let src0_modifiers = 0;
   let clamp = 0;
   let omod = 0;
@@ -432,6 +487,22 @@ class VOP3_64 <bits<9> op, string opName, list<dag> pattern> : VOP3 <
        InstFlag:$clamp, InstFlag:$omod),
   opName#" $dst, $src0_modifiers, $src1_modifiers, $src2_modifiers, $clamp, $omod", pattern
 >, VOP <opName>;
+
+
+class VOP3b_Helper <bits<9> op, RegisterClass vrc, RegisterClass arc,
+                    string opName, list<dag> pattern> : VOP3 <
+  op, (outs vrc:$dst0, SReg_64:$dst1),
+  (ins arc:$src0, arc:$src1, arc:$src2,
+   InstFlag:$abs, InstFlag:$clamp, InstFlag:$omod, InstFlag:$neg),
+  opName#" $dst0, $dst1, $src0, $src1, $src2, $abs, $clamp, $omod, $neg", pattern
+>, VOP <opName>;
+
+
+class VOP3b_64 <bits<9> op, string opName, list<dag> pattern> :
+  VOP3b_Helper <op, VReg_64, VSrc_64, opName, pattern>;
+
+class VOP3b_32 <bits<9> op, string opName, list<dag> pattern> :
+  VOP3b_Helper <op, VReg_32, VSrc_32, opName, pattern>;
 
 //===----------------------------------------------------------------------===//
 // Vector I/O classes
@@ -554,26 +625,28 @@ class MTBUF_Store_Helper <bits<3> op, string asm, RegisterClass regClass> : MTBU
   let mayLoad = 0;
 }
 
-multiclass MUBUF_Load_Helper <bits<7> op, string asm, RegisterClass regClass> {
+multiclass MUBUF_Load_Helper <bits<7> op, string asm, RegisterClass regClass,
+                              ValueType load_vt = i32,
+                              SDPatternOperator ld = null_frag> {
 
   let lds = 0, mayLoad = 1 in {
 
     let addr64 = 0 in {
 
-      let offen = 0, idxen = 0 in {
+      let offen = 0, idxen = 0, vaddr = 0 in {
         def _OFFSET : MUBUF <op, (outs regClass:$vdata),
-                             (ins SReg_128:$srsrc, VReg_32:$vaddr,
+                             (ins SReg_128:$srsrc,
                              u16imm:$offset, SSrc_32:$soffset, i1imm:$glc,
                              i1imm:$slc, i1imm:$tfe),
                              asm#" $vdata, $srsrc + $offset + $soffset, glc=$glc, slc=$slc, tfe=$tfe", []>;
       }
 
-      let offen = 1, idxen = 0, offset = 0 in {
+      let offen = 1, idxen = 0  in {
         def _OFFEN  : MUBUF <op, (outs regClass:$vdata),
                              (ins SReg_128:$srsrc, VReg_32:$vaddr,
-                             SSrc_32:$soffset, i1imm:$glc, i1imm:$slc,
+                             SSrc_32:$soffset, u16imm:$offset, i1imm:$glc, i1imm:$slc,
                              i1imm:$tfe),
-                             asm#" $vdata, $srsrc + $vaddr + $soffset, glc=$glc, slc=$slc, tfe=$tfe", []>;
+                             asm#" $vdata, $srsrc + $vaddr + $soffset + $offset, glc=$glc, slc=$slc, tfe=$tfe", []>;
       }
 
       let offen = 0, idxen = 1 in {
@@ -596,29 +669,47 @@ multiclass MUBUF_Load_Helper <bits<7> op, string asm, RegisterClass regClass> {
     let offen = 0, idxen = 0, addr64 = 1, glc = 0, slc = 0, tfe = 0, soffset = 128 /* ZERO */ in {
       def _ADDR64 : MUBUF <op, (outs regClass:$vdata),
                            (ins SReg_128:$srsrc, VReg_64:$vaddr, u16imm:$offset),
-                           asm#" $vdata, $srsrc + $vaddr + $offset", []>;
+                           asm#" $vdata, $srsrc + $vaddr + $offset",
+                           [(set load_vt:$vdata, (ld (MUBUFAddr64 v4i32:$srsrc,
+                                                  i64:$vaddr, u16imm:$offset)))]>;
     }
   }
 }
 
-class MUBUF_Store_Helper <bits<7> op, string name, RegisterClass vdataClass> :
-    MUBUF <op, (outs), (ins vdataClass:$vdata, SReg_128:$srsrc, VReg_64:$vaddr,
-                            u16imm:$offset),
-          name#" $vdata, $srsrc + $vaddr + $offset",
-         []> {
+multiclass MUBUF_Store_Helper <bits<7> op, string name, RegisterClass vdataClass,
+                          ValueType store_vt, SDPatternOperator st> {
 
-  let mayLoad = 0;
-  let mayStore = 1;
+  def "" : MUBUF <
+    op, (outs),
+    (ins vdataClass:$vdata, SReg_128:$srsrc, VReg_32:$vaddr, SSrc_32:$soffset,
+         u16imm:$offset, i1imm:$offen, i1imm:$idxen, i1imm:$glc, i1imm:$slc,
+         i1imm:$tfe),
+    name#" $vdata, $srsrc, $vaddr, $soffset, $offset $offen $idxen $glc $slc $tfe",
+    []
+  > {
+    let addr64 = 0;
+  }
 
-  // Encoding
-  let offen = 0;
-  let idxen = 0;
-  let glc = 0;
-  let addr64 = 1;
-  let lds = 0;
-  let slc = 0;
-  let tfe = 0;
-  let soffset = 128; // ZERO
+  def _ADDR64 : MUBUF <
+    op, (outs),
+    (ins vdataClass:$vdata, SReg_128:$srsrc, VReg_64:$vaddr, u16imm:$offset),
+    name#" $vdata, $srsrc + $vaddr + $offset",
+    [(st store_vt:$vdata,
+     (MUBUFAddr64 v4i32:$srsrc, i64:$vaddr, u16imm:$offset))]> {
+
+      let mayLoad = 0;
+      let mayStore = 1;
+
+      // Encoding
+      let offen = 0;
+      let idxen = 0;
+      let glc = 0;
+      let addr64 = 1;
+      let lds = 0;
+      let slc = 0;
+      let tfe = 0;
+      let soffset = 128; // ZERO
+   }
 }
 
 class MTBUF_Load_Helper <bits<3> op, string asm, RegisterClass regClass> : MTBUF <
@@ -712,6 +803,53 @@ multiclass MIMG_Sampler <bits<7> op, string asm> {
   defm _V4 : MIMG_Sampler_Src_Helper<op, asm, VReg_128, 4>;
 }
 
+class MIMG_Gather_Helper <bits<7> op, string asm,
+                          RegisterClass dst_rc,
+                          RegisterClass src_rc> : MIMG <
+  op,
+  (outs dst_rc:$vdata),
+  (ins i32imm:$dmask, i1imm:$unorm, i1imm:$glc, i1imm:$da, i1imm:$r128,
+       i1imm:$tfe, i1imm:$lwe, i1imm:$slc, src_rc:$vaddr,
+       SReg_256:$srsrc, SReg_128:$ssamp),
+  asm#" $vdata, $dmask, $unorm, $glc, $da, $r128,"
+     #" $tfe, $lwe, $slc, $vaddr, $srsrc, $ssamp",
+  []> {
+  let mayLoad = 1;
+  let mayStore = 0;
+
+  // DMASK was repurposed for GATHER4. 4 components are always
+  // returned and DMASK works like a swizzle - it selects
+  // the component to fetch. The only useful DMASK values are
+  // 1=red, 2=green, 4=blue, 8=alpha. (e.g. 1 returns
+  // (red,red,red,red) etc.) The ISA document doesn't mention
+  // this.
+  // Therefore, disable all code which updates DMASK by setting these two:
+  let MIMG = 0;
+  let hasPostISelHook = 0;
+}
+
+multiclass MIMG_Gather_Src_Helper <bits<7> op, string asm,
+                                    RegisterClass dst_rc,
+                                    int channels> {
+  def _V1 : MIMG_Gather_Helper <op, asm, dst_rc, VReg_32>,
+            MIMG_Mask<asm#"_V1", channels>;
+  def _V2 : MIMG_Gather_Helper <op, asm, dst_rc, VReg_64>,
+            MIMG_Mask<asm#"_V2", channels>;
+  def _V4 : MIMG_Gather_Helper <op, asm, dst_rc, VReg_128>,
+            MIMG_Mask<asm#"_V4", channels>;
+  def _V8 : MIMG_Gather_Helper <op, asm, dst_rc, VReg_256>,
+            MIMG_Mask<asm#"_V8", channels>;
+  def _V16 : MIMG_Gather_Helper <op, asm, dst_rc, VReg_512>,
+            MIMG_Mask<asm#"_V16", channels>;
+}
+
+multiclass MIMG_Gather <bits<7> op, string asm> {
+  defm _V1 : MIMG_Gather_Src_Helper<op, asm, VReg_32, 1>;
+  defm _V2 : MIMG_Gather_Src_Helper<op, asm, VReg_64, 2>;
+  defm _V3 : MIMG_Gather_Src_Helper<op, asm, VReg_96, 3>;
+  defm _V4 : MIMG_Gather_Src_Helper<op, asm, VReg_128, 4>;
+}
+
 //===----------------------------------------------------------------------===//
 // Vector instruction mappings
 //===----------------------------------------------------------------------===//
@@ -723,6 +861,15 @@ def getVOPe64 : InstrMapping {
   let ColFields = ["Size"];
   let KeyCol = ["4"];
   let ValueCols = [["8"]];
+}
+
+// Maps an opcode in e64 form to its e32 equivalent
+def getVOPe32 : InstrMapping {
+  let FilterClass = "VOP";
+  let RowFields = ["OpName"];
+  let ColFields = ["Size"];
+  let KeyCol = ["8"];
+  let ValueCols = [["4"]];
 }
 
 // Maps an original opcode to its commuted version

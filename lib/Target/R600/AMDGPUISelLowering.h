@@ -54,6 +54,7 @@ private:
   SDValue LowerFCEIL(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFTRUNC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFRINT(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFNEARBYINT(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFFLOOR(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
@@ -63,24 +64,21 @@ private:
                                   SelectionDAG &DAG) const;
   SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
 
+  SDValue performStoreCombine(SDNode *N, DAGCombinerInfo &DCI) const;
+  SDValue performMulCombine(SDNode *N, DAGCombinerInfo &DCI) const;
+
 protected:
   static EVT getEquivalentMemType(LLVMContext &Context, EVT VT);
   static EVT getEquivalentLoadRegType(LLVMContext &Context, EVT VT);
 
-  /// \brief Helper function that adds Reg to the LiveIn list of the DAG's
-  /// MachineFunction.
-  ///
-  /// \returns a RegisterSDNode representing Reg.
-  virtual SDValue CreateLiveInRegister(SelectionDAG &DAG,
-                                       const TargetRegisterClass *RC,
-                                       unsigned Reg, EVT VT) const;
-  SDValue LowerGlobalAddress(AMDGPUMachineFunction *MFI, SDValue Op,
-                             SelectionDAG &DAG) const;
+  virtual SDValue LowerGlobalAddress(AMDGPUMachineFunction *MFI, SDValue Op,
+                                     SelectionDAG &DAG) const;
   /// \brief Split a vector load into multiple scalar loads.
   SDValue SplitVectorLoad(const SDValue &Op, SelectionDAG &DAG) const;
   SDValue SplitVectorStore(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerLOAD(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSTORE(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerSDIVREM(SDValue Op, SelectionDAG &DAG) const;
   bool isHWTrueValue(SDValue Op) const;
   bool isHWFalseValue(SDValue Op) const;
 
@@ -107,10 +105,12 @@ public:
 
   bool isZExtFree(Type *Src, Type *Dest) const override;
   bool isZExtFree(EVT Src, EVT Dest) const override;
+  bool isZExtFree(SDValue Val, EVT VT2) const override;
 
   bool isNarrowingProfitable(EVT VT1, EVT VT2) const override;
 
   MVT getVectorIdxTy() const override;
+  bool isSelectSupported(SelectSupportKind) const override;
 
   bool isFPImmLegal(const APFloat &Imm, EVT VT) const override;
   bool ShouldShrinkFPConstant(EVT VT) const override;
@@ -154,10 +154,13 @@ public:
     const SelectionDAG &DAG,
     unsigned Depth = 0) const override;
 
-private:
-  // Functions defined in AMDILISelLowering.cpp
-  void InitAMDILLowering();
-  SDValue LowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
+  /// \brief Helper function that adds Reg to the LiveIn list of the DAG's
+  /// MachineFunction.
+  ///
+  /// \returns a RegisterSDNode representing Reg.
+  virtual SDValue CreateLiveInRegister(SelectionDAG &DAG,
+                                       const TargetRegisterClass *RC,
+                                       unsigned Reg, EVT VT) const;
 };
 
 namespace AMDGPUISD {
@@ -167,13 +170,15 @@ enum {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   CALL,        // Function call based on a single integer
   UMUL,        // 32bit unsigned multiplication
-  DIV_INF,      // Divide with infinity returned on zero divisor
   RET_FLAG,
   BRANCH_COND,
   // End AMDIL ISD Opcodes
   DWORDADDR,
   FRACT,
   CLAMP,
+
+  // SIN_HW, COS_HW - f32 for SI, 1 ULP max error, valid from -100 pi to 100 pi.
+  // Denormals handled on some parts.
   COS_HW,
   SIN_HW,
   FMAX,
@@ -183,6 +188,17 @@ enum {
   SMIN,
   UMIN,
   URECIP,
+  DIV_SCALE,
+  DIV_FMAS,
+  DIV_FIXUP,
+  TRIG_PREOP, // 1 ULP max error for f64
+
+  // RCP, RSQ - For f32, 1 ULP max error, no denormal handling.
+  //            For f64, max error 2^29 ULP, handles denormals.
+  RCP,
+  RSQ,
+  RSQ_LEGACY,
+  RSQ_CLAMPED,
   DOT4,
   BFE_U32, // Extract range of bits with zero extension to 32-bits.
   BFE_I32, // Extract range of bits with sign extension to 32-bits.
@@ -218,6 +234,8 @@ enum {
   /// T2|v.z| | | |
   /// T3|v.w| | | |
   BUILD_VERTICAL_VECTOR,
+  /// Pointer to the start of the shader's constant data.
+  CONST_DATA_PTR,
   FIRST_MEM_OPCODE_NUMBER = ISD::FIRST_TARGET_MEMORY_OPCODE,
   STORE_MSKOR,
   LOAD_CONSTANT,

@@ -16,7 +16,6 @@ include "Mips32r6InstrFormats.td"
 // Notes about removals/changes from MIPS32r6:
 // Reencoded: jr -> jalr
 // Reencoded: jr.hb -> jalr.hb
-// Reencoded: sdbbp
 
 def brtarget21 : Operand<OtherVT> {
   let EncoderMethod = "getBranchTarget21OpValue";
@@ -160,11 +159,21 @@ class LWC2_R6_ENC : COP2LDST_FM<OPCODE5_LWC2>;
 class SDC2_R6_ENC : COP2LDST_FM<OPCODE5_SDC2>;
 class SWC2_R6_ENC : COP2LDST_FM<OPCODE5_SWC2>;
 
+class LSA_R6_ENC : SPECIAL_LSA_FM<OPCODE6_LSA>;
+
 class LL_R6_ENC : SPECIAL3_LL_SC_FM<OPCODE6_LL>;
 class SC_R6_ENC : SPECIAL3_LL_SC_FM<OPCODE6_SC>;
 
 class CLO_R6_ENC : SPECIAL_2R_FM<OPCODE6_CLO>;
 class CLZ_R6_ENC : SPECIAL_2R_FM<OPCODE6_CLZ>;
+
+class SDBBP_R6_ENC : SPECIAL_SDBBP_FM;
+
+//===----------------------------------------------------------------------===//
+//
+// Instruction Multiclasses
+//
+//===----------------------------------------------------------------------===//
 
 class CMP_CONDN_DESC_BASE<string CondStr, string Typestr,
                           RegisterOperand FGROpnd,
@@ -175,16 +184,10 @@ class CMP_CONDN_DESC_BASE<string CondStr, string Typestr,
   list<dag> Pattern = [(set FGRCCOpnd:$fd, (Op FGROpnd:$fs, FGROpnd:$ft))];
 }
 
-//===----------------------------------------------------------------------===//
-//
-// Instruction Multiclasses
-//
-//===----------------------------------------------------------------------===//
-
 multiclass CMP_CC_M <FIELD_CMP_FORMAT Format, string Typestr,
                      RegisterOperand FGROpnd>{
-  def CMP_F_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_F>,
-                    CMP_CONDN_DESC_BASE<"f", Typestr, FGROpnd>,
+  def CMP_F_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_AF>,
+                    CMP_CONDN_DESC_BASE<"af", Typestr, FGROpnd>,
                     ISA_MIPS32R6;
   def CMP_UN_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_UN>,
                      CMP_CONDN_DESC_BASE<"un", Typestr, FGROpnd, setuo>,
@@ -195,42 +198,42 @@ multiclass CMP_CC_M <FIELD_CMP_FORMAT Format, string Typestr,
   def CMP_UEQ_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_UEQ>,
                       CMP_CONDN_DESC_BASE<"ueq", Typestr, FGROpnd, setueq>,
                       ISA_MIPS32R6;
-  def CMP_OLT_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_OLT>,
-                      CMP_CONDN_DESC_BASE<"olt", Typestr, FGROpnd, setolt>,
-                      ISA_MIPS32R6;
+  def CMP_LT_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_LT>,
+                     CMP_CONDN_DESC_BASE<"lt", Typestr, FGROpnd, setolt>,
+                     ISA_MIPS32R6;
   def CMP_ULT_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_ULT>,
                       CMP_CONDN_DESC_BASE<"ult", Typestr, FGROpnd, setult>,
                       ISA_MIPS32R6;
-  def CMP_OLE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_OLE>,
-                      CMP_CONDN_DESC_BASE<"ole", Typestr, FGROpnd, setole>,
-                      ISA_MIPS32R6;
+  def CMP_LE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_LE>,
+                     CMP_CONDN_DESC_BASE<"le", Typestr, FGROpnd, setole>,
+                     ISA_MIPS32R6;
   def CMP_ULE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_ULE>,
                       CMP_CONDN_DESC_BASE<"ule", Typestr, FGROpnd, setule>,
                       ISA_MIPS32R6;
-  def CMP_SF_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SF>,
-                     CMP_CONDN_DESC_BASE<"sf", Typestr, FGROpnd>,
-                     ISA_MIPS32R6;
-  def CMP_NGLE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_NGLE>,
-                       CMP_CONDN_DESC_BASE<"ngle", Typestr, FGROpnd>,
-                       ISA_MIPS32R6;
+  def CMP_SAF_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SAF>,
+                      CMP_CONDN_DESC_BASE<"saf", Typestr, FGROpnd>,
+                      ISA_MIPS32R6;
+  def CMP_SUN_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SUN>,
+                      CMP_CONDN_DESC_BASE<"sun", Typestr, FGROpnd>,
+                      ISA_MIPS32R6;
   def CMP_SEQ_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SEQ>,
                       CMP_CONDN_DESC_BASE<"seq", Typestr, FGROpnd>,
                       ISA_MIPS32R6;
-  def CMP_NGL_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_NGL>,
-                      CMP_CONDN_DESC_BASE<"ngl", Typestr, FGROpnd>,
+  def CMP_SUEQ_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SUEQ>,
+                       CMP_CONDN_DESC_BASE<"sueq", Typestr, FGROpnd>,
+                       ISA_MIPS32R6;
+  def CMP_SLT_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SLT>,
+                      CMP_CONDN_DESC_BASE<"slt", Typestr, FGROpnd>,
                       ISA_MIPS32R6;
-  def CMP_LT_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_LT>,
-                     CMP_CONDN_DESC_BASE<"lt", Typestr, FGROpnd>,
-                     ISA_MIPS32R6;
-  def CMP_NGE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_NGE>,
-                      CMP_CONDN_DESC_BASE<"nge", Typestr, FGROpnd>,
+  def CMP_SULT_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SULT>,
+                       CMP_CONDN_DESC_BASE<"sult", Typestr, FGROpnd>,
+                       ISA_MIPS32R6;
+  def CMP_SLE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SLE>,
+                      CMP_CONDN_DESC_BASE<"sle", Typestr, FGROpnd>,
                       ISA_MIPS32R6;
-  def CMP_LE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_LE>,
-                     CMP_CONDN_DESC_BASE<"le", Typestr, FGROpnd>,
-                     ISA_MIPS32R6;
-  def CMP_NGT_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_NGT>,
-                      CMP_CONDN_DESC_BASE<"ngt", Typestr, FGROpnd>,
-                      ISA_MIPS32R6;
+  def CMP_SULE_#NAME : COP1_CMP_CONDN_FM<Format, FIELD_CMP_COND_SULE>,
+                       CMP_CONDN_DESC_BASE<"sule", Typestr, FGROpnd>,
+                       ISA_MIPS32R6;
 }
 
 //===----------------------------------------------------------------------===//
@@ -574,6 +577,16 @@ class COP2ST_DESC_BASE<string instr_asm, RegisterOperand COPOpnd> {
 class SDC2_R6_DESC : COP2ST_DESC_BASE<"sdc2", COP2Opnd>;
 class SWC2_R6_DESC : COP2ST_DESC_BASE<"swc2", COP2Opnd>;
 
+class LSA_R6_DESC_BASE<string instr_asm, RegisterOperand GPROpnd,
+                       Operand ImmOpnd> {
+  dag OutOperandList = (outs GPROpnd:$rd);
+  dag InOperandList = (ins GPROpnd:$rs, GPROpnd:$rt, ImmOpnd:$imm2);
+  string AsmString = !strconcat(instr_asm, "\t$rd, $rs, $rt, $imm2");
+  list<dag> Pattern = [];
+}
+
+class LSA_R6_DESC : LSA_R6_DESC_BASE<"lsa", GPR32Opnd, uimm2>;
+
 class LL_R6_DESC_BASE<string instr_asm, RegisterOperand GPROpnd> {
   dag OutOperandList = (outs GPROpnd:$rt);
   dag InOperandList = (ins mem_simm9:$addr);
@@ -613,6 +626,13 @@ class CLZ_R6_DESC_BASE<string instr_asm, RegisterOperand GPROpnd> :
 
 class CLO_R6_DESC : CLO_R6_DESC_BASE<"clo", GPR32Opnd>;
 class CLZ_R6_DESC : CLZ_R6_DESC_BASE<"clz", GPR32Opnd>;
+
+class SDBBP_R6_DESC {
+  dag OutOperandList = (outs);
+  dag InOperandList = (ins uimm20:$code_);
+  string AsmString = "sdbbp\t$code_";
+  list<dag> Pattern = [];
+}
 
 //===----------------------------------------------------------------------===//
 //
@@ -667,7 +687,7 @@ def JIC : JIC_ENC, JIC_DESC, ISA_MIPS32R6;
 def JR_HB_R6 : JR_HB_R6_ENC, JR_HB_R6_DESC, ISA_MIPS32R6;
 def LDC2_R6 : LDC2_R6_ENC, LDC2_R6_DESC, ISA_MIPS32R6;
 def LL_R6 : LL_R6_ENC, LL_R6_DESC, ISA_MIPS32R6;
-// def LSA; // See MSA
+def LSA_R6 : LSA_R6_ENC, LSA_R6_DESC, ISA_MIPS32R6;
 def LWC2_R6 : LWC2_R6_ENC, LWC2_R6_DESC, ISA_MIPS32R6;
 def LWPC : LWPC_ENC, LWPC_DESC, ISA_MIPS32R6;
 def LWUPC : LWUPC_ENC, LWUPC_DESC, ISA_MIPS32R6;
@@ -694,6 +714,7 @@ def PREF_R6 : PREF_ENC, PREF_DESC, ISA_MIPS32R6;
 def RINT_D : RINT_D_ENC, RINT_D_DESC, ISA_MIPS32R6;
 def RINT_S : RINT_S_ENC, RINT_S_DESC, ISA_MIPS32R6;
 def SC_R6 : SC_R6_ENC, SC_R6_DESC, ISA_MIPS32R6;
+def SDBBP_R6 : SDBBP_R6_ENC, SDBBP_R6_DESC, ISA_MIPS32R6;
 def SDC2_R6 : SDC2_R6_ENC, SDC2_R6_DESC, ISA_MIPS32R6;
 def SELEQZ : SELEQZ_ENC, SELEQZ_DESC, ISA_MIPS32R6, GPR_32;
 def SELEQZ_D : SELEQZ_D_ENC, SELEQZ_D_DESC, ISA_MIPS32R6;
@@ -704,6 +725,15 @@ def SELNEZ_S : SELNEZ_S_ENC, SELNEZ_S_DESC, ISA_MIPS32R6;
 def SEL_D : SEL_D_ENC, SEL_D_DESC, ISA_MIPS32R6;
 def SEL_S : SEL_S_ENC, SEL_S_DESC, ISA_MIPS32R6;
 def SWC2_R6 : SWC2_R6_ENC, SWC2_R6_DESC, ISA_MIPS32R6;
+
+//===----------------------------------------------------------------------===//
+//
+// Instruction Aliases
+//
+//===----------------------------------------------------------------------===//
+
+def : MipsInstAlias<"sdbbp", (SDBBP_R6 0)>, ISA_MIPS32R6;
+def : MipsInstAlias<"jr $rs", (JALR ZERO, GPR32Opnd:$rs), 1>, ISA_MIPS32R6;
 
 //===----------------------------------------------------------------------===//
 //
@@ -724,9 +754,9 @@ def : MipsPat<(setgt f32:$lhs, f32:$rhs), (CMP_LE_S f32:$rhs, f32:$lhs)>,
       ISA_MIPS32R6;
 def : MipsPat<(setge f32:$lhs, f32:$rhs), (CMP_LT_S f32:$rhs, f32:$lhs)>,
       ISA_MIPS32R6;
-def : MipsPat<(setlt f32:$lhs, f32:$rhs), (CMP_OLT_S f32:$lhs, f32:$rhs)>,
+def : MipsPat<(setlt f32:$lhs, f32:$rhs), (CMP_LT_S f32:$lhs, f32:$rhs)>,
       ISA_MIPS32R6;
-def : MipsPat<(setlt f32:$lhs, f32:$rhs), (CMP_OLE_S f32:$lhs, f32:$rhs)>,
+def : MipsPat<(setlt f32:$lhs, f32:$rhs), (CMP_LE_S f32:$lhs, f32:$rhs)>,
       ISA_MIPS32R6;
 def : MipsPat<(setne f32:$lhs, f32:$rhs),
               (NOR (CMP_EQ_S f32:$lhs, f32:$rhs), ZERO)>, ISA_MIPS32R6;
@@ -744,9 +774,9 @@ def : MipsPat<(setgt f64:$lhs, f64:$rhs), (CMP_LE_D f64:$rhs, f64:$lhs)>,
       ISA_MIPS32R6;
 def : MipsPat<(setge f64:$lhs, f64:$rhs), (CMP_LT_D f64:$rhs, f64:$lhs)>,
       ISA_MIPS32R6;
-def : MipsPat<(setlt f64:$lhs, f64:$rhs), (CMP_OLT_D f64:$lhs, f64:$rhs)>,
+def : MipsPat<(setlt f64:$lhs, f64:$rhs), (CMP_LT_D f64:$lhs, f64:$rhs)>,
       ISA_MIPS32R6;
-def : MipsPat<(setlt f64:$lhs, f64:$rhs), (CMP_OLE_D f64:$lhs, f64:$rhs)>,
+def : MipsPat<(setlt f64:$lhs, f64:$rhs), (CMP_LE_D f64:$lhs, f64:$rhs)>,
       ISA_MIPS32R6;
 def : MipsPat<(setne f64:$lhs, f64:$rhs),
               (NOR (CMP_EQ_D f64:$lhs, f64:$rhs), ZERO)>, ISA_MIPS32R6;
@@ -756,28 +786,28 @@ def : MipsPat<(select i32:$cond, i32:$t, i32:$f),
               (OR (SELNEZ i32:$t, i32:$cond), (SELEQZ i32:$f, i32:$cond))>,
               ISA_MIPS32R6;
 def : MipsPat<(select (i32 (seteq i32:$cond, immz)), i32:$t, i32:$f),
-              (OR (SELNEZ i32:$t, i32:$cond), (SELEQZ i32:$f, i32:$cond))>,
+              (OR (SELEQZ i32:$t, i32:$cond), (SELNEZ i32:$f, i32:$cond))>,
               ISA_MIPS32R6;
 def : MipsPat<(select (i32 (setne i32:$cond, immz)), i32:$t, i32:$f),
-              (OR (SELNEZ i32:$f, i32:$cond), (SELEQZ i32:$t, i32:$cond))>,
+              (OR (SELNEZ i32:$t, i32:$cond), (SELEQZ i32:$f, i32:$cond))>,
               ISA_MIPS32R6;
 def : MipsPat<(select (i32 (seteq i32:$cond, immZExt16:$imm)), i32:$t, i32:$f),
+              (OR (SELEQZ i32:$t, (XORi i32:$cond, immZExt16:$imm)),
+                  (SELNEZ i32:$f, (XORi i32:$cond, immZExt16:$imm)))>,
+              ISA_MIPS32R6;
+def : MipsPat<(select (i32 (setne i32:$cond, immZExt16:$imm)), i32:$t, i32:$f),
               (OR (SELNEZ i32:$t, (XORi i32:$cond, immZExt16:$imm)),
                   (SELEQZ i32:$f, (XORi i32:$cond, immZExt16:$imm)))>,
               ISA_MIPS32R6;
-def : MipsPat<(select (i32 (setne i32:$cond, immZExt16:$imm)), i32:$t, i32:$f),
-              (OR (SELNEZ i32:$f, (XORi i32:$cond, immZExt16:$imm)),
-                  (SELEQZ i32:$t, (XORi i32:$cond, immZExt16:$imm)))>,
-              ISA_MIPS32R6;
 def : MipsPat<(select (i32 (setgt i32:$cond, immSExt16Plus1:$imm)), i32:$t,
                       i32:$f),
-              (OR (SELNEZ i32:$t, (SLTi i32:$cond, (Plus1 imm:$imm))),
-                  (SELEQZ i32:$f, (SLTi i32:$cond, (Plus1 imm:$imm))))>,
+              (OR (SELEQZ i32:$t, (SLTi i32:$cond, (Plus1 imm:$imm))),
+                  (SELNEZ i32:$f, (SLTi i32:$cond, (Plus1 imm:$imm))))>,
               ISA_MIPS32R6;
 def : MipsPat<(select (i32 (setugt i32:$cond, immSExt16Plus1:$imm)),
                       i32:$t, i32:$f),
-              (OR (SELNEZ i32:$t, (SLTiu i32:$cond, (Plus1 imm:$imm))),
-                  (SELEQZ i32:$f, (SLTiu i32:$cond, (Plus1 imm:$imm))))>,
+              (OR (SELEQZ i32:$t, (SLTiu i32:$cond, (Plus1 imm:$imm))),
+                  (SELNEZ i32:$f, (SLTiu i32:$cond, (Plus1 imm:$imm))))>,
               ISA_MIPS32R6;
 
 def : MipsPat<(select i32:$cond, i32:$t, immz),

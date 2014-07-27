@@ -41,30 +41,6 @@ PPCFrameLowering::PPCFrameLowering(const PPCSubtarget &STI)
                           (STI.hasQPX() || STI.isBGQ()) ? 32 : 16, 0),
       Subtarget(STI) {}
 
-unsigned PPCFrameLowering::getMinCallArgumentsSize(bool isPPC64,
-                                                   bool isDarwinABI) {
-  // For the Darwin ABI / 64-bit SVR4 ABI:
-  // The prolog code of the callee may store up to 8 GPR argument registers to
-  // the stack, allowing va_start to index over them in memory if its varargs.
-  // Because we cannot tell if this is needed on the caller side, we have to
-  // conservatively assume that it is needed.  As such, make sure we have at
-  // least enough stack space for the caller to store the 8 GPRs.
-  if (isDarwinABI || isPPC64)
-    return 8 * (isPPC64 ? 8 : 4);
-
-  // 32-bit SVR4 ABI:
-  // There is no default stack allocated for the 8 first GPR arguments.
-  return 0;
-}
-
-/// getMinCallFrameSize - Return the minimum size a call frame can be using
-/// the PowerPC ABI.
-unsigned PPCFrameLowering::getMinCallFrameSize(bool isPPC64, bool isDarwinABI) {
-  // The call frame needs to be at least big enough for linkage and 8 args.
-  return PPCFrameLowering::getLinkageSize(isPPC64, isDarwinABI) +
-         PPCFrameLowering::getMinCallArgumentsSize(isPPC64, isDarwinABI);
-}
-
 // With the SVR4 ABI, callee-saved registers have fixed offsets on the stack.
 const PPCFrameLowering::SpillSlot *PPCFrameLowering::getCalleeSavedSpillSlots(
     unsigned &NumEntries) const {
@@ -422,9 +398,10 @@ unsigned PPCFrameLowering::determineFrameLayout(MachineFunction &MF,
   // Get the maximum call frame size of all the calls.
   unsigned maxCallFrameSize = MFI->getMaxCallFrameSize();
 
-  // Maximum call frame needs to be at least big enough for linkage and 8 args.
-  unsigned minCallFrameSize = getMinCallFrameSize(Subtarget.isPPC64(),
-                                                  Subtarget.isDarwinABI());
+  // Maximum call frame needs to be at least big enough for linkage area.
+  unsigned minCallFrameSize = getLinkageSize(Subtarget.isPPC64(),
+                                             Subtarget.isDarwinABI(),
+                                             Subtarget.isELFv2ABI());
   maxCallFrameSize = std::max(maxCallFrameSize, minCallFrameSize);
 
   // If we have dynamic alloca then maxCallFrameSize needs to be aligned so
@@ -485,7 +462,7 @@ void PPCFrameLowering::replaceFPWithRealFP(MachineFunction &MF) const {
   const PPCRegisterInfo *RegInfo =
     static_cast<const PPCRegisterInfo*>(MF.getTarget().getRegisterInfo());
   bool HasBP = RegInfo->hasBasePointer(MF);
-  unsigned BPReg  = HasBP ? (unsigned) PPC::R30 : FPReg;
+  unsigned BPReg  = HasBP ? (unsigned) RegInfo->getBaseRegister(MF) : FPReg;
   unsigned BP8Reg = HasBP ? (unsigned) PPC::X30 : FPReg;
 
   for (MachineFunction::iterator BI = MF.begin(), BE = MF.end();
@@ -530,12 +507,14 @@ void PPCFrameLowering::emitPrologue(MachineFunction &MF) const {
   DebugLoc dl;
   bool needsFrameMoves = MMI.hasDebugInfo() ||
     MF.getFunction()->needsUnwindTableEntry();
+  bool isPIC = MF.getTarget().getRelocationModel() == Reloc::PIC_;
 
   // Get processor type.
   bool isPPC64 = Subtarget.isPPC64();
   // Get the ABI.
   bool isDarwinABI = Subtarget.isDarwinABI();
   bool isSVR4ABI = Subtarget.isSVR4ABI();
+  bool isELFv2ABI = Subtarget.isELFv2ABI();
   assert((isDarwinABI || isSVR4ABI) &&
          "Currently only Darwin and SVR4 ABIs are supported for PowerPC.");
 
@@ -570,7 +549,7 @@ void PPCFrameLowering::emitPrologue(MachineFunction &MF) const {
   bool HasBP = RegInfo->hasBasePointer(MF);
 
   unsigned SPReg       = isPPC64 ? PPC::X1  : PPC::R1;
-  unsigned BPReg       = isPPC64 ? PPC::X30 : PPC::R30;
+  unsigned BPReg       = RegInfo->getBaseRegister(MF);
   unsigned FPReg       = isPPC64 ? PPC::X31 : PPC::R31;
   unsigned LRReg       = isPPC64 ? PPC::LR8 : PPC::LR;
   unsigned ScratchReg  = isPPC64 ? PPC::X0  : PPC::R0;
@@ -626,7 +605,9 @@ void PPCFrameLowering::emitPrologue(MachineFunction &MF) const {
       BPOffset = FFI->getObjectOffset(BPIndex);
     } else {
       BPOffset =
-        PPCFrameLowering::getBasePointerSaveOffset(isPPC64, isDarwinABI);
+        PPCFrameLowering::getBasePointerSaveOffset(isPPC64,
+                                                   isDarwinABI,
+                                                   isPIC);
     }
   }
 
@@ -647,6 +628,9 @@ void PPCFrameLowering::emitPrologue(MachineFunction &MF) const {
          "Prologue CR saving supported only in 64-bit mode");
 
   if (!MustSaveCRs.empty()) { // will only occur for PPC64
+    // FIXME: In the ELFv2 ABI, we are not required to save all CR fields.
+    // If only one or two CR fields are clobbered, it could be more
+    // efficient to use mfocrf to selectively save just those fields.
     MachineInstrBuilder MIB =
       BuildMI(MBB, MBBI, dl, TII.get(PPC::MFCR8), TempReg);
     for (unsigned i = 0, e = MustSaveCRs.size(); i != e; ++i)
@@ -815,8 +799,12 @@ void PPCFrameLowering::emitPrologue(MachineFunction &MF) const {
       // For 64-bit SVR4 when we have spilled CRs, the spill location
       // is SP+8, not a frame-relative slot.
       if (isSVR4ABI && isPPC64 && (PPC::CR2 <= Reg && Reg <= PPC::CR4)) {
+        // In the ELFv1 ABI, only CR2 is noted in CFI and stands in for
+        // the whole CR word.  In the ELFv2 ABI, every CR that was
+        // actually saved gets its own CFI record.
+        unsigned CRReg = isELFv2ABI? Reg : (unsigned) PPC::CR2;
         unsigned CFIIndex = MMI.addFrameInst(MCCFIInstruction::createOffset(
-            nullptr, MRI->getDwarfRegNum(PPC::CR2, true), 8));
+            nullptr, MRI->getDwarfRegNum(CRReg, true), 8));
         BuildMI(MBB, MBBI, dl, TII.get(TargetOpcode::CFI_INSTRUCTION))
             .addCFIIndex(CFIIndex);
         continue;
@@ -863,6 +851,7 @@ void PPCFrameLowering::emitEpilogue(MachineFunction &MF,
   // Get the ABI.
   bool isDarwinABI = Subtarget.isDarwinABI();
   bool isSVR4ABI = Subtarget.isSVR4ABI();
+  bool isPIC = MF.getTarget().getRelocationModel() == Reloc::PIC_;
 
   // Check if the link register (LR) has been saved.
   PPCFunctionInfo *FI = MF.getInfo<PPCFunctionInfo>();
@@ -873,7 +862,7 @@ void PPCFrameLowering::emitEpilogue(MachineFunction &MF,
   bool HasBP = RegInfo->hasBasePointer(MF);
 
   unsigned SPReg      = isPPC64 ? PPC::X1  : PPC::R1;
-  unsigned BPReg      = isPPC64 ? PPC::X30 : PPC::R30;
+  unsigned BPReg      = RegInfo->getBaseRegister(MF);
   unsigned FPReg      = isPPC64 ? PPC::X31 : PPC::R31;
   unsigned ScratchReg  = isPPC64 ? PPC::X0  : PPC::R0;
   unsigned TempReg     = isPPC64 ? PPC::X12 : PPC::R12; // another scratch reg
@@ -914,7 +903,9 @@ void PPCFrameLowering::emitEpilogue(MachineFunction &MF,
       BPOffset = FFI->getObjectOffset(BPIndex);
     } else {
       BPOffset =
-        PPCFrameLowering::getBasePointerSaveOffset(isPPC64, isDarwinABI);
+        PPCFrameLowering::getBasePointerSaveOffset(isPPC64,
+                                                   isDarwinABI,
+                                                   isPIC);
     }
   }
 
@@ -1091,6 +1082,7 @@ PPCFrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
   int FPSI = FI->getFramePointerSaveIndex();
   bool isPPC64 = Subtarget.isPPC64();
   bool isDarwinABI  = Subtarget.isDarwinABI();
+  bool isPIC = MF.getTarget().getRelocationModel() == Reloc::PIC_;
   MachineFrameInfo *MFI = MF.getFrameInfo();
 
   // If the frame pointer save index hasn't been defined yet.
@@ -1105,7 +1097,7 @@ PPCFrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
 
   int BPSI = FI->getBasePointerSaveIndex();
   if (!BPSI && RegInfo->hasBasePointer(MF)) {
-    int BPOffset = getBasePointerSaveOffset(isPPC64, isDarwinABI);
+    int BPOffset = getBasePointerSaveOffset(isPPC64, isDarwinABI, isPIC);
     // Allocate the frame index for the base pointer save area.
     BPSI = MFI->CreateFixedObject(isPPC64? 8 : 4, BPOffset, true);
     // Save the result.

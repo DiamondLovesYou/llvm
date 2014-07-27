@@ -431,15 +431,15 @@ static void PrintSize(uint64_t Bits, raw_ostream &OS) {
                (double)Bits/8, (unsigned long)(Bits/32));
 }
 
-int AnalyzeBitcodeInBuffer(const MemoryBuffer &Buf, raw_ostream &OS,
+int AnalyzeBitcodeInBuffer(std::unique_ptr<MemoryBuffer> &Buf, raw_ostream &OS,
                            const AnalysisDumpOptions &DumpOptions) {
   DEBUG(dbgs() << "-> AnalyzeBitcodeInBuffer\n");
 
-  if (Buf.getBufferSize() & 3)
+  if (Buf->getBufferSize() & 3)
     return Error("Bitcode stream should be a multiple of 4 bytes in length");
 
-  const unsigned char *BufPtr = (const unsigned char *)Buf.getBufferStart();
-  const unsigned char *EndBufPtr = BufPtr+Buf.getBufferSize();
+  const unsigned char *BufPtr = (const unsigned char *)Buf->getBufferStart();
+  const unsigned char *EndBufPtr = BufPtr+Buf->getBufferSize();
 
   NaClBitcodeHeader Header;
   if (Header.Read(BufPtr, EndBufPtr))
@@ -490,14 +490,13 @@ int AnalyzeBitcodeInBuffer(const MemoryBuffer &Buf, raw_ostream &OS,
 int AnalyzeBitcodeInFile(const StringRef &InputFilename, raw_ostream &OS,
                          const AnalysisDumpOptions &DumpOptions) {
   // Read the input file.
-  std::unique_ptr<MemoryBuffer> MemBuf;
-
-  if (std::error_code ec =
-        MemoryBuffer::getFileOrSTDIN(InputFilename, MemBuf))
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer> > ec =
+    MemoryBuffer::getFileOrSTDIN(InputFilename);
+  if (!ec)
     return Error(Twine("Error reading '") + InputFilename + "': " +
-                 ec.message());
+                 ec.getError().message());
 
-  return AnalyzeBitcodeInBuffer(*MemBuf, OS, DumpOptions);
+  return AnalyzeBitcodeInBuffer(ec.get(), OS, DumpOptions);
 }
 
 } // namespace llvm

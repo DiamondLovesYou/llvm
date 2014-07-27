@@ -12,14 +12,25 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMSubtarget.h"
-#include "ARMBaseInstrInfo.h"
-#include "ARMBaseRegisterInfo.h"
+#include "ARMFrameLowering.h"
+#include "ARMISelLowering.h"
+#include "ARMInstrInfo.h"
+#include "ARMJITInfo.h"
+#include "ARMSelectionDAGInfo.h"
+#include "ARMSubtarget.h"
+#include "ARMMachineFunctionInfo.h"
+#include "ARMTargetMachine.h"
+#include "Thumb1FrameLowering.h"
+#include "Thumb1InstrInfo.h"
+#include "Thumb2InstrInfo.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 
 using namespace llvm;
 
@@ -142,13 +153,23 @@ ARMSubtarget &ARMSubtarget::initializeSubtargetDependencies(StringRef CPU,
 }
 
 ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
-                           const std::string &FS, bool IsLittle,
-                           const TargetOptions &Options)
+                           const std::string &FS, TargetMachine &TM,
+                           bool IsLittle, const TargetOptions &Options)
     : ARMGenSubtargetInfo(TT, CPU, FS), ARMProcFamily(Others),
       ARMProcClass(None), stackAlignment(4), CPUString(CPU), IsLittle(IsLittle),
       TargetTriple(TT), Options(Options), TargetABI(ARM_ABI_UNKNOWN),
       DL(computeDataLayout(initializeSubtargetDependencies(CPU, FS))),
-      TSInfo(DL) {}
+      TSInfo(DL), JITInfo(),
+      InstrInfo(isThumb1Only()
+                    ? (ARMBaseInstrInfo *)new Thumb1InstrInfo(*this)
+                    : !isThumb()
+                          ? (ARMBaseInstrInfo *)new ARMInstrInfo(*this)
+                          : (ARMBaseInstrInfo *)new Thumb2InstrInfo(*this)),
+      TLInfo(TM),
+      FrameLowering(!isThumb1Only()
+                    ? new ARMFrameLowering(*static_cast<ARMBaseTargetMachine*>(&TM), *this)
+                        : (ARMFrameLowering *)new Thumb1FrameLowering(*static_cast<ARMBaseTargetMachine*>(&TM),
+                                                                      *this)) {}
 
 void ARMSubtarget::initializeEnvironment() {
   HasV4TOps = false;
@@ -164,7 +185,6 @@ void ARMSubtarget::initializeEnvironment() {
   HasVFPv4 = false;
   HasFPARMv8 = false;
   HasNEON = false;
-  MinSize = false;
   UseNEONForSinglePrecisionFP = false;
   UseMulOps = UseFusedMulOps;
   SlowFPVMLx = false;
@@ -173,7 +193,6 @@ void ARMSubtarget::initializeEnvironment() {
   InThumbMode = false;
   HasThumb2 = false;
   NoARM = false;
-  PostRAScheduler = false;
   IsR9Reserved = ReserveR9;
   UseMovt = false;
   SupportsTailCall = false;
@@ -215,9 +234,6 @@ void ARMSubtarget::resetSubtargetFeatures(const MachineFunction *MF) {
     initializeEnvironment();
     resetSubtargetFeatures(CPU, FS);
   }
-
-  MinSize =
-      FnAttrs.hasAttribute(AttributeSet::FunctionIndex, Attribute::MinSize);
 }
 
 void ARMSubtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
@@ -292,9 +308,6 @@ void ARMSubtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
     IsR9Reserved = ReserveR9;
     SupportsTailCall = !isThumb1Only();
   }
-
-  if (!isThumb() || hasThumb2())
-    PostRAScheduler = true;
 
   switch (Align) {
     case DefaultAlign:
@@ -410,17 +423,20 @@ bool ARMSubtarget::hasSinCos() const {
     !getTargetTriple().isOSVersionLT(7, 0);
 }
 
-// Enable the PostMachineScheduler if the target selects it instead of
-// PostRAScheduler. Currently only available on the command line via
-// -misched-postra.
+// This overrides the PostRAScheduler bit in the SchedModel for any CPU.
 bool ARMSubtarget::enablePostMachineScheduler() const {
-  return PostRAScheduler;
+  return (!isThumb() || hasThumb2());
 }
 
-bool ARMSubtarget::enablePostRAScheduler(
-           CodeGenOpt::Level OptLevel,
-           TargetSubtargetInfo::AntiDepBreakMode& Mode,
-           RegClassVector& CriticalPathRCs) const {
-  Mode = TargetSubtargetInfo::ANTIDEP_NONE;
-  return PostRAScheduler && OptLevel >= CodeGenOpt::Default;
+bool ARMSubtarget::enableAtomicExpandLoadLinked() const {
+  return hasAnyDataBarrier() && !isThumb1Only();
+}
+
+bool ARMSubtarget::useMovt(const MachineFunction &MF) const {
+  // NOTE Windows on ARM needs to use mov.w/mov.t pairs to materialise 32-bit
+  // immediates as it is inherently position independent, and may be out of
+  // range otherwise.
+  return UseMovt && (isTargetWindows() ||
+                     !MF.getFunction()->getAttributes().hasAttribute(
+                         AttributeSet::FunctionIndex, Attribute::MinSize));
 }

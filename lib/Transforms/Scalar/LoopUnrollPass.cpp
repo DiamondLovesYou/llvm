@@ -220,7 +220,7 @@ static unsigned ApproximateLoopSize(const Loop *L, unsigned &NumCalls,
 }
 
 // Returns the value associated with the given metadata node name (for
-// example, "llvm.loopunroll.count").  If no such named metadata node
+// example, "llvm.loop.unroll.count").  If no such named metadata node
 // exists, then nullptr is returned.
 static const ConstantInt *GetUnrollMetadataValue(const Loop *L,
                                                  StringRef Name) {
@@ -250,30 +250,65 @@ static const ConstantInt *GetUnrollMetadataValue(const Loop *L,
 // Returns true if the loop has an unroll(enable) pragma.
 static bool HasUnrollEnablePragma(const Loop *L) {
   const ConstantInt *EnableValue =
-      GetUnrollMetadataValue(L, "llvm.loopunroll.enable");
+      GetUnrollMetadataValue(L, "llvm.loop.unroll.enable");
   return (EnableValue && EnableValue->getZExtValue());
-  return false;
 }
 
 // Returns true if the loop has an unroll(disable) pragma.
 static bool HasUnrollDisablePragma(const Loop *L) {
   const ConstantInt *EnableValue =
-      GetUnrollMetadataValue(L, "llvm.loopunroll.enable");
+      GetUnrollMetadataValue(L, "llvm.loop.unroll.enable");
   return (EnableValue && !EnableValue->getZExtValue());
-  return false;
 }
 
 // If loop has an unroll_count pragma return the (necessarily
 // positive) value from the pragma.  Otherwise return 0.
 static unsigned UnrollCountPragmaValue(const Loop *L) {
   const ConstantInt *CountValue =
-      GetUnrollMetadataValue(L, "llvm.loopunroll.count");
+      GetUnrollMetadataValue(L, "llvm.loop.unroll.count");
   if (CountValue) {
     unsigned Count = CountValue->getZExtValue();
     assert(Count >= 1 && "Unroll count must be positive.");
     return Count;
   }
   return 0;
+}
+
+// Remove existing unroll metadata and add unroll disable metadata to
+// indicate the loop has already been unrolled.  This prevents a loop
+// from being unrolled more than is directed by a pragma if the loop
+// unrolling pass is run more than once (which it generally is).
+static void SetLoopAlreadyUnrolled(Loop *L) {
+  MDNode *LoopID = L->getLoopID();
+  if (!LoopID) return;
+
+  // First remove any existing loop unrolling metadata.
+  SmallVector<Value *, 4> Vals;
+  // Reserve first location for self reference to the LoopID metadata node.
+  Vals.push_back(nullptr);
+  for (unsigned i = 1, ie = LoopID->getNumOperands(); i < ie; ++i) {
+    bool IsUnrollMetadata = false;
+    MDNode *MD = dyn_cast<MDNode>(LoopID->getOperand(i));
+    if (MD) {
+      const MDString *S = dyn_cast<MDString>(MD->getOperand(0));
+      IsUnrollMetadata = S && S->getString().startswith("llvm.loop.unroll.");
+    }
+    if (!IsUnrollMetadata) Vals.push_back(LoopID->getOperand(i));
+  }
+
+  // Add unroll(disable) metadata to disable future unrolling.
+  LLVMContext &Context = L->getHeader()->getContext();
+  SmallVector<Value *, 2> DisableOperands;
+  DisableOperands.push_back(MDString::get(Context, "llvm.loop.unroll.enable"));
+  DisableOperands.push_back(ConstantInt::get(Type::getInt1Ty(Context), 0));
+  MDNode *DisableNode = MDNode::get(Context, DisableOperands);
+  Vals.push_back(DisableNode);
+
+  MDNode *NewLoopID = MDNode::get(Context, Vals);
+  // Set operand 0 to refer to the loop id itself.
+  NewLoopID->replaceOperandWith(0, NewLoopID);
+  L->setLoopID(NewLoopID);
+  LoopID->replaceAllUsesWith(NewLoopID);
 }
 
 unsigned LoopUnroll::selectUnrollCount(
@@ -430,6 +465,10 @@ bool LoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
   }
 
   if (HasPragma) {
+    // Mark loop as unrolled to prevent unrolling beyond that
+    // requested by the pragma.
+    SetLoopAlreadyUnrolled(L);
+
     // Emit optimization remarks if we are unable to unroll the loop
     // as directed by a pragma.
     DebugLoc LoopLoc = L->getStartLoc();

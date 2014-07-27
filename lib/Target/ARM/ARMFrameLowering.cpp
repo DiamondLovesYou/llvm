@@ -41,6 +41,10 @@ static MachineBasicBlock::iterator
 skipAlignedDPRCS2Spills(MachineBasicBlock::iterator MI,
                         unsigned NumAlignedDPRCS2Regs);
 
+ARMFrameLowering::ARMFrameLowering(const ARMBaseTargetMachine& tm, const ARMSubtarget &sti)
+    : TargetFrameLowering(StackGrowsDown, sti.getStackAlignment(), 0, 4),
+      TM(tm), STI(sti) {}
+
 /// hasFP - Return true if the specified function should have a dedicated frame
 /// pointer register.  This is true if the function has variable sized allocas
 /// or if frame pointer elimination is disabled.

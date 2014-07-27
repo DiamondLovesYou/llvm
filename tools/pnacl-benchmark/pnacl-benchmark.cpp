@@ -124,12 +124,12 @@ private:
 
 void BenchmarkIRParsing() {
   outs() << "Benchmarking IR parsing...\n";
-  std::unique_ptr<MemoryBuffer> FileBuf;
-  std::error_code ec = MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), FileBuf);
-  if (ec) {
-    report_fatal_error("Could not open input file: " + ec.message());
+  auto ec = MemoryBuffer::getFileOrSTDIN(InputFilename.c_str());
+  if (!ec) {
+    report_fatal_error("Could not open input file: " + ec.getError().message());
   }
 
+  std::unique_ptr<MemoryBuffer>& FileBuf = ec.get();
   size_t BufSize = FileBuf->getBufferSize();
   const uint8_t *BufPtr =
     reinterpret_cast<const uint8_t*>(FileBuf->getBufferStart());
@@ -194,7 +194,7 @@ void BenchmarkIRParsing() {
     TimingOperationBlock T("Running bitcode analysis", BufSize);
 
     AnalysisDumpOptions DumpOptions;
-    AnalyzeBitcodeInBuffer(*FileBuf, nulls(), DumpOptions);
+    AnalyzeBitcodeInBuffer(FileBuf, nulls(), DumpOptions);
   }
 
   // Actual LLVM IR parsing and formation from the bitcode

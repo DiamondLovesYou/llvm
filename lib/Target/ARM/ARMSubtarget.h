@@ -14,7 +14,17 @@
 #ifndef ARMSUBTARGET_H
 #define ARMSUBTARGET_H
 
+
+#include "ARMFrameLowering.h"
+#include "ARMISelLowering.h"
+#include "ARMInstrInfo.h"
+#include "ARMJITInfo.h"
 #include "ARMSelectionDAGInfo.h"
+#include "ARMSubtarget.h"
+#include "Thumb1FrameLowering.h"
+#include "Thumb1InstrInfo.h"
+#include "Thumb2InstrInfo.h"
+#include "ARMJITInfo.h"
 #include "MCTargetDesc/ARMMCTargetDesc.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/IR/DataLayout.h"
@@ -66,10 +76,6 @@ protected:
   bool HasFPARMv8;
   bool HasNEON;
 
-  /// MinSize - True if the function being compiled has the "minsize" attribute
-  /// and should be optimised for size at the expense of speed.
-  bool MinSize;
-
   /// UseNEONForSinglePrecisionFP - if the NEONFP attribute has been
   /// specified. Use the method useNEONForSinglePrecisionFP() to
   /// determine if NEON should actually be used.
@@ -98,9 +104,6 @@ protected:
 
   /// NoARM - True if subtarget does not support ARM mode execution.
   bool NoARM;
-
-  /// PostRAScheduler - True if using post-register-allocation scheduler.
-  bool PostRAScheduler;
 
   /// IsR9Reserved - True if R9 is a not available as general purpose register.
   bool IsR9Reserved;
@@ -235,7 +238,7 @@ protected:
   /// of the specified triple.
   ///
   ARMSubtarget(const std::string &TT, const std::string &CPU,
-               const std::string &FS, bool IsLittle,
+               const std::string &FS, TargetMachine &TM, bool IsLittle,
                const TargetOptions &Options);
 
   /// getMaxInlineSizeThreshold - Returns the maximum memset / memcpy size
@@ -256,10 +259,23 @@ protected:
 
   const DataLayout *getDataLayout() const { return &DL; }
   const ARMSelectionDAGInfo *getSelectionDAGInfo() const { return &TSInfo; }
+  ARMJITInfo *getJITInfo() { return &JITInfo; }
+  const ARMBaseInstrInfo *getInstrInfo() const { return InstrInfo.get(); }
+  const ARMTargetLowering *getTargetLowering() const { return &TLInfo; }
+  const ARMFrameLowering *getFrameLowering() const { return FrameLowering.get(); }
+  const ARMBaseRegisterInfo *getRegisterInfo() const {
+    return &InstrInfo->getRegisterInfo();
+  }
 
 private:
   const DataLayout DL;
   ARMSelectionDAGInfo TSInfo;
+  ARMJITInfo JITInfo;
+  // Either Thumb1InstrInfo or Thumb2InstrInfo.
+  std::unique_ptr<ARMBaseInstrInfo> InstrInfo;
+  ARMTargetLowering   TLInfo;
+  // Either Thumb1FrameLowering or ARMFrameLowering.
+  std::unique_ptr<ARMFrameLowering> FrameLowering;
 
   void initializeEnvironment();
   void resetSubtargetFeatures(StringRef CPU, StringRef FS);
@@ -296,7 +312,6 @@ public:
   bool hasCrypto() const { return HasCrypto; }
   bool hasCRC() const { return HasCRC; }
   bool hasVirtualization() const { return HasVirtualization; }
-  bool isMinSize() const { return MinSize; }
   bool useNEONForSinglePrecisionFP() const {
     return hasNEON() && UseNEONForSinglePrecisionFP; }
 
@@ -392,12 +407,8 @@ public:
 
   bool isR9Reserved() const { return IsR9Reserved; }
 
-  bool useMovt() const {
-    // NOTE Windows on ARM needs to use mov.w/mov.t pairs to materialise 32-bit
-    // immediates as it is inherently position independent, and may be out of
-    // range otherwise.
-    return UseMovt && (isTargetWindows() || !isMinSize());
-  }
+  bool useMovt(const MachineFunction &MF) const;
+
   bool supportsTailCall() const { return SupportsTailCall; }
 
   bool allowsUnalignedMem() const { return AllowsUnalignedMem; }
@@ -415,12 +426,10 @@ public:
   bool hasSinCos() const;
 
   /// True for some subtargets at > -O0.
-  bool enablePostMachineScheduler() const;
+  bool enablePostMachineScheduler() const override;
 
-  /// enablePostRAScheduler - True at 'More' optimization.
-  bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                             TargetSubtargetInfo::AntiDepBreakMode& Mode,
-                             RegClassVector& CriticalPathRCs) const override;
+  // enableAtomicExpandLoadLinked - True if we need to expand our atomics.
+  bool enableAtomicExpandLoadLinked() const override;
 
   /// getInstrItins - Return the instruction itineraies based on subtarget
   /// selection.
@@ -434,6 +443,7 @@ public:
   /// GVIsIndirectSymbol - true if the GV will be accessed via an indirect
   /// symbol.
   bool GVIsIndirectSymbol(const GlobalValue *GV, Reloc::Model RelocM) const;
+
 };
 } // End llvm namespace
 

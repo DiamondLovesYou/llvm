@@ -218,9 +218,17 @@ LLVM-specific variables
   Enables code assertions. Defaults to OFF if and only if ``CMAKE_BUILD_TYPE``
   is *Release*.
 
+**LLVM_ENABLE_EH**:BOOL
+  Build LLVM with exception handling support. This is necessary if you wish to
+  link against LLVM libraries and make use of C++ exceptions in your own code
+  that need to propagate through LLVM code. Defaults to OFF.
+
 **LLVM_ENABLE_PIC**:BOOL
   Add the ``-fPIC`` flag for the compiler command-line, if the compiler supports
   this flag. Some systems, like Windows, do not need this flag. Defaults to ON.
+
+**LLVM_ENABLE_RTTI**:BOOL
+  Build LLVM with run time type information. Defaults to OFF.
 
 **LLVM_ENABLE_WARNINGS**:BOOL
   Enable all compiler warnings. Defaults to ON.
@@ -487,7 +495,7 @@ into LLVM source tree. You can achieve it in two easy steps:
 #. Adding ``add_subdirectory(<pass name>)`` line into
    ``<LLVM root>/lib/Transform/CMakeLists.txt``.
 
-Compiler/Platform specific topics
+Compiler/Platform-specific topics
 =================================
 
 Notes for specific compilers and/or platforms.

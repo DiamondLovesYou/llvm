@@ -13,6 +13,7 @@
 
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataStream.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryObject.h"
 #include <cassert>
 #include <memory>
@@ -117,7 +118,7 @@ public:
     // requiring that the bitcode size be known, or otherwise ensuring that
     // the memory doesn't go away/get reallocated, but it's
     // not currently necessary. Users that need the pointer don't stream.
-    assert(0 && "getPointer in streaming memory objects not allowed");
+    llvm_unreachable("getPointer in streaming memory objects not allowed");
     return nullptr;
   }
   bool isValidAddress(uint64_t address) const override;
@@ -156,8 +157,8 @@ private:
                                         kChunkSize);
       BytesRead += bytes;
       if (bytes < kChunkSize) {
-        if (ObjectSize && BytesRead < Pos)
-          assert(0 && "Unexpected short read fetching bitcode");
+        assert((!ObjectSize || BytesRead >= Pos) &&
+               "Unexpected short read fetching bitcode");
         if (BytesRead <= Pos) { // reached EOF/ran out of bytes
           ObjectSize = BytesRead;
           EOFReached = true;

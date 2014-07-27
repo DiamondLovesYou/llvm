@@ -14,7 +14,6 @@
 #ifndef ARM_FRAMEINFO_H
 #define ARM_FRAMEINFO_H
 
-#include "ARMSubtarget.h"
 #include "llvm/Target/TargetFrameLowering.h"
 
 namespace llvm {
@@ -28,10 +27,7 @@ protected:
 
 public:
   explicit ARMFrameLowering(const ARMBaseTargetMachine& tm,
-                            const ARMSubtarget &sti)
-    : TargetFrameLowering(StackGrowsDown, sti.getStackAlignment(), 0, 4),
-      TM(tm), STI(sti) {
-  }
+                            const ARMSubtarget &sti);
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function.

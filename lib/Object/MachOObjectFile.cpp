@@ -27,220 +27,19 @@
 using namespace llvm;
 using namespace object;
 
-namespace llvm {
-
-namespace object {
-
-struct nlist_base {
-  uint32_t n_strx;
-  uint8_t n_type;
-  uint8_t n_sect;
-  uint16_t n_desc;
-};
-
-struct section_base {
-  char sectname[16];
-  char segname[16];
-};
-
-template<typename T>
-static void SwapStruct(T &Value);
-
-template<>
-void SwapStruct(MachO::any_relocation_info &H) {
-  sys::swapByteOrder(H.r_word0);
-  sys::swapByteOrder(H.r_word1);
-}
-
-template<>
-void SwapStruct(MachO::load_command &L) {
-  sys::swapByteOrder(L.cmd);
-  sys::swapByteOrder(L.cmdsize);
-}
-
-template<>
-void SwapStruct(nlist_base &S) {
-  sys::swapByteOrder(S.n_strx);
-  sys::swapByteOrder(S.n_desc);
-}
-
-template<>
-void SwapStruct(MachO::section &S) {
-  sys::swapByteOrder(S.addr);
-  sys::swapByteOrder(S.size);
-  sys::swapByteOrder(S.offset);
-  sys::swapByteOrder(S.align);
-  sys::swapByteOrder(S.reloff);
-  sys::swapByteOrder(S.nreloc);
-  sys::swapByteOrder(S.flags);
-  sys::swapByteOrder(S.reserved1);
-  sys::swapByteOrder(S.reserved2);
-}
-
-template<>
-void SwapStruct(MachO::section_64 &S) {
-  sys::swapByteOrder(S.addr);
-  sys::swapByteOrder(S.size);
-  sys::swapByteOrder(S.offset);
-  sys::swapByteOrder(S.align);
-  sys::swapByteOrder(S.reloff);
-  sys::swapByteOrder(S.nreloc);
-  sys::swapByteOrder(S.flags);
-  sys::swapByteOrder(S.reserved1);
-  sys::swapByteOrder(S.reserved2);
-  sys::swapByteOrder(S.reserved3);
-}
-
-template<>
-void SwapStruct(MachO::nlist &S) {
-  sys::swapByteOrder(S.n_strx);
-  sys::swapByteOrder(S.n_desc);
-  sys::swapByteOrder(S.n_value);
-}
-
-template<>
-void SwapStruct(MachO::nlist_64 &S) {
-  sys::swapByteOrder(S.n_strx);
-  sys::swapByteOrder(S.n_desc);
-  sys::swapByteOrder(S.n_value);
-}
-
-template<>
-void SwapStruct(MachO::mach_header &H) {
-  sys::swapByteOrder(H.magic);
-  sys::swapByteOrder(H.cputype);
-  sys::swapByteOrder(H.cpusubtype);
-  sys::swapByteOrder(H.filetype);
-  sys::swapByteOrder(H.ncmds);
-  sys::swapByteOrder(H.sizeofcmds);
-  sys::swapByteOrder(H.flags);
-}
-
-template<>
-void SwapStruct(MachO::mach_header_64 &H) {
-  sys::swapByteOrder(H.magic);
-  sys::swapByteOrder(H.cputype);
-  sys::swapByteOrder(H.cpusubtype);
-  sys::swapByteOrder(H.filetype);
-  sys::swapByteOrder(H.ncmds);
-  sys::swapByteOrder(H.sizeofcmds);
-  sys::swapByteOrder(H.flags);
-  sys::swapByteOrder(H.reserved);
-}
-
-template<>
-void SwapStruct(MachO::symtab_command &C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.symoff);
-  sys::swapByteOrder(C.nsyms);
-  sys::swapByteOrder(C.stroff);
-  sys::swapByteOrder(C.strsize);
-}
-
-template<>
-void SwapStruct(MachO::dysymtab_command &C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.ilocalsym);
-  sys::swapByteOrder(C.nlocalsym);
-  sys::swapByteOrder(C.iextdefsym);
-  sys::swapByteOrder(C.nextdefsym);
-  sys::swapByteOrder(C.iundefsym);
-  sys::swapByteOrder(C.nundefsym);
-  sys::swapByteOrder(C.tocoff);
-  sys::swapByteOrder(C.ntoc);
-  sys::swapByteOrder(C.modtaboff);
-  sys::swapByteOrder(C.nmodtab);
-  sys::swapByteOrder(C.extrefsymoff);
-  sys::swapByteOrder(C.nextrefsyms);
-  sys::swapByteOrder(C.indirectsymoff);
-  sys::swapByteOrder(C.nindirectsyms);
-  sys::swapByteOrder(C.extreloff);
-  sys::swapByteOrder(C.nextrel);
-  sys::swapByteOrder(C.locreloff);
-  sys::swapByteOrder(C.nlocrel);
-}
-
-template<>
-void SwapStruct(MachO::linkedit_data_command &C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.dataoff);
-  sys::swapByteOrder(C.datasize);
-}
-
-template<>
-void SwapStruct(MachO::segment_command &C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.vmaddr);
-  sys::swapByteOrder(C.vmsize);
-  sys::swapByteOrder(C.fileoff);
-  sys::swapByteOrder(C.filesize);
-  sys::swapByteOrder(C.maxprot);
-  sys::swapByteOrder(C.initprot);
-  sys::swapByteOrder(C.nsects);
-  sys::swapByteOrder(C.flags);
-}
-
-template<>
-void SwapStruct(MachO::segment_command_64 &C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.vmaddr);
-  sys::swapByteOrder(C.vmsize);
-  sys::swapByteOrder(C.fileoff);
-  sys::swapByteOrder(C.filesize);
-  sys::swapByteOrder(C.maxprot);
-  sys::swapByteOrder(C.initprot);
-  sys::swapByteOrder(C.nsects);
-  sys::swapByteOrder(C.flags);
-}
-
-template<>
-void SwapStruct(uint32_t &C) {
-  sys::swapByteOrder(C);
-}
-
-template<>
-void SwapStruct(MachO::linker_options_command &C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.count);
-}
-
-template<>
-void SwapStruct(MachO::version_min_command&C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.version);
-  sys::swapByteOrder(C.reserved);
-}
-
-template<>
-void SwapStruct(MachO::dylib_command&C) {
-  sys::swapByteOrder(C.cmd);
-  sys::swapByteOrder(C.cmdsize);
-  sys::swapByteOrder(C.dylib.name);
-  sys::swapByteOrder(C.dylib.timestamp);
-  sys::swapByteOrder(C.dylib.current_version);
-  sys::swapByteOrder(C.dylib.compatibility_version);
-}
-
-template<>
-void SwapStruct(MachO::data_in_code_entry &C) {
-  sys::swapByteOrder(C.offset);
-  sys::swapByteOrder(C.length);
-  sys::swapByteOrder(C.kind);
+namespace {
+  struct section_base {
+    char sectname[16];
+    char segname[16];
+  };
 }
 
 template<typename T>
-T getStruct(const MachOObjectFile *O, const char *P) {
+static T getStruct(const MachOObjectFile *O, const char *P) {
   T Cmd;
   memcpy(&Cmd, P, sizeof(T));
   if (O->isLittleEndian() != sys::IsLittleEndianHost)
-    SwapStruct(Cmd);
+    MachO::swapStruct(Cmd);
   return Cmd;
 }
 
@@ -274,10 +73,10 @@ static const char *getPtr(const MachOObjectFile *O, size_t Offset) {
   return O->getData().substr(Offset, 1).data();
 }
 
-static nlist_base
+static MachO::nlist_base
 getSymbolTableEntryBase(const MachOObjectFile *O, DataRefImpl DRI) {
   const char *P = reinterpret_cast<const char *>(DRI.p);
-  return getStruct<nlist_base>(O, P);
+  return getStruct<MachO::nlist_base>(O, P);
 }
 
 static StringRef parseSegmentOrSectionName(const char *P) {
@@ -422,10 +221,10 @@ static uint32_t getSectionFlags(const MachOObjectFile *O,
   return Sect.flags;
 }
 
-MachOObjectFile::MachOObjectFile(MemoryBuffer *Object, bool IsLittleEndian,
-                                 bool Is64bits, std::error_code &EC,
-                                 bool BufferOwned)
-    : ObjectFile(getMachOType(IsLittleEndian, Is64bits), Object, BufferOwned),
+MachOObjectFile::MachOObjectFile(std::unique_ptr<MemoryBuffer> Object,
+                                 bool IsLittleEndian, bool Is64bits,
+                                 std::error_code &EC)
+    : ObjectFile(getMachOType(IsLittleEndian, Is64bits), std::move(Object)),
       SymtabLoadCmd(nullptr), DysymtabLoadCmd(nullptr),
       DataInCodeLoadCmd(nullptr) {
   uint32_t LoadCommandCount = this->getHeader().ncmds;
@@ -474,7 +273,7 @@ void MachOObjectFile::moveSymbolNext(DataRefImpl &Symb) const {
 std::error_code MachOObjectFile::getSymbolName(DataRefImpl Symb,
                                                StringRef &Res) const {
   StringRef StringTable = getStringTableData();
-  nlist_base Entry = getSymbolTableEntryBase(this, Symb);
+  MachO::nlist_base Entry = getSymbolTableEntryBase(this, Symb);
   const char *Start = &StringTable.data()[Entry.n_strx];
   Res = StringRef(Start);
   return object_error::success;
@@ -528,7 +327,7 @@ std::error_code MachOObjectFile::getSymbolAlignment(DataRefImpl DRI,
                                                     uint32_t &Result) const {
   uint32_t flags = getSymbolFlags(DRI);
   if (flags & SymbolRef::SF_Common) {
-    nlist_base Entry = getSymbolTableEntryBase(this, DRI);
+    MachO::nlist_base Entry = getSymbolTableEntryBase(this, DRI);
     Result = 1 << MachO::GET_COMM_ALIGN(Entry.n_desc);
   } else {
     Result = 0;
@@ -542,7 +341,7 @@ std::error_code MachOObjectFile::getSymbolSize(DataRefImpl DRI,
   uint64_t EndOffset = 0;
   uint8_t SectionIndex;
 
-  nlist_base Entry = getSymbolTableEntryBase(this, DRI);
+  MachO::nlist_base Entry = getSymbolTableEntryBase(this, DRI);
   uint64_t Value;
   getSymbolAddress(DRI, Value);
   if (Value == UnknownAddressOrSize) {
@@ -587,7 +386,7 @@ std::error_code MachOObjectFile::getSymbolSize(DataRefImpl DRI,
 
 std::error_code MachOObjectFile::getSymbolType(DataRefImpl Symb,
                                                SymbolRef::Type &Res) const {
-  nlist_base Entry = getSymbolTableEntryBase(this, Symb);
+  MachO::nlist_base Entry = getSymbolTableEntryBase(this, Symb);
   uint8_t n_type = Entry.n_type;
 
   Res = SymbolRef::ST_Other;
@@ -610,7 +409,7 @@ std::error_code MachOObjectFile::getSymbolType(DataRefImpl Symb,
 }
 
 uint32_t MachOObjectFile::getSymbolFlags(DataRefImpl DRI) const {
-  nlist_base Entry = getSymbolTableEntryBase(this, DRI);
+  MachO::nlist_base Entry = getSymbolTableEntryBase(this, DRI);
 
   uint8_t MachOType = Entry.n_type;
   uint16_t MachOFlags = Entry.n_desc;
@@ -647,7 +446,7 @@ uint32_t MachOObjectFile::getSymbolFlags(DataRefImpl DRI) const {
 
 std::error_code MachOObjectFile::getSymbolSection(DataRefImpl Symb,
                                                   section_iterator &Res) const {
-  nlist_base Entry = getSymbolTableEntryBase(this, Symb);
+  MachO::nlist_base Entry = getSymbolTableEntryBase(this, Symb);
   uint8_t index = Entry.n_sect;
 
   if (index == 0) {
@@ -868,6 +667,9 @@ std::error_code MachOObjectFile::getRelocationOffset(DataRefImpl Rel,
 symbol_iterator
 MachOObjectFile::getRelocationSymbol(DataRefImpl Rel) const {
   MachO::any_relocation_info RE = getRelocation(Rel);
+  if (isRelocationScattered(RE))
+    return symbol_end();
+
   uint32_t SymbolIdx = getPlainRelocationSymbolNum(RE);
   bool isExtern = getPlainRelocationExternal(RE);
   if (!isExtern)
@@ -1384,7 +1186,7 @@ std::error_code MachOObjectFile::getLibraryShortNameByIndex(unsigned Index,
         LibrariesShortNames.push_back(StringRef());
         continue;
       }
-      char *P = (char *)(Libraries[i]) + D.dylib.name;
+      const char *P = (const char *)(Libraries[i]) + D.dylib.name;
       StringRef Name = StringRef(P);
       StringRef Suffix;
       bool isFramework;
@@ -1509,6 +1311,108 @@ Triple::ArchType MachOObjectFile::getArch(uint32_t CPUType) {
   default:
     return Triple::UnknownArch;
   }
+}
+
+Triple MachOObjectFile::getArch(uint32_t CPUType, uint32_t CPUSubType) {
+  switch (CPUType) {
+  case MachO::CPU_TYPE_I386:
+    switch (CPUSubType & ~MachO::CPU_SUBTYPE_MASK) {
+    case MachO::CPU_SUBTYPE_I386_ALL:
+      return Triple("i386-apple-darwin");
+    default:
+      return Triple();
+    }
+  case MachO::CPU_TYPE_X86_64:
+    switch (CPUSubType & ~MachO::CPU_SUBTYPE_MASK) {
+    case MachO::CPU_SUBTYPE_X86_64_ALL:
+      return Triple("x86_64-apple-darwin");
+    case MachO::CPU_SUBTYPE_X86_64_H:
+      return Triple("x86_64h-apple-darwin");
+    default:
+      return Triple();
+    }
+  case MachO::CPU_TYPE_ARM:
+    switch (CPUSubType & ~MachO::CPU_SUBTYPE_MASK) {
+    case MachO::CPU_SUBTYPE_ARM_V4T:
+      return Triple("armv4t-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM_V5TEJ:
+      return Triple("armv5e-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM_V6:
+      return Triple("armv6-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM_V6M:
+      return Triple("armv6m-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM_V7EM:
+      return Triple("armv7em-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM_V7K:
+      return Triple("armv7k-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM_V7M:
+      return Triple("armv7m-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM_V7S:
+      return Triple("armv7s-apple-darwin");
+    default:
+      return Triple();
+    }
+  case MachO::CPU_TYPE_ARM64:
+    switch (CPUSubType & ~MachO::CPU_SUBTYPE_MASK) {
+    case MachO::CPU_SUBTYPE_ARM64_ALL:
+      return Triple("arm64-apple-darwin");
+    default:
+      return Triple();
+    }
+  case MachO::CPU_TYPE_POWERPC:
+    switch (CPUSubType & ~MachO::CPU_SUBTYPE_MASK) {
+    case MachO::CPU_SUBTYPE_POWERPC_ALL:
+      return Triple("ppc-apple-darwin");
+    default:
+      return Triple();
+    }
+  case MachO::CPU_TYPE_POWERPC64:
+    switch (CPUSubType & ~MachO::CPU_SUBTYPE_MASK) {
+    case MachO::CPU_SUBTYPE_POWERPC_ALL:
+      return Triple("ppc64-apple-darwin");
+    default:
+      return Triple();
+    }
+  default:
+    return Triple();
+  }
+}
+
+Triple MachOObjectFile::getHostArch() {
+  return Triple(sys::getDefaultTargetTriple());
+}
+
+Triple MachOObjectFile::getArch(StringRef ArchFlag) {
+  if (ArchFlag == "i386")
+    return Triple("i386-apple-darwin");
+  else if (ArchFlag == "x86_64")
+    return Triple("x86_64-apple-darwin");
+  else if (ArchFlag == "x86_64h")
+    return Triple("x86_64h-apple-darwin");
+  else if (ArchFlag == "armv4t" || ArchFlag == "arm")
+    return Triple("armv4t-apple-darwin");
+  else if (ArchFlag == "armv5e")
+    return Triple("armv5e-apple-darwin");
+  else if (ArchFlag == "armv6")
+    return Triple("armv6-apple-darwin");
+  else if (ArchFlag == "armv6m")
+    return Triple("armv6m-apple-darwin");
+  else if (ArchFlag == "armv7em")
+    return Triple("armv7em-apple-darwin");
+  else if (ArchFlag == "armv7k")
+    return Triple("armv7k-apple-darwin");
+  else if (ArchFlag == "armv7k")
+    return Triple("armv7m-apple-darwin");
+  else if (ArchFlag == "armv7s")
+    return Triple("armv7s-apple-darwin");
+  else if (ArchFlag == "arm64")
+    return Triple("arm64-apple-darwin");
+  else if (ArchFlag == "ppc")
+    return Triple("ppc-apple-darwin");
+  else if (ArchFlag == "ppc64")
+    return Triple("ppc64-apple-darwin");
+  else
+    return Triple();
 }
 
 unsigned MachOObjectFile::getArch() const {
@@ -1721,6 +1625,12 @@ MachOObjectFile::getVersionMinLoadCommand(const LoadCommandInfo &L) const {
   return getStruct<MachO::version_min_command>(this, L.Ptr);
 }
 
+MachO::dylib_command
+MachOObjectFile::getDylibIDLoadCommand(const LoadCommandInfo &L) const {
+  return getStruct<MachO::dylib_command>(this, L.Ptr);
+}
+
+
 MachO::any_relocation_info
 MachOObjectFile::getRelocation(DataRefImpl Rel) const {
   DataRefImpl Sec;
@@ -1812,28 +1722,24 @@ void MachOObjectFile::ReadULEB128s(uint64_t Index,
   }
 }
 
-ErrorOr<ObjectFile *> ObjectFile::createMachOObjectFile(MemoryBuffer *Buffer,
-                                                        bool BufferOwned) {
+ErrorOr<ObjectFile *>
+ObjectFile::createMachOObjectFile(std::unique_ptr<MemoryBuffer> &Buffer) {
   StringRef Magic = Buffer->getBuffer().slice(0, 4);
   std::error_code EC;
   std::unique_ptr<MachOObjectFile> Ret;
   if (Magic == "\xFE\xED\xFA\xCE")
-    Ret.reset(new MachOObjectFile(Buffer, false, false, EC, BufferOwned));
+    Ret.reset(new MachOObjectFile(std::move(Buffer), false, false, EC));
   else if (Magic == "\xCE\xFA\xED\xFE")
-    Ret.reset(new MachOObjectFile(Buffer, true, false, EC, BufferOwned));
+    Ret.reset(new MachOObjectFile(std::move(Buffer), true, false, EC));
   else if (Magic == "\xFE\xED\xFA\xCF")
-    Ret.reset(new MachOObjectFile(Buffer, false, true, EC, BufferOwned));
+    Ret.reset(new MachOObjectFile(std::move(Buffer), false, true, EC));
   else if (Magic == "\xCF\xFA\xED\xFE")
-    Ret.reset(new MachOObjectFile(Buffer, true, true, EC, BufferOwned));
-  else {
-    delete Buffer;
+    Ret.reset(new MachOObjectFile(std::move(Buffer), true, true, EC));
+  else
     return object_error::parse_failed;
-  }
 
   if (EC)
     return EC;
   return Ret.release();
 }
 
-} // end namespace object
-} // end namespace llvm

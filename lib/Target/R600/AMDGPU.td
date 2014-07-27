@@ -25,6 +25,11 @@ def FeatureIRStructurizer : SubtargetFeature <"disable-irstructurizer",
         "false",
         "Disable IR Structurizer">;
 
+def FeaturePromoteAlloca : SubtargetFeature <"promote-alloca",
+        "EnablePromoteAlloca",
+        "true",
+        "Enable promote alloca pass">;
+
 // Target features
 
 def FeatureIfCvt : SubtargetFeature <"disable-ifcvt",
@@ -32,30 +37,39 @@ def FeatureIfCvt : SubtargetFeature <"disable-ifcvt",
         "false",
         "Disable the if conversion pass">;
 
-def FeatureFP64     : SubtargetFeature<"fp64",
+def FeatureFP64 : SubtargetFeature<"fp64",
         "FP64",
         "true",
-        "Enable 64bit double precision operations">;
+        "Enable double precision operations">;
+
+def FeatureFP64Denormals : SubtargetFeature<"fp64-denormals",
+        "FP64Denormals",
+        "true",
+        "Enable double precision denormal handling",
+        [FeatureFP64]>;
+
+// Some instructions do not support denormals despite this flag. Using
+// fp32 denormals also causes instructions to run at the double
+// precision rate for the device.
+def FeatureFP32Denormals : SubtargetFeature<"fp32-denormals",
+        "FP32Denormals",
+        "true",
+        "Enable single precision denormal handling">;
 
 def Feature64BitPtr : SubtargetFeature<"64BitPtr",
         "Is64bit",
         "true",
-        "Specify if 64bit addressing should be used.">;
-
-def Feature32on64BitPtr : SubtargetFeature<"64on32BitPtr",
-        "Is32on64bit",
-        "false",
-        "Specify if 64bit sized pointers with 32bit addressing should be used.">;
+        "Specify if 64-bit addressing should be used">;
 
 def FeatureR600ALUInst : SubtargetFeature<"R600ALUInst",
         "R600ALUInst",
         "false",
-        "Older version of ALU instructions encoding.">;
+        "Older version of ALU instructions encoding">;
 
 def FeatureVertexCache : SubtargetFeature<"HasVertexCache",
         "HasVertexCache",
         "true",
-        "Specify use of dedicated vertex cache.">;
+        "Specify use of dedicated vertex cache">;
 
 def FeatureCaymanISA : SubtargetFeature<"caymanISA",
         "CaymanISA",
@@ -116,10 +130,12 @@ def FeatureNorthernIslands : SubtargetFeatureGeneration<"NORTHERN_ISLANDS",
 >;
 
 def FeatureSouthernIslands : SubtargetFeatureGeneration<"SOUTHERN_ISLANDS",
-        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize32768]>;
+        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize32768,
+         FeatureWavefrontSize64]>;
 
 def FeatureSeaIslands : SubtargetFeatureGeneration<"SEA_ISLANDS",
-        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize65536]>;
+        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize65536,
+         FeatureWavefrontSize64]>;
 //===----------------------------------------------------------------------===//
 
 def AMDGPUInstrInfo : InstrInfo {

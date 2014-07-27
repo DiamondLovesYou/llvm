@@ -20,6 +20,7 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/ExecutionEngine/ObjectImage.h"
 #include "llvm/ExecutionEngine/RuntimeDyld.h"
+#include "llvm/ExecutionEngine/RuntimeDyldChecker.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -158,6 +159,15 @@ public:
 };
 
 class RuntimeDyldImpl {
+  friend class RuntimeDyldChecker;
+private:
+
+  uint64_t getAnySymbolRemoteAddress(StringRef Symbol) {
+    if (uint64_t InternalSymbolAddr = getSymbolLoadAddress(Symbol))
+      return InternalSymbolAddr;
+    return MemMgr->getSymbolAddress(Symbol);
+  }
+
 protected:
   // The MemoryManager to load objects into.
   RTDyldMemoryManager *MemMgr;
@@ -302,7 +312,7 @@ protected:
 
   /// \brief Emits long jump instruction to Addr.
   /// \return Pointer to the memory area for emitting target address.
-  uint8_t *createStubFunction(uint8_t *Addr);
+  uint8_t *createStubFunction(uint8_t *Addr, unsigned AbiVariant = 0);
 
   /// \brief Resolves relocations from Relocs list with address from Value.
   void resolveRelocationList(const RelocationList &Relocs, uint64_t Value);
@@ -339,7 +349,8 @@ protected:
 
 public:
   RuntimeDyldImpl(RTDyldMemoryManager *mm)
-      : MemMgr(mm), ProcessAllSections(false), HasError(false) {}
+      : MemMgr(mm), ProcessAllSections(false), HasError(false) {
+  }
 
   virtual ~RuntimeDyldImpl();
 
@@ -349,7 +360,7 @@ public:
 
   ObjectImage *loadObject(ObjectImage *InputObject);
 
-  void *getSymbolAddress(StringRef Name) {
+  uint8_t* getSymbolAddress(StringRef Name) {
     // FIXME: Just look up as a function for now. Overly simple of course.
     // Work in progress.
     SymbolTableMap::const_iterator pos = GlobalSymbolTable.find(Name);

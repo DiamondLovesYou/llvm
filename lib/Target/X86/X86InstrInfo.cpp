@@ -2699,8 +2699,8 @@ unsigned X86::getSETFromCond(CondCode CC, bool HasMemoryOperand) {
 
 /// getCMovFromCond - Return a cmov opcode for the given condition,
 /// register size in bytes, and operand type.
-static unsigned getCMovFromCond(X86::CondCode CC, unsigned RegBytes,
-                                bool HasMemoryOperand) {
+unsigned X86::getCMovFromCond(CondCode CC, unsigned RegBytes,
+                              bool HasMemoryOperand) {
   static const uint16_t Opc[32][3] = {
     { X86::CMOVA16rr,  X86::CMOVA32rr,  X86::CMOVA64rr  },
     { X86::CMOVAE16rr, X86::CMOVAE32rr, X86::CMOVAE64rr },
@@ -5040,6 +5040,7 @@ bool X86InstrInfo::shouldScheduleAdjacent(MachineInstr* First,
   case X86::TEST16rm:
   case X86::TEST32rm:
   case X86::TEST64rm:
+  case X86::TEST8ri_NOREX:
   case X86::AND16i16:
   case X86::AND16ri:
   case X86::AND16ri8:

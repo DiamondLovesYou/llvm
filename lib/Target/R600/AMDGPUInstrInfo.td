@@ -19,6 +19,14 @@ def AMDGPUDTIntTernaryOp : SDTypeProfile<1, 3, [
   SDTCisSameAs<0, 1>, SDTCisSameAs<0, 2>, SDTCisInt<0>, SDTCisInt<3>
 ]>;
 
+def AMDGPUTrigPreOp : SDTypeProfile<1, 2,
+  [SDTCisSameAs<0, 1>, SDTCisFP<0>, SDTCisInt<2>]
+>;
+
+def AMDGPUDivScaleOp : SDTypeProfile<2, 3,
+  [SDTCisFP<0>, SDTCisInt<1>, SDTCisSameAs<0, 2>, SDTCisSameAs<0, 3>, SDTCisSameAs<0, 4>]
+>;
+
 //===----------------------------------------------------------------------===//
 // AMDGPU DAG Nodes
 //
@@ -26,8 +34,23 @@ def AMDGPUDTIntTernaryOp : SDTypeProfile<1, 3, [
 // This argument to this node is a dword address.
 def AMDGPUdwordaddr : SDNode<"AMDGPUISD::DWORDADDR", SDTIntUnaryOp>;
 
+def AMDGPUcos : SDNode<"AMDGPUISD::COS_HW", SDTFPUnaryOp>;
+def AMDGPUsin : SDNode<"AMDGPUISD::SIN_HW", SDTFPUnaryOp>;
+
 // out = a - floor(a)
 def AMDGPUfract : SDNode<"AMDGPUISD::FRACT", SDTFPUnaryOp>;
+
+// out = 1.0 / a
+def AMDGPUrcp : SDNode<"AMDGPUISD::RCP", SDTFPUnaryOp>;
+
+// out = 1.0 / sqrt(a)
+def AMDGPUrsq : SDNode<"AMDGPUISD::RSQ", SDTFPUnaryOp>;
+
+// out = 1.0 / sqrt(a)
+def AMDGPUrsq_legacy : SDNode<"AMDGPUISD::RSQ_LEGACY", SDTFPUnaryOp>;
+
+// out = 1.0 / sqrt(a) result clamped to +/- max_float.
+def AMDGPUrsq_clamped : SDNode<"AMDGPUISD::RSQ_CLAMPED", SDTFPUnaryOp>;
 
 // out = max(a, b) a and b are floats
 def AMDGPUfmax : SDNode<"AMDGPUISD::FMAX", SDTFPBinOp,
@@ -77,6 +100,21 @@ def AMDGPUcvt_f32_ubyte3 : SDNode<"AMDGPUISD::CVT_F32_UBYTE3",
 // out = (2^32 / a) + e
 // e is rounding error
 def AMDGPUurecip : SDNode<"AMDGPUISD::URECIP", SDTIntUnaryOp>;
+
+// Special case divide preop and flags.
+def AMDGPUdiv_scale : SDNode<"AMDGPUISD::DIV_SCALE", AMDGPUDivScaleOp>;
+
+//  Special case divide FMA with scale and flags (src0 = Quotient,
+//  src1 = Denominator, src2 = Numerator).
+def AMDGPUdiv_fmas : SDNode<"AMDGPUISD::DIV_FMAS", SDTFPTernaryOp>;
+
+// Single or double precision division fixup.
+// Special case divide fixup and flags(src0 = Quotient, src1 =
+// Denominator, src2 = Numerator).
+def AMDGPUdiv_fixup : SDNode<"AMDGPUISD::DIV_FIXUP", SDTFPTernaryOp>;
+
+// Look Up 2.0 / pi src0 with segment select src1[4:0]
+def AMDGPUtrig_preop : SDNode<"AMDGPUISD::TRIG_PREOP", AMDGPUTrigPreOp>;
 
 def AMDGPUregister_load : SDNode<"AMDGPUISD::REGISTER_LOAD",
                           SDTypeProfile<1, 2, [SDTCisPtrTy<1>, SDTCisInt<2>]>,

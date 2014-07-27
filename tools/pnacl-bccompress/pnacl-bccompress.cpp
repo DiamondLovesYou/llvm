@@ -125,11 +125,11 @@ static void PrintAbbrev(raw_ostream &Stream,
 
 // Reads the input file into the given buffer.
 static bool ReadAndBuffer(std::unique_ptr<MemoryBuffer> &MemBuf) {
-  if (std::error_code ec =
-      MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), MemBuf)) {
-    return Error("Error reading '" + InputFilename + "': " + ec.message());
+  auto ec = MemoryBuffer::getFileOrSTDIN(InputFilename.c_str());
+  if (!ec) {
+    return Error("Error reading '" + InputFilename + "': " + ec.getError().message());
   }
-
+  MemBuf = std::move(ec.get());
   if (MemBuf->getBufferSize() % 4 != 0)
     return Error("Bitcode stream should be a multiple of 4 bytes in length");
   return false;

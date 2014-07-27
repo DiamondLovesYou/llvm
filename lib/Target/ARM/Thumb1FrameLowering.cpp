@@ -21,6 +21,9 @@
 
 using namespace llvm;
 
+Thumb1FrameLowering::Thumb1FrameLowering(const ARMBaseTargetMachine& tm, const ARMSubtarget &sti)
+  : ARMFrameLowering(tm, sti) {}
+
 bool Thumb1FrameLowering::hasReservedCallFrame(const MachineFunction &MF) const{
   const MachineFrameInfo *FFI = MF.getFrameInfo();
   unsigned CFSize = FFI->getMaxCallFrameSize();

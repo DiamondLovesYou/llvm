@@ -23,6 +23,8 @@ def uimm16_64      : Operand<i64> {
 // Signed Operand
 def simm10_64 : Operand<i64>;
 
+def imm64: Operand<i64>;
+
 // Transformation Function - get Imm - 32.
 def Subtract32 : SDNodeXForm<imm, [{
   return getImm(N, (unsigned)N->getZExtValue() - 32);
@@ -172,17 +174,20 @@ def SCD : SCBase<"scd", GPR64Opnd>, LW_FM<0x3c>, ISA_MIPS3_NOT_32R6_64R6;
 
 /// Jump and Branch Instructions
 let isCodeGenOnly = 1 in {
-def JR64   : IndirectBranch<"jr", GPR64Opnd>, MTLO_FM<8>;
-def BEQ64  : CBranch<"beq", brtarget, seteq, GPR64Opnd>, BEQ_FM<4>;
-def BNE64  : CBranch<"bne", brtarget, setne, GPR64Opnd>, BEQ_FM<5>;
-def BGEZ64 : CBranchZero<"bgez", brtarget, setge, GPR64Opnd>, BGEZ_FM<1, 1>;
-def BGTZ64 : CBranchZero<"bgtz", brtarget, setgt, GPR64Opnd>, BGEZ_FM<7, 0>;
-def BLEZ64 : CBranchZero<"blez", brtarget, setle, GPR64Opnd>, BGEZ_FM<6, 0>;
-def BLTZ64 : CBranchZero<"bltz", brtarget, setlt, GPR64Opnd>, BGEZ_FM<1, 0>;
-def JALR64 : JumpLinkReg<"jalr", GPR64Opnd>, JALR_FM;
-def JALR64Pseudo : JumpLinkRegPseudo<GPR64Opnd, JALR, RA, GPR32Opnd>;
-def TAILCALL64_R : TailCallReg<GPR64Opnd, JR, GPR32Opnd>;
+  def JR64   : IndirectBranch<"jr", GPR64Opnd>, MTLO_FM<8>;
+  def BEQ64  : CBranch<"beq", brtarget, seteq, GPR64Opnd>, BEQ_FM<4>;
+  def BNE64  : CBranch<"bne", brtarget, setne, GPR64Opnd>, BEQ_FM<5>;
+  def BGEZ64 : CBranchZero<"bgez", brtarget, setge, GPR64Opnd>, BGEZ_FM<1, 1>;
+  def BGTZ64 : CBranchZero<"bgtz", brtarget, setgt, GPR64Opnd>, BGEZ_FM<7, 0>;
+  def BLEZ64 : CBranchZero<"blez", brtarget, setle, GPR64Opnd>, BGEZ_FM<6, 0>;
+  def BLTZ64 : CBranchZero<"bltz", brtarget, setlt, GPR64Opnd>, BGEZ_FM<1, 0>;
+  def JALR64 : JumpLinkReg<"jalr", GPR64Opnd>, JALR_FM;
+  def JALR64Pseudo : JumpLinkRegPseudo<GPR64Opnd, JALR, RA, GPR32Opnd>;
+  def TAILCALL64_R : TailCallReg<GPR64Opnd, JR, GPR32Opnd>;
 }
+
+def PseudoReturn64 : PseudoReturnBase<GPR64Opnd>;
+def PseudoIndirectBranch64 : PseudoIndirectBranchBase<GPR64Opnd>;
 
 /// Multiply and Divide Instructions.
 def DMULT  : Mult<"dmult", II_DMULT, GPR64Opnd, [HI0_64, LO0_64]>,
@@ -485,6 +490,11 @@ def : MipsInstAlias<"dsra $rd, $rt, $rs",
 def : MipsInstAlias<"dsrl $rd, $rt, $rs",
                     (DSRLV GPR64Opnd:$rd, GPR64Opnd:$rt, GPR32Opnd:$rs), 0>,
                     ISA_MIPS3;
+
+class LoadImm64< string instr_asm, Operand Od, RegisterOperand RO> :
+  MipsAsmPseudoInst<(outs RO:$rt), (ins Od:$imm64),
+                     !strconcat(instr_asm, "\t$rt, $imm64")> ;
+def LoadImm64Reg : LoadImm64<"dli", imm64, GPR64Opnd>;
 
 /// Move between CPU and coprocessor registers
 let DecoderNamespace = "Mips64", Predicates = [HasMips64] in {

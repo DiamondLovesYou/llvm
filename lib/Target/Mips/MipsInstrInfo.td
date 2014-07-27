@@ -146,61 +146,61 @@ def MipsSDR : SDNode<"MipsISD::SDR", SDTStore,
 //===----------------------------------------------------------------------===//
 // Mips Instruction Predicate Definitions.
 //===----------------------------------------------------------------------===//
-def HasMips2     :    Predicate<"Subtarget.hasMips2()">,
+def HasMips2     :    Predicate<"Subtarget->hasMips2()">,
                       AssemblerPredicate<"FeatureMips2">;
-def HasMips3_32  :    Predicate<"Subtarget.hasMips3_32()">,
+def HasMips3_32  :    Predicate<"Subtarget->hasMips3_32()">,
                       AssemblerPredicate<"FeatureMips3_32">;
-def HasMips3_32r2 :   Predicate<"Subtarget.hasMips3_32r2()">,
+def HasMips3_32r2 :   Predicate<"Subtarget->hasMips3_32r2()">,
                       AssemblerPredicate<"FeatureMips3_32r2">;
-def HasMips3     :    Predicate<"Subtarget.hasMips3()">,
+def HasMips3     :    Predicate<"Subtarget->hasMips3()">,
                       AssemblerPredicate<"FeatureMips3">;
-def HasMips4_32  :    Predicate<"Subtarget.hasMips4_32()">,
+def HasMips4_32  :    Predicate<"Subtarget->hasMips4_32()">,
                       AssemblerPredicate<"FeatureMips4_32">;
-def HasMips4_32r2 :   Predicate<"Subtarget.hasMips4_32r2()">,
+def HasMips4_32r2 :   Predicate<"Subtarget->hasMips4_32r2()">,
                       AssemblerPredicate<"FeatureMips4_32r2">;
-def HasMips5_32r2 :   Predicate<"Subtarget.hasMips5_32r2()">,
+def HasMips5_32r2 :   Predicate<"Subtarget->hasMips5_32r2()">,
                       AssemblerPredicate<"FeatureMips5_32r2">;
-def HasMips32    :    Predicate<"Subtarget.hasMips32()">,
+def HasMips32    :    Predicate<"Subtarget->hasMips32()">,
                       AssemblerPredicate<"FeatureMips32">;
-def HasMips32r2  :    Predicate<"Subtarget.hasMips32r2()">,
+def HasMips32r2  :    Predicate<"Subtarget->hasMips32r2()">,
                       AssemblerPredicate<"FeatureMips32r2">;
-def HasMips32r6  :    Predicate<"Subtarget.hasMips32r6()">,
+def HasMips32r6  :    Predicate<"Subtarget->hasMips32r6()">,
                       AssemblerPredicate<"FeatureMips32r6">;
-def NotMips32r6  :    Predicate<"!Subtarget.hasMips32r6()">,
+def NotMips32r6  :    Predicate<"!Subtarget->hasMips32r6()">,
                       AssemblerPredicate<"!FeatureMips32r6">;
-def IsGP64bit    :    Predicate<"Subtarget.isGP64bit()">,
+def IsGP64bit    :    Predicate<"Subtarget->isGP64bit()">,
                       AssemblerPredicate<"FeatureGP64Bit">;
-def IsGP32bit    :    Predicate<"!Subtarget.isGP64bit()">,
+def IsGP32bit    :    Predicate<"!Subtarget->isGP64bit()">,
                       AssemblerPredicate<"!FeatureGP64Bit">;
-def HasMips64    :    Predicate<"Subtarget.hasMips64()">,
+def HasMips64    :    Predicate<"Subtarget->hasMips64()">,
                       AssemblerPredicate<"FeatureMips64">;
-def HasMips64r2  :    Predicate<"Subtarget.hasMips64r2()">,
+def HasMips64r2  :    Predicate<"Subtarget->hasMips64r2()">,
                       AssemblerPredicate<"FeatureMips64r2">;
-def HasMips64r6  :    Predicate<"Subtarget.hasMips64r6()">,
+def HasMips64r6  :    Predicate<"Subtarget->hasMips64r6()">,
                       AssemblerPredicate<"FeatureMips64r6">;
-def NotMips64r6  :    Predicate<"!Subtarget.hasMips64r6()">,
+def NotMips64r6  :    Predicate<"!Subtarget->hasMips64r6()">,
                       AssemblerPredicate<"!FeatureMips64r6">;
-def IsN64       :     Predicate<"Subtarget.isABI_N64()">,
+def IsN64       :     Predicate<"Subtarget->isABI_N64()">,
                       AssemblerPredicate<"FeatureN64">;
-def InMips16Mode :    Predicate<"Subtarget.inMips16Mode()">,
+def InMips16Mode :    Predicate<"Subtarget->inMips16Mode()">,
                       AssemblerPredicate<"FeatureMips16">;
-def HasCnMips    :    Predicate<"Subtarget.hasCnMips()">,
+def HasCnMips    :    Predicate<"Subtarget->hasCnMips()">,
                       AssemblerPredicate<"FeatureCnMips">;
 def RelocStatic :     Predicate<"TM.getRelocationModel() == Reloc::Static">,
                       AssemblerPredicate<"FeatureMips32">;
 def RelocPIC    :     Predicate<"TM.getRelocationModel() == Reloc::PIC_">,
                       AssemblerPredicate<"FeatureMips32">;
 def NoNaNsFPMath :    Predicate<"TM.Options.NoNaNsFPMath">;
-def HasStdEnc :       Predicate<"Subtarget.hasStandardEncoding()">,
+def HasStdEnc :       Predicate<"Subtarget->hasStandardEncoding()">,
                       AssemblerPredicate<"!FeatureMips16">;
-def NotDSP :          Predicate<"!Subtarget.hasDSP()">;
-def InMicroMips    :  Predicate<"Subtarget.inMicroMipsMode()">,
+def NotDSP :          Predicate<"!Subtarget->hasDSP()">;
+def InMicroMips    :  Predicate<"Subtarget->inMicroMipsMode()">,
                       AssemblerPredicate<"FeatureMicroMips">;
-def NotInMicroMips :  Predicate<"!Subtarget.inMicroMipsMode()">,
+def NotInMicroMips :  Predicate<"!Subtarget->inMicroMipsMode()">,
                       AssemblerPredicate<"!FeatureMicroMips">;
-def IsLE           :  Predicate<"Subtarget.isLittle()">;
-def IsBE           :  Predicate<"!Subtarget.isLittle()">;
-def IsNotNaCl    :    Predicate<"!Subtarget.isTargetNaCl()">;
+def IsLE           :  Predicate<"Subtarget->isLittle()">;
+def IsBE           :  Predicate<"!Subtarget->isLittle()">;
+def IsNotNaCl    :    Predicate<"!Subtarget->isTargetNaCl()">;
 
 //===----------------------------------------------------------------------===//
 // Mips GPR size adjectives.
@@ -743,18 +743,9 @@ class JumpFR<string opstr, RegisterOperand RO,
          FrmR, opstr>;
 
 // Indirect branch
-class IndirectBranch<string opstr, RegisterOperand RO> :
-      JumpFR<opstr, RO, brind> {
+class IndirectBranch<string opstr, RegisterOperand RO> : JumpFR<opstr, RO> {
   let isBranch = 1;
   let isIndirectBranch = 1;
-}
-
-// Return instruction
-class RetBase<string opstr, RegisterOperand RO>: JumpFR<opstr, RO> {
-  let isReturn = 1;
-  let isCodeGenOnly = 1;
-  let hasCtrlDep = 1;
-  let hasExtraSrcRegAllocReq = 1;
 }
 
 // Jump and Link (Call)
@@ -1180,6 +1171,7 @@ def TNEI : MMRel, TEQI_FT<"tnei", GPR32Opnd>, TEQI_FM<0xe>,
 def BREAK : MMRel, BRK_FT<"break">, BRK_FM<0xd>;
 def SYSCALL : MMRel, SYS_FT<"syscall">, SYS_FM<0xc>;
 def TRAP : TrapBase<BREAK>;
+def SDBBP : SYS_FT<"sdbbp">, SDBBP_FM, ISA_MIPS32_NOT_32R6_64R6;
 
 def ERET : MMRel, ER_FT<"eret">, ER_FM<0x18>, INSN_MIPS3_32;
 def DERET : MMRel, ER_FT<"deret">, ER_FM<0x1f>, ISA_MIPS32;
@@ -1228,7 +1220,35 @@ def BAL_BR : BAL_BR_Pseudo<BGEZAL>;
 def TAILCALL : TailCall<J>;
 def TAILCALL_R : TailCallReg<GPR32Opnd, JR>;
 
-def RET : MMRel, RetBase<"ret", GPR32Opnd>, MTLO_FM<8>;
+// Indirect branches are matched as PseudoIndirectBranch/PseudoIndirectBranch64
+// then are expanded to JR, JR64, JALR, or JALR64 depending on the ISA.
+class PseudoIndirectBranchBase<RegisterOperand RO> :
+    MipsPseudo<(outs), (ins RO:$rs), [(brind RO:$rs)], IIBranch> {
+  let isTerminator=1;
+  let isBarrier=1;
+  let hasDelaySlot = 1;
+  let isBranch = 1;
+  let isIndirectBranch = 1;
+}
+
+def PseudoIndirectBranch : PseudoIndirectBranchBase<GPR32Opnd>;
+
+// Return instructions are matched as a RetRA instruction, then ar expanded
+// into PseudoReturn/PseudoReturn64 after register allocation. Finally,
+// MipsAsmPrinter expands this into JR, JR64, JALR, or JALR64 depending on the
+// ISA.
+class PseudoReturnBase<RegisterOperand RO> : MipsPseudo<(outs), (ins RO:$rs),
+                                                        [], IIBranch> {
+  let isTerminator = 1;
+  let isBarrier = 1;
+  let hasDelaySlot = 1;
+  let isReturn = 1;
+  let isCodeGenOnly = 1;
+  let hasCtrlDep = 1;
+  let hasExtraSrcRegAllocReq = 1;
+}
+
+def PseudoReturn : PseudoReturnBase<GPR32Opnd>;
 
 // Exception handling related node and instructions.
 // The conversion sequence is:
@@ -1488,6 +1508,7 @@ def : MipsInstAlias<"sra $rd, $rt, $rs",
                     (SRAV GPR32Opnd:$rd, GPR32Opnd:$rt, GPR32Opnd:$rs), 0>;
 def : MipsInstAlias<"srl $rd, $rt, $rs",
                     (SRLV GPR32Opnd:$rd, GPR32Opnd:$rt, GPR32Opnd:$rs), 0>;
+def : MipsInstAlias<"sdbbp", (SDBBP 0)>, ISA_MIPS32_NOT_32R6_64R6;
 def : MipsInstAlias<"sync",
                     (SYNC 0), 1>, ISA_MIPS2;
 //===----------------------------------------------------------------------===//
