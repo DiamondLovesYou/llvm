@@ -9,7 +9,6 @@
 
 #define DEBUG_TYPE "nacl-bitcode-analyzer"
 
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/NaCl/NaClAnalyzerBlockDist.h"

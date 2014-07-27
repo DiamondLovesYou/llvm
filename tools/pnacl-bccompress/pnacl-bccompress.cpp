@@ -1474,7 +1474,7 @@ static bool CopyBitcode(std::unique_ptr<MemoryBuffer> &MemBuf,
 
   // Write out the copied results.
   std::string ErrorInfo;
-  OwningPtr<tool_output_file> OutFile(
+  std::unique_ptr<tool_output_file> OutFile(
       new tool_output_file(OutputFilename.c_str(), ErrorInfo,
                            sys::fs::F_None));
   if (!ErrorInfo.empty())

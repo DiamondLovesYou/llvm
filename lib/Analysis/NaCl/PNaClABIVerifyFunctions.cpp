@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/NaCl.h"
 #include "llvm/IR/Function.h"
@@ -63,7 +62,7 @@ class PNaClABIVerifyFunctions : public FunctionPass {
   const char *checkInstruction(const Instruction *Inst);
   PNaClABIErrorReporter *Reporter;
   bool ReporterIsOwned;
-  OwningPtr<NaCl::AtomicIntrinsics> AtomicIntrinsics;
+  std::unique_ptr<NaCl::AtomicIntrinsics> AtomicIntrinsics;
 };
 
 } // and anonymous namespace

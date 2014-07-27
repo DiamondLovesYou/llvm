@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Analysis/NaCl.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/IR/LLVMContext.h"
@@ -60,7 +59,7 @@ int main(int argc, char **argv) {
   SMDiagnostic Err;
   cl::ParseCommandLineOptions(argc, argv, "PNaCl Bitcode ABI checker\n");
 
-  OwningPtr<Module> Mod(
+  std::unique_ptr<Module> Mod(
       ParseIRFile(InputFilename, Err, Context, InputFileFormat));
   if (Mod.get() == 0) {
     Err.print(argv[0], errs());
@@ -76,7 +75,7 @@ int main(int argc, char **argv) {
   ModuleChecker->doInitialization(*Mod);
   ModuleChecker->runOnModule(*Mod);
   ErrorsFound |= CheckABIVerifyErrors(ABIErrorReporter, "Module");
-  OwningPtr<FunctionPass> FunctionChecker(
+  std::unique_ptr<FunctionPass> FunctionChecker(
       createPNaClABIVerifyFunctionsPass(&ABIErrorReporter));
   FunctionChecker->doInitialization(*Mod);
   for (Module::iterator MI = Mod->begin(), ME = Mod->end(); MI != ME; ++MI) {
