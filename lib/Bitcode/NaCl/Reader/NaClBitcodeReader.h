@@ -142,7 +142,7 @@ class NaClBitcodeReader : public GVMaterializer {
   LLVMContext &Context;
   Module *TheModule;
   std::unique_ptr<MemoryBuffer> Buffer;
-  OwningPtr<NaClBitstreamReader> StreamFile;
+  std::unique_ptr<NaClBitstreamReader> StreamFile;
   NaClBitstreamCursor Stream;
   StreamingMemoryObject *LazyStreamer;
   uint64_t NextUnreadBit;
