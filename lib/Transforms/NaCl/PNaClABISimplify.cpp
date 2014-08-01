@@ -63,8 +63,6 @@ void llvm::PNaClABISimplifyAddPreOptPasses(PassManagerBase &PM, const bool Build
   // This small collection of passes is targeted toward Rust generated IR
   // solely for the purpose of helping later NaCl transformations handle the
   // high number of structures Rust outputs.
-  PM.add(createReplaceVectorsWithArraysPass());
-  PM.add(createPromoteSimpleStructsPass());
   PM.add(createPromoteReturnedStructsPass());
   PM.add(createPromoteStructureArgsPass());
 
@@ -169,11 +167,4 @@ void llvm::PNaClABISimplifyAddPostOptPasses(PassManagerBase &PM) {
   // created.
   PM.add(createDeadInstEliminationPass());
   PM.add(createDeadCodeEliminationPass());
-
-  // Remove superfluous [0 x i8] and some [2 x i8] left over.
-  PM.add(createReplaceAggregatesWithIntsPass());
-
-  // Remove additional instructions killed by ReplaceArraysWithInts.
-  PM.add(createDeadInstEliminationPass());
-
 }

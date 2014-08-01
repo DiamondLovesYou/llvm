@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
   bool ErrorsFound = false;
   // Manually run the passes so we can tell the user which function had the
   // error. No need for a pass manager since it's just one pass.
-  OwningPtr<ModulePass> ModuleChecker(
+  std::unique_ptr<ModulePass> ModuleChecker(
       createPNaClABIVerifyModulePass(&ABIErrorReporter));
   ModuleChecker->doInitialization(*Mod);
   ModuleChecker->runOnModule(*Mod);
