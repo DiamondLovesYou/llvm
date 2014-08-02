@@ -1,9 +1,9 @@
+; RUN: opt < %s -nacl-expand-tls -S | FileCheck %s
+
 ; All thread-local variables should be removed
-; RUN: opt < %s -nacl-expand-tls-constant-expr -nacl-expand-tls -S | FileCheck %s -check-prefix=NO_TLS
+; RUN: opt < %s -nacl-expand-tls -S | FileCheck %s -check-prefix=NO_TLS
 
 ; NO_TLS-NOT: thread_local
-
-target datalayout = "p:32:32:32"
 
 @tvar1 = thread_local global i64 123
 @tvar2 = thread_local global i32 456
