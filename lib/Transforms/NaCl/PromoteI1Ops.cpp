@@ -60,24 +60,7 @@ static Value *promoteValue(Value *Val, bool SignExt, Instruction *InsertPt) {
                                     Val->getName() + ".expand_i1_val",
                                     InsertPt), InsertPt);
 }
-template <typename T>
-static std::pair<Value*, BitCastInst*> CreateAndFoldLoadStoreBitCasts(T* Inst, Type *I8Ty) {
-  Value* PtrOperand = Inst->getPointerOperand();
-  BitCastInst* PtrOperandBc = dyn_cast<BitCastInst>(PtrOperand);
-  if(PtrOperandBc != nullptr) {
-    PtrOperand = PtrOperandBc->getOperand(0);
-  }
-  Value *Ptr = CopyDebug(new BitCastInst(PtrOperand, I8Ty->getPointerTo(),
-                                         PtrOperand->getName() + ".i8ptr", Inst),
-                         Inst);
-  return std::make_pair(Ptr, PtrOperandBc);
-}
-static void CleanupLoadStoreBitCasts(std::pair<Value*, BitCastInst*> P) {
-  BitCastInst* PtrOperandBc = P.second;
-  if(PtrOperandBc != nullptr && PtrOperandBc->getNumUses() == 0) {
-    PtrOperandBc->eraseFromParent();
-  }
-}
+
 bool PromoteI1Ops::runOnBasicBlock(BasicBlock &BB) {
   bool Changed = false;
 
@@ -126,9 +109,10 @@ bool PromoteI1Ops::runOnBasicBlock(BasicBlock &BB) {
     if (LoadInst *Load = dyn_cast<LoadInst>(Inst)) {
       if (Load->getType() == I1Ty) {
         Changed = true;
-        auto Operand = CreateAndFoldLoadStoreBitCasts(Load, I8Ty);
-        Value* Ptr = Operand.first;
-
+        Value *Ptr = CopyDebug(
+            new BitCastInst(
+                Load->getPointerOperand(), I8Ty->getPointerTo(),
+                Load->getPointerOperand()->getName() + ".i8ptr", Load), Load);
         LoadInst *NewLoad = new LoadInst(
             Ptr, Load->getName() + ".pre_trunc", Load);
         CopyDebug(NewLoad, Load);
@@ -137,21 +121,19 @@ bool PromoteI1Ops::runOnBasicBlock(BasicBlock &BB) {
         Result->takeName(Load);
         Load->replaceAllUsesWith(Result);
         Load->eraseFromParent();
-
-        CleanupLoadStoreBitCasts(Operand);
       }
     } else if (StoreInst *Store = dyn_cast<StoreInst>(Inst)) {
       if (Store->getValueOperand()->getType() == I1Ty) {
         Changed = true;
-        auto Operand = CreateAndFoldLoadStoreBitCasts(Store, I8Ty);
-        Value* Ptr = Operand.first;
-
+        Value *Ptr = CopyDebug(
+            new BitCastInst(
+                Store->getPointerOperand(), I8Ty->getPointerTo(),
+                Store->getPointerOperand()->getName() + ".i8ptr", Store),
+            Store);
         Value *Val = promoteValue(Store->getValueOperand(), false, Store);
         StoreInst *NewStore = CopyDebug(new StoreInst(Val, Ptr, Store), Store);
         CopyLoadOrStoreAttrs(NewStore, Store);
         Store->eraseFromParent();
-
-        CleanupLoadStoreBitCasts(Operand);
       }
     } else if (BinaryOperator *Op = dyn_cast<BinaryOperator>(Inst)) {
       if (Op->getType() == I1Ty &&

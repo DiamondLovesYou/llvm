@@ -121,25 +121,3 @@ define i64* @test_array_index16_const(%MyArray* %ptr) {
 ; CHECK-NEXT: %gep = add i32 %gep_int, -800
 ; CHECK-NEXT: %addr = inttoptr i32 %gep to i64*
 ; CHECK-NEXT: ret i64* %addr
-
-; Test <32-bit constant array index -- test zero offset folding
-define i64* @test_zero_offset_folding_const(%MyArray* %ptr) {
-  %addr = getelementptr %MyArray* %ptr, i32 0, i32 0, i32 0
-  ret i64* %addr
-}
-; CHECK-LABEL: @test_zero_offset_folding_const
-; CHECK-NEXT: %addr = bitcast %MyArray* %ptr to i64*
-; CHECK-NEXT: ret i64* %addr
-
-; Test <32-bit constant array index -- test operand folding with zero offsets
-define void @test_alloc_bitcast_folding_const() {
-  %stack = alloca i8, i32 4
-  %stack.bc = bitcast i8* %stack to [4 x i8]*
-  %addr = getelementptr [4 x i8]* %stack.bc, i32 0, i32 0
-  %res = load i8* %addr
-  ret void
-}
-; CHECK-LABEL: @test_alloc_bitcast_folding_const
-; CHECK-NEXT: %stack = alloca i8, i32 4
-; CHECK-NEXT: %res = load i8* %stack
-; CHECK-NEXT: ret void
