@@ -287,6 +287,12 @@ static bool HasResumeUse(Instruction* IV) {
   return false;
 }
 
+static bool UsesCmpXChg(Instruction* Inst) {
+  ExtractValueInst* EV = dyn_cast<ExtractValueInst>(Inst);
+  assert(EV != nullptr);
+  return isa<AtomicCmpXchgInst>(EV->getAggregateOperand());
+}
+
 static bool ExpandExtractValues(Function& Func) {
   bool Changed = false;
   bool NeedsAnotherPass = false;
@@ -300,7 +306,8 @@ static bool ExpandExtractValues(Function& Func) {
     for (BasicBlock::iterator Iter = BB->begin(), E = BB->end();
          Iter != E; ) {
       Instruction *Inst = Iter++;
-      if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(Inst)) {
+      if (isa<ExtractValueInst>(Inst) && !UsesCmpXChg(Inst)) {
+        ExtractValueInst *EV = dyn_cast<ExtractValueInst>(Inst);
         ExpandExtractValue(EV, NeedsAnotherPass);
         Changed = true;
       } else if (isa<InsertValueInst>(Inst) && !HasResumeUse(Inst)) {

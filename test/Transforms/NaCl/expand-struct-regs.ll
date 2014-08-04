@@ -1,5 +1,5 @@
 ; RUN: opt < %s -expand-struct-regs -S | FileCheck %s
-; RUN: opt < %s -expand-struct-regs -S | FileCheck %s -check-prefix=CLEANUP
+; RUN: opt < %s -nacl-rewrite-atomics -expand-struct-regs -S | FileCheck %s -check-prefix=CLEANUP
 
 ; These two instructions should not appear in the output:
 ; CLEANUP-NOT: extractvalue
@@ -155,3 +155,12 @@ define void @nested() {
 ; CHECK-NEXT:    store i32 5, i32* %a3.index.index, align 1
 ; CHECK-NEXT:    %a3.index.index1 = getelementptr { i32, i64 }* %a3.index, i32 0, i32 1
 ; CHECK-NEXT:    store i64 6, i64* %a3.index.index1, align 1
+
+define void @ignore_cmpxchg() {
+  %d = cmpxchg i32* null, i32 undef, i32 undef acquire acquire
+  %e = extractvalue { i32, i1 } %d, 0
+  unreachable
+}
+; CHECK-LABEL: define void @ignore_cmpxchg()
+; CHECK-NEXT:    %d = cmpxchg i32* null, i32 undef, i32 undef acquire acquire
+; CHECK-NEXT:    %e = extractvalue { i32, i1 } %d, 0

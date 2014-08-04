@@ -145,6 +145,8 @@ void llvm::PNaClABISimplifyAddPostOptPasses(PassManagerBase &PM) {
 
   // Rewrite atomic and volatile instructions with intrinsic calls.
   PM.add(createRewriteAtomicsPass());
+  // Cleanup insertvalue instructions created by -nacl-rewrite-atomics:
+  PM.add(createExpandStructRegsPass());
 
   // Remove ``asm("":::"memory")``. This must occur after rewriting
   // atomics: a ``fence seq_cst`` surrounded by ``asm("":::"memory")``
