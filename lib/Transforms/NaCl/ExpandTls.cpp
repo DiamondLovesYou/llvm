@@ -335,9 +335,6 @@ static void defineTlsLayoutIntrinsics(Module &M) {
 }
 
 bool ExpandTls::runOnModule(Module &M) {
-  ModulePass *Pass = createExpandTlsConstantExprPass();
-  Pass->runOnModule(M);
-  delete Pass;
 
   std::vector<VarInfo> TlsVars;
   PointerType *TemplatePtrType = buildTlsTemplate(M, &TlsVars);

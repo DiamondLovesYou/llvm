@@ -1,4 +1,4 @@
-; RUN: opt < %s -nacl-expand-tls -S | FileCheck %s
+; RUN: opt < %s -nacl-expand-tls-constant-expr -nacl-expand-tls -S | FileCheck %s
 
 @tvar = thread_local global i32 0
 
