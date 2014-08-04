@@ -159,7 +159,7 @@ Module *llvm::ParseIRFile(const std::string &Filename, SMDiagnostic &Err,
     return nullptr;
   }
 
-  return ParseIR(FileOrErr.get().get(), Err, Context, Format);
+  return ParseIR(FileOrErr.get().release(), Err, Context, Format);
 }
 
 /// isBitcode - Return true if the given bytes are the magic bytes for

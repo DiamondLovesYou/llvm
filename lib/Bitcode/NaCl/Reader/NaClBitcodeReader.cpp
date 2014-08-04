@@ -1545,7 +1545,7 @@ bool NaClBitcodeReader::FindFunctionInStream(Function *F,
 // GVMaterializer implementation
 //===----------------------------------------------------------------------===//
 
-void NaClBitcodeReader::releaseBuffer() { Buffer.release(); }
+void NaClBitcodeReader::releaseBuffer() { Buffer = nullptr; }
 
 bool NaClBitcodeReader::isMaterializable(const GlobalValue *GV) const {
   if (const Function *F = dyn_cast<Function>(GV)) {

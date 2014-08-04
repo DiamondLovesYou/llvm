@@ -141,7 +141,7 @@ class NaClBitcodeReader : public GVMaterializer {
   NaClBitcodeHeader Header;  // Header fields of the PNaCl bitcode file.
   LLVMContext &Context;
   Module *TheModule;
-  std::unique_ptr<MemoryBuffer> Buffer;
+  MemoryBuffer* Buffer;
   std::unique_ptr<NaClBitstreamReader> StreamFile;
   NaClBitstreamCursor Stream;
   StreamingMemoryObject *LazyStreamer;
