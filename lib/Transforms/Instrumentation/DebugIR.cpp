@@ -585,6 +585,11 @@ bool DebugIR::runOnModule(Module &M) {
   // file name from the DICompileUnit descriptor.
   DebugMetadataRemover::process(M, !ParsedPath);
 
+  // Make sure we have the current dbg info metadata version set:
+  if (M.getModuleFlag("Debug Info Version") == nullptr) {
+    M.addModuleFlag(Module::Warning, "Debug Info Version", DEBUG_METADATA_VERSION);
+  }
+
   std::unique_ptr<Module> DisplayM;
   createDebugInfo(M, DisplayM);
   if (WriteSourceToDisk) {
