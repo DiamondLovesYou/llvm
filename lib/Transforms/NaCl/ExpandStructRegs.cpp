@@ -163,50 +163,87 @@ static void ProcessLoadOrStoreAttrs(InstType *Dest, InstType *Src) {
 }
 template <class T>
 static void SplitUpStore(StoreInst *Store, T* Ty, bool& NeedsAnotherPass) {
+  std::vector<Instruction*> EVs;
+  std::vector<Instruction*> GEPs;
+  std::vector<Instruction*> Stores;
+
   // Create a separate store instruction for each struct field.
   for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
     SmallVector<Value *, 2> Indexes;
     Indexes.push_back(ConstantInt::get(Store->getContext(), APInt(32, 0)));
     Indexes.push_back(ConstantInt::get(Store->getContext(), APInt(32, Index)));
-    Value *GEP = CopyDebug(GetElementPtrInst::Create(
-                               Store->getPointerOperand(), Indexes,
-                               Store->getPointerOperand()->getName() + ".index",
-                               Store), Store);
+    Instruction *GEP = GetElementPtrInst::Create(Store->getPointerOperand(),
+                                                 Indexes,
+                                                 Store->getPointerOperand()->getName() + ".index");
+    GEPs.push_back(CopyDebug(GEP, Store));
     NeedsAnotherPass = NeedsAnotherPass || DoAnotherPass(GEP->getType()->getContainedType(0));
 
     SmallVector<unsigned, 1> EVIndexes;
     EVIndexes.push_back(Index);
-    Value *Field = CopyDebug(ExtractValueInst::Create(Store->getValueOperand(),
-                                                      EVIndexes, "", Store),
-                             Store);
-    StoreInst *NewStore = CopyDebug(new StoreInst(Field, GEP, Store), Store);
+    Instruction *Field = ExtractValueInst::Create(Store->getValueOperand(),
+                                                  EVIndexes, "");
+    EVs.push_back(CopyDebug(Field, Store));
+
+    StoreInst *NewStore = new StoreInst(Field, GEP);
+    Stores.push_back(NewStore);
     ProcessLoadOrStoreAttrs(NewStore, Store);
   }
+
+  for(auto GEP : GEPs) {
+    GEP->insertBefore(Store);
+  }
+  for(auto EV : EVs) {
+    EV->insertBefore(Store);
+  }
+  for(auto S : Stores) {
+    S->insertBefore(Store);
+  }
+
   Store->eraseFromParent();
 }
 template <class T>
 static void SplitUpLoad(LoadInst *Load, T* Ty, bool& NeedsAnotherPass) {
   Value *NewStruct = UndefValue::get(Ty);
+  std::vector<Instruction*> IVs;
+  std::vector<Instruction*> GEPs;
+  std::vector<Instruction*> Loads;
 
   // Create a separate load instruction for each struct field.
   for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
     SmallVector<Value *, 2> Indexes;
     Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, 0)));
     Indexes.push_back(ConstantInt::get(Load->getContext(), APInt(32, Index)));
-    Value *GEP = CopyDebug(
-        GetElementPtrInst::Create(Load->getPointerOperand(), Indexes,
-                                  Load->getName() + ".index", Load), Load);
-    LoadInst *NewLoad = new LoadInst(GEP, Load->getName() + ".field", Load);
+    Instruction *GEP = GetElementPtrInst::Create(Load->getPointerOperand(), Indexes,
+                                                 Load->getName() + ".index");
+    GEPs.push_back(CopyDebug(GEP, Load));
+
+    LoadInst *NewLoad = new LoadInst(GEP, Load->getName() + ".field");
+    Loads.push_back(NewLoad);
+
     NeedsAnotherPass = NeedsAnotherPass || DoAnotherPass(NewLoad);
     ProcessLoadOrStoreAttrs(NewLoad, Load);
 
     // Reconstruct the struct value.
     SmallVector<unsigned, 1> EVIndexes;
     EVIndexes.push_back(Index);
-    NewStruct = CopyDebug(
-        InsertValueInst::Create(NewStruct, NewLoad, EVIndexes,
-                                Load->getName() + ".insert", Load), Load);
+
+    auto IV = InsertValueInst::Create(NewStruct, NewLoad, EVIndexes,
+                                      Load->getName() + ".insert");
+    IVs.push_back(IV);
+    NewStruct = CopyDebug(IV, Load);
   }
+
+  for(auto GEP : GEPs) {
+    GEP->insertBefore(Load);
+  }
+  for(auto L : Loads) {
+    L->insertBefore(Load);
+  }
+  for(auto IV : IVs) {
+    IV->insertBefore(Load);
+    NewStruct = IV;
+  }
+
   Load->replaceAllUsesWith(NewStruct);
   Load->eraseFromParent();
 }

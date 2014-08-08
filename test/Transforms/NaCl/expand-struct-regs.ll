@@ -18,8 +18,8 @@ define void @struct_load(%struct* %p, i8* %out0, i32* %out1) {
 }
 ; CHECK-LABEL: define void @struct_load
 ; CHECK-NEXT: %val.index{{.*}} = getelementptr %struct* %p, i32 0, i32 0
-; CHECK-NEXT: %val.field{{.*}} = load i8* %val.index{{.*}}, align 1
 ; CHECK-NEXT: %val.index{{.*}} = getelementptr %struct* %p, i32 0, i32 1
+; CHECK-NEXT: %val.field{{.*}} = load i8* %val.index{{.*}}, align 1
 ; CHECK-NEXT: %val.field{{.*}} = load i32* %val.index{{.*}}, align 1
 ; CHECK-NEXT: store i8 %val.field{{.*}}, i8* %out0
 ; CHECK-NEXT: store i32 %val.field{{.*}}, i32* %out1
@@ -32,12 +32,12 @@ define void @struct_store(%struct* %in_ptr, %struct* %out_ptr) {
 }
 ; CHECK-LABEL: define void @struct_store
 ; CHECK-NEXT: %val.index{{.*}} = getelementptr %struct* %in_ptr, i32 0, i32 0
-; CHECK-NEXT: %val.field{{.*}} = load i8* %val.index{{.*}}, align 1
 ; CHECK-NEXT: %val.index{{.*}} = getelementptr %struct* %in_ptr, i32 0, i32 1
+; CHECK-NEXT: %val.field{{.*}} = load i8* %val.index{{.*}}, align 1
 ; CHECK-NEXT: %val.field{{.*}} = load i32* %val.index{{.*}}, align 1
 ; CHECK-NEXT: %out_ptr.index{{.*}} = getelementptr %struct* %out_ptr, i32 0, i32 0
-; CHECK-NEXT: store i8 %val.field{{.*}}, i8* %out_ptr.index{{.*}}, align 1
 ; CHECK-NEXT: %out_ptr.index{{.*}} = getelementptr %struct* %out_ptr, i32 0, i32 1
+; CHECK-NEXT: store i8 %val.field{{.*}}, i8* %out_ptr.index{{.*}}, align 1
 ; CHECK-NEXT: store i32 %val.field{{.*}}, i32* %out_ptr.index{{.*}}, align 1
 
 
@@ -152,8 +152,8 @@ define void @nested() {
 ; CHECK-NEXT:    store i32 5, i32* %a2
 ; CHECK-NEXT:    %a3.index = getelementptr { { i32, i64 } }* %a3, i32 0, i32 0
 ; CHECK-NEXT:    %a3.index.index = getelementptr { i32, i64 }* %a3.index, i32 0, i32 0
-; CHECK-NEXT:    store i32 5, i32* %a3.index.index, align 1
 ; CHECK-NEXT:    %a3.index.index1 = getelementptr { i32, i64 }* %a3.index, i32 0, i32 1
+; CHECK-NEXT:    store i32 5, i32* %a3.index.index, align 1
 ; CHECK-NEXT:    store i64 6, i64* %a3.index.index1, align 1
 
 define void @ignore_cmpxchg() {
