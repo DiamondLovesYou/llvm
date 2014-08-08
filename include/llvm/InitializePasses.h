@@ -285,6 +285,7 @@ void initializeNullCheckEliminationPass(PassRegistry&);
 /// NaCl specific passes:
 void initializeAddPNaClExternalDeclsPass(PassRegistry&);
 void initializeCanonicalizeMemIntrinsicsPass(PassRegistry&);
+void initializeCombineNoopCastsPass(PassRegistry&);
 void initializeCombineVectorInstructionsPass(PassRegistry&);
 void initializeConstantInsertExtractElementIndexPass(PassRegistry&);
 void initializeExpandArithWithOverflowPass(PassRegistry&);

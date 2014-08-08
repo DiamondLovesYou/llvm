@@ -24,7 +24,9 @@ class ModulePass;
 class Use;
 class Value;
 class Constant;
+class MDNode;
 
+BasicBlockPass *createCombineNoopCastsPass();
 BasicBlockPass *createCombineVectorInstructionsPass();
 BasicBlockPass *createConstantInsertExtractElementIndexPass();
 BasicBlockPass *createExpandGetElementPtrPass();

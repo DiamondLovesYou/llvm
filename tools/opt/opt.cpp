@@ -386,6 +386,7 @@ int main(int argc, char **argv) {
 
   initializeAddPNaClExternalDeclsPass(Registry);
   initializeCanonicalizeMemIntrinsicsPass(Registry);
+  initializeCombineNoopCastsPass(Registry);
   initializeCombineVectorInstructionsPass(Registry);
   initializeConstantInsertExtractElementIndexPass(Registry);
   initializeExpandArithWithOverflowPass(Registry);
