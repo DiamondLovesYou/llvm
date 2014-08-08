@@ -53,7 +53,7 @@ static Value *expandConstantExpr(Instruction *InsertPt, ConstantExpr *Expr) {
   Instruction *NewInst = Expr->getAsInstruction();
   NewInst->insertBefore(InsertPt);
   NewInst->setName("expanded");
-  expandInstruction(NewInst);
+  expandInstruction(CopyDebug(NewInst, InsertPt));
   return NewInst;
 }
 
