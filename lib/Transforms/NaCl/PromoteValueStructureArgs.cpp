@@ -329,16 +329,6 @@ void PromoteStructureArgs::promoteCallInst(T* Inst, Function* ParentF) {
       continue;
     }
 
-    if(isa<LoadInst>(V)) {
-      LoadInst* Load = cast<LoadInst>(V);
-      if(Load->isUnordered()) {
-        Value* VPtr = Load->getPointerOperand();
-        Value* NewVPtr = promoteOperand(VPtr);
-        Inst->setArgOperand(i, NewVPtr);
-        continue;
-      }
-    }
-
     AllocaInst* Alloca = new AllocaInst(promoteType(Ty),
                                         NULL,
                                         "",
