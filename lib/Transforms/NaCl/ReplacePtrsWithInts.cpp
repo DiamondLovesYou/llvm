@@ -471,36 +471,7 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
     NewCall->takeName(Call);
     FC->recordConvertedAndErase(Call, NewCall);
   } else if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Inst)) {
-    Type *ElementTy = Inst->getType()->getPointerElementType();
-    Constant *ElementSize = ConstantInt::get(IntPtrType,
-                                             DL->getTypeAllocSize(ElementTy));
-    // Expand out alloca's built-in multiplication.
-    Value *MulSize;
-    if (ConstantInt *C = dyn_cast<ConstantInt>(Alloca->getArraySize())) {
-      const auto Value = C->getValue().zextOrTrunc(IntPtrType->getScalarSizeInBits());
-      MulSize = ConstantExpr::getMul(ElementSize,
-                                     ConstantInt::get(IntPtrType,
-                                                      Value));
-    } else {
-      MulSize = CopyDebug(BinaryOperator::Create(Instruction::Mul,
-                                                 ElementSize,
-                                                 Alloca->getArraySize(),
-                                                 Alloca->getName() + ".alloca_mul",
-                                                 Alloca),
-                          Inst);
-    }
-    unsigned Alignment = Alloca->getAlignment();
-    if (Alignment == 0)
-      Alignment = DL->getPrefTypeAlignment(ElementTy);
-    Value *Tmp = CopyDebug(new AllocaInst(Type::getInt8Ty(Inst->getContext()),
-                                          MulSize, Alignment, "", Inst),
-                           Inst);
-    Tmp->takeName(Alloca);
-    Value *Alloca2 = CopyDebug(new PtrToIntInst(Tmp, IntPtrType,
-                                                Tmp->getName() + ".asint",
-                                                Inst),
-                               Inst);
-    FC->recordConvertedAndErase(Alloca, Alloca2);
+    FC->convertInPlace(Alloca);
   } else if (// Handle these instructions as a convenience to allow
              // the pass to be used in more situations, even though we
              // don't expect them in PNaCl's stable ABI.
@@ -518,61 +489,10 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
   }
 }
 
-// Convert ptrtoint+inttoptr to a bitcast because it's shorter and
-// because some intrinsics work on bitcasts but not on
-// ptrtoint+inttoptr, in particular:
-//  * llvm.lifetime.start/end (although we strip these out)
-//  * llvm.eh.typeid.for
-void SimplifyCasts(Instruction *Inst, Type *IntPtrType, bool* Modified = nullptr) {
-  if (IntToPtrInst *Cast1 = dyn_cast<IntToPtrInst>(Inst)) {
-    if (PtrToIntInst *Cast2 = dyn_cast<PtrToIntInst>(Cast1->getOperand(0))) {
-      assert(Cast2->getType() == IntPtrType);
-      Value *V = Cast2->getPointerOperand();
-      if (V->getType() != Cast1->getType())
-        V = CopyDebug(new BitCastInst(V, Cast1->getType(), V->getName() + ".bc", Cast1), Inst);
-      Cast1->replaceAllUsesWith(V);
-      if (Cast1->use_empty())
-        Cast1->eraseFromParent();
-      if (Cast2->use_empty())
-        Cast2->eraseFromParent();
-
-
-      if(Modified != nullptr) {
-        *Modified = true;
-      }
-    }
-  } else if(PtrToIntInst *Cast1 = dyn_cast<PtrToIntInst>(Inst)) {
-    if(IntToPtrInst *Cast2 = dyn_cast<IntToPtrInst>(Cast1->getOperand(0))) {
-      assert(Cast1->getType() == IntPtrType);
-      Value* V = Cast2->getOperand(0);
-      Cast1->replaceAllUsesWith(V);
-      if (Cast1->use_empty())
-        Cast1->eraseFromParent();
-      if (Cast2->use_empty())
-        Cast2->eraseFromParent();
-
-
-      if(Modified != nullptr) {
-        *Modified = true;
-      }
-    }
-  }
-}
-
 static void CleanUpFunction(Function *Func, Type *IntPtrType) {
   // Remove the ptrtoint/bitcast ConstantExprs we introduced for
   // referencing globals.
-  FunctionPass *Pass = createExpandConstantExprPass();
-  Pass->runOnFunction(*Func);
-  delete Pass;
 
-  for (Function::iterator BB = Func->begin(), E = Func->end();
-       BB != E; ++BB) {
-    for (BasicBlock::iterator Iter = BB->begin(), E = BB->end();
-         Iter != E; ) {
-      SimplifyCasts(Iter++, IntPtrType);
-    }
-  }
   // Cleanup pass.
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
@@ -584,9 +504,6 @@ static void CleanUpFunction(Function *Func, Type *IntPtrType) {
       // the inttoptrs are created.
       if (isa<IntToPtrInst>(Inst))
         Inst->setName(Inst->getOperand(0)->getName() + ".asptr");
-      // Remove ptrtoints that were introduced for allocas but not used.
-      if (isa<PtrToIntInst>(Inst) && Inst->use_empty())
-        Inst->eraseFromParent();
     }
   }
 }

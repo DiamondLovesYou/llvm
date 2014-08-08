@@ -159,6 +159,8 @@ void llvm::PNaClABISimplifyAddPostOptPasses(PassManagerBase &PM) {
   // ConstantExprs have already been expanded out.
   PM.add(createReplacePtrsWithIntsPass());
 
+  PM.add(createExpandConstantExprPass());
+
   PM.add(createCombineNoopCastsPass());
 
   // We place StripAttributes after optimization passes because many

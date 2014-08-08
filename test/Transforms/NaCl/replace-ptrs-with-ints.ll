@@ -155,8 +155,7 @@ define i8 @ptrtoint_truncates_global() {
   ret i8 %a
 }
 ; CHECK-LABEL: define i8 @ptrtoint_truncates_global() {
-; CHECK-NEXT: %expanded = ptrtoint i32* @var to i32
-; CHECK-NEXT: %a = trunc i32 %expanded to i8
+; CHECK-NEXT: %a = trunc i32 ptrtoint (i32* @var to i32) to i8
 
 
 define i32* @pointer_bitcast(i64* %ptr) {
@@ -297,7 +296,8 @@ define i8* @direct_call1(i8* %arg) {
   ret i8* %result
 }
 ; CHECK-LABEL: define i32 @direct_call1(i32 %arg) {
-; CHECK-NEXT: %result = call i32 @direct_call2(i32 %arg)
+; CHECK-NEXT: %.asptr = inttoptr i32 ptrtoint (i32 (i32)* @direct_call2 to i32) to i32 (i32)*
+; CHECK-NEXT: %result = call i32 %.asptr(i32 %arg)
 ; CHECK-NEXT: ret i32 %result
 
 ; Test backwards reference
@@ -306,8 +306,9 @@ define i8* @direct_call2(i8* %arg) {
   ret i8* %result
 }
 ; CHECK-LABEL: define i32 @direct_call2(i32 %arg) {
-; CHECK-NEXT: %result = call i32 @direct_call1(i32 %arg)
-; CHECK-NEXT: ret i32 %result
+; CHECK-NEXT:    %.asptr = inttoptr i32 ptrtoint (i32 (i32)* @direct_call1 to i32) to i32 (i32)*
+; CHECK-NEXT:    %result = call i32 %.asptr(i32 %arg)
+; CHECK-NEXT:    ret i32 %result
 
 
 @var = global i32 0
@@ -316,15 +317,13 @@ define i32* @get_addr_of_global() {
   ret i32* @var
 }
 ; CHECK-LABEL: define i32 @get_addr_of_global() {
-; CHECK-NEXT: %expanded = ptrtoint i32* @var to i32
-; CHECK-NEXT: ret i32 %expanded
+; CHECK-NEXT:    ret i32 ptrtoint (i32* @var to i32)
 
 define %struct* (%struct*)* @get_addr_of_func() {
   ret %struct* (%struct*)* @addr_taken_func
 }
 ; CHECK-LABEL: define i32 @get_addr_of_func() {
-; CHECK-NEXT: %expanded = ptrtoint i32 (i32)* @addr_taken_func to i32
-; CEHCK-NEXT: ret i32 %expanded
+; CEHCK-NEXT:    ret i32 ptrtoint (i32 (i32)* @addr_taken_func to i32)
 
 
 define i32 @load_global() {
@@ -332,8 +331,9 @@ define i32 @load_global() {
   ret i32 %val
 }
 ; CHECK-LABEL: define i32 @load_global() {
-; CHECK-NEXT: %val = load i32* @var
-; CHECK-NEXT: ret i32 %val
+; CHECK-NEXT:    %.asptr = inttoptr i32 ptrtoint (i32* @var to i32) to i32*
+; CHECK-NEXT:    %val = load i32* %.asptr
+; CHECK-NEXT:    ret i32 %val
 
 define i16 @load_global_bitcast() {
   %ptr = bitcast i32* @var to i16*
@@ -341,83 +341,9 @@ define i16 @load_global_bitcast() {
   ret i16 %val
 }
 ; CHECK-LABEL: define i16 @load_global_bitcast() {
-; CHECK-NEXT: %var.bc = bitcast i32* @var to i16*
-; CHECK-NEXT: %val = load i16* %var.bc
-; CHECK-NEXT: ret i16 %val
-
-
-declare void @receive_alloca(%struct* %ptr)
-
-define void @alloca_fixed() {
-  %buf = alloca %struct, align 128
-  call void @receive_alloca(%struct* %buf)
-  ret void
-}
-; CHECK-LABEL: define void @alloca_fixed() {
-; CHECK-NEXT: %buf = alloca i8, i32 8, align 128
-; CHECK-NEXT: %buf.asint = ptrtoint i8* %buf to i32
-; CHECK-NEXT: call void @receive_alloca(i32 %buf.asint)
-
-; When the size passed to alloca is a constant, it should be a
-; constant in the output too.
-define void @alloca_fixed_array() {
-  %buf = alloca %struct, i32 100
-  call void @receive_alloca(%struct* %buf)
-  ret void
-}
-; CHECK-LABEL: define void @alloca_fixed_array() {
-; CHECK-NEXT: %buf = alloca i8, i32 800, align 8
-; CHECK-NEXT: %buf.asint = ptrtoint i8* %buf to i32
-; CHECK-NEXT: call void @receive_alloca(i32 %buf.asint)
-
-define void @alloca_variable(i32 %size) {
-  %buf = alloca %struct, i32 %size
-  call void @receive_alloca(%struct* %buf)
-  ret void
-}
-; CHECK-LABEL: define void @alloca_variable(i32 %size) {
-; CHECK-NEXT: %buf.alloca_mul = mul i32 8, %size
-; CHECK-NEXT: %buf = alloca i8, i32 %buf.alloca_mul
-; CHECK-NEXT: %buf.asint = ptrtoint i8* %buf to i32
-; CHECK-NEXT: call void @receive_alloca(i32 %buf.asint)
-
-define void @alloca_alignment_i32() {
-  %buf = alloca i32
-  ret void
-}
-; CHECK-LABEL: void @alloca_alignment_i32() {
-; CHECK-NEXT: alloca i8, i32 4, align 4
-
-define void @alloca_alignment_double() {
-  %buf = alloca double
-  ret void
-}
-; CHECK-LABEL: void @alloca_alignment_double() {
-; CHECK-NEXT: alloca i8, i32 8, align 8
-
-define void @alloca_lower_alignment() {
-  %buf = alloca i32, align 1
-  ret void
-}
-; CHECK-LABEL: void @alloca_lower_alignment() {
-; CHECK-NEXT: alloca i8, i32 4, align 1
-
-
-; This tests for a bug in which, when processing the store's %buf2
-; operand, ReplacePtrsWithInts accidentally strips off the ptrtoint
-; cast that it previously introduced for the 'alloca', causing an
-; internal sanity check to fail.
-define void @alloca_cast_stripping() {
-  %buf = alloca i32
-  %buf1 = ptrtoint i32* %buf to i32
-  %buf2 = inttoptr i32 %buf1 to i32*
-  store i32 0, i32* %buf2
-  ret void
-}
-; CHECK-LABEL: define void @alloca_cast_stripping() {
-; CHECK-NEXT: %buf = alloca i8, i32 4
-; CHECK-NEXT: %buf.bc = bitcast i8* %buf to i32*
-; CHECK-NEXT: store i32 0, i32* %buf.bc
+; CHECK-NEXT:    %.asptr = inttoptr i32 ptrtoint (i32* @var to i32) to i16*
+; CHECK-NEXT:    %val = load i16* %.asptr
+; CHECK-NEXT:    ret i16 %val
 
 
 define i1 @compare(i8* %ptr1, i8* %ptr2) {
@@ -464,8 +390,9 @@ define void @debug_declare(i32 %val) {
   ret void
 }
 ; CHECK-LABEL: define void @debug_declare(i32 %val) {
-; CHECK-NEXT: %var = alloca i8, i32 4, align 4
-; CHECK-NEXT: ret void
+; CHECK-NEXT:    %var = alloca i32
+; CHECK-NEXT:    %var.asint = ptrtoint i32* %var to i32
+; CHECK-NEXT:    ret void
 
 ; For now, debugging info for values is lost.  replaceAllUsesWith()
 ; does not work for metadata references -- it converts them to nulls.
@@ -508,8 +435,9 @@ define void @alloca_lifetime() {
   ret void
 }
 ; CHECK-LABEL: define void @alloca_lifetime() {
-; CHECK-NEXT: %buf = alloca i8
-; CHECK-NEXT: ret void
+; CHECK-NEXT:    %buf = alloca i8
+; CHECK-NEXT:    %buf.asint = ptrtoint i8* %buf to i32
+; CHECK-NEXT:    ret void
 
 define void @alloca_lifetime_via_bitcast() {
   %buf = alloca i32
@@ -518,8 +446,9 @@ define void @alloca_lifetime_via_bitcast() {
   ret void
 }
 ; CHECK-LABEL: define void @alloca_lifetime_via_bitcast() {
-; CHECK-NEXT: %buf = alloca i8, i32 4
-; CHECK-NEXT: ret void
+; CHECK-NEXT:    %buf = alloca i32
+; CHECK-NEXT:    %buf.asint = ptrtoint i32* %buf to i32
+; CHECK-NEXT:    ret void
 
 define void @strip_invariant_markers() {
   %buf = alloca i8
@@ -528,8 +457,9 @@ define void @strip_invariant_markers() {
   ret void
 }
 ; CHECK-LABEL: define void @strip_invariant_markers() {
-; CHECK-NEXT: %buf = alloca i8
-; CHECK-NEXT: ret void
+; CHECK-NEXT:    %buf = alloca i8
+; CHECK-NEXT:    %buf.asint = ptrtoint i8* %buf to i32
+; CHECK-NEXT:    ret void
 
 
 ; "nocapture" and "noalias" only apply to pointers, so must be stripped.
@@ -549,7 +479,8 @@ define void @nounwind_call_attr() {
   ret void
 }
 ; CHECK-LABEL: define void @nounwind_call_attr() {
-; CHECK: call void @nounwind_func_attr() {{.*}}[[NOUNWIND]]
+; CHECK-NEXT:    %.asptr = inttoptr i32 ptrtoint (void ()* @nounwind_func_attr to i32) to void ()*
+; CHECK-NEXT:    call void %.asptr() {{.*}}[[NOUNWIND]]
 
 define fastcc void @fastcc_func() {
   ret void
@@ -561,7 +492,8 @@ define void @fastcc_call() {
   ret void
 }
 ; CHECK-LABEL: define void @fastcc_call() {
-; CHECK-NEXT: call fastcc void @fastcc_func()
+; CHECK-NEXT:    %.asptr = inttoptr i32 ptrtoint (void ()* @fastcc_func to i32) to void ()*
+; CHECK-NEXT:    call fastcc void %.asptr()
 
 
 ; Just check that the pass does not crash on getelementptr.  (The pass
@@ -603,14 +535,17 @@ lpad:
   ret i8* %p
 }
 ; CHECK-LABEL: define i32 @invoke(i32 %val) {
-; CHECK-NEXT: %result = invoke i32 @direct_call1(i32 %val)
-; CHECK-NEXT:         to label %cont unwind label %lpad
-; CHECK: %lp = landingpad { i8*, i32 } personality void (i8*)* bitcast (void (i32)* @personality_func to void (i8*)*)
-; CHECK: %p = extractvalue { i8*, i32 } %lp, 0
-; CHECK-NEXT: %p.asint = ptrtoint i8* %p to i32
-; CHECK-NEXT: %val.asptr = inttoptr i32 %val to i8*
-; CHECK-NEXT: %s = insertvalue { i8*, i32 } %lp, i8* %val.asptr, 0
-; CHECK-NEXT: ret i32 %p.asint
+; CHECK-NEXT:    %.asptr = inttoptr i32 ptrtoint (i32 (i32)* @direct_call1 to i32) to i32 (i32)*
+; CHECK-NEXT:    %result = invoke i32 %.asptr(i32 %val)
+; CHECK-NEXT:            to label %cont unwind label %lpad
+; CHECK-LABEL: lpad:
+; CHECK-NEXT:    %lp = landingpad { i8*, i32 } personality void (i8*)* bitcast (void (i32)* @personality_func to void (i8*)*)
+; CHECK-NEXT:       cleanup
+; CHECK-NEXT:    %p = extractvalue { i8*, i32 } %lp, 0
+; CHECK-NEXT:    %p.asint = ptrtoint i8* %p to i32
+; CHECK-NEXT:    %val.asptr = inttoptr i32 %val to i8*
+; CHECK-NEXT:    %s = insertvalue { i8*, i32 } %lp, i8* %val.asptr, 0
+; CHECK-NEXT:    ret i32 %p.asint
 
 define void @personality_func(i8* %arg) {
   ret void
@@ -629,24 +564,8 @@ define void @typeid_for() {
   ret void
 }
 ; CHECK-LABEL: define void @typeid_for() {
-; CHECK-NEXT: %typeid.bc = bitcast i32* @typeid to i8*
-; CHECK-NEXT: call i32 @llvm.eh.typeid.for(i8* %typeid.bc)
-
-define i32 @simplify_casts(i32) {
-  %expanded10 = inttoptr i32 %0 to %struct*
-  %expanded10.asint = ptrtoint %struct* %expanded10 to i32
-  ret i32 %expanded10.asint
-}
-; CHECK-LABEL: define i32 @simplify_casts(i32)
-; CHECK-NEXT: ret i32 %0
-
-define void @i64_alloca() {
-  %1 = alloca i8, i64 1024
-  ret void
-}
-; CHECK-LABEL: define void @i64_alloca()
-; CHECK-NEXT: %1 = alloca i8, i32 1024
-; CHECK-NEXT: ret void
+; CHECK-NEXT:    %.asptr = inttoptr i32 ptrtoint (i32* @typeid to i32) to i8*
+; CHECK-NEXT:    call i32 @llvm.eh.typeid.for(i8* %.asptr)
 
 define void @load_md() {
   %a = load i32* null, !range !0
