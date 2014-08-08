@@ -320,6 +320,7 @@ void initializeResolvePNaClIntrinsicsPass(PassRegistry&);
 void initializeRewriteAtomicsPass(PassRegistry&);
 void initializeRewriteLLVMIntrinsicsPass(PassRegistry&);
 void initializeRewritePNaClLibraryCallsPass(PassRegistry&);
+void initializeSimplifyAllocasPass(PassRegistry&);
 void initializeStripAttributesPass(PassRegistry&);
 void initializeStripMetadataPass(PassRegistry&);
 }

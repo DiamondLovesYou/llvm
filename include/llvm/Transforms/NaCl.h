@@ -33,6 +33,7 @@ BasicBlockPass *createExpandGetElementPtrPass();
 BasicBlockPass *createExpandShuffleVectorPass();
 BasicBlockPass *createFixVectorLoadStoreAlignmentPass();
 BasicBlockPass *createPromoteI1OpsPass();
+BasicBlockPass *createSimplifyAllocasPass();
 FunctionPass *createExpandConstantExprPass();
 FunctionPass *createExpandStructRegsPass();
 FunctionPass *createInsertDivideCheckPass();
