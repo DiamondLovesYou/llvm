@@ -84,6 +84,8 @@ void PhiSafeReplaceUses(Use *U, Value *NewVal);
     return New;
   }
 
+  void CopyInstMD(Instruction *Dest, Instruction *Src);
+
 template <class InstType>
 static void CopyLoadOrStoreAttrs(InstType *Dest, InstType *Src) {
   Dest->setVolatile(Src->isVolatile());

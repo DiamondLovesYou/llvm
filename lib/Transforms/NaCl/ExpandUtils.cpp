@@ -68,3 +68,10 @@ void llvm::setGlobalVariableValue(Module &M, const char *Name,
     Var->eraseFromParent();
   }
 }
+void llvm::CopyInstMD(Instruction *Dest, Instruction *Src) {
+  SmallVector<std::pair<unsigned, MDNode*>, 4> MDs;
+  Src->getAllMetadata(MDs);
+  for(auto MD : MDs) {
+    Dest->setMetadata(MD.first, MD.second);
+  }
+}

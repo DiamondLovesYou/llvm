@@ -648,4 +648,14 @@ define void @i64_alloca() {
 ; CHECK-NEXT: %1 = alloca i8, i32 1024
 ; CHECK-NEXT: ret void
 
+define void @load_md() {
+  %a = load i32* null, !range !0
+  unreachable
+}
+; CHECK-LABEL: define void @load_md()
+; CHECK-NEXT:    %.asptr = inttoptr i32 0 to i32*
+; CHECK-NEXT:    %a = load i32* %.asptr, !range !0
+
+!0 = metadata !{i32 0, i32 4}
+
 ; CHECK: attributes {{.*}}[[NOUNWIND]] = { nounwind }

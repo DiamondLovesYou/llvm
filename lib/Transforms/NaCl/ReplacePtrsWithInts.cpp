@@ -407,6 +407,7 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
     LoadInst *Result = new LoadInst(Ptr, "", Inst);
     Result->takeName(Inst);
     CopyDebug(Result, Inst);
+    CopyInstMD(Result, Inst);
     CopyLoadOrStoreAttrs(Result, Load);
     FC->recordConvertedAndErase(Inst, Result);
   } else if (StoreInst *Store = dyn_cast<StoreInst>(Inst)) {
@@ -414,6 +415,7 @@ static void ConvertInstruction(DataLayout *DL, Type *IntPtrType,
     StoreInst *Result = new StoreInst(FC->convert(Store->getValueOperand()),
                                       Ptr, Inst);
     CopyDebug(Result, Inst);
+    CopyInstMD(Result, Inst);
     CopyLoadOrStoreAttrs(Result, Store);
     Inst->eraseFromParent();
   } else if (CallInst *Call = dyn_cast<CallInst>(Inst)) {
