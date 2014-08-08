@@ -598,6 +598,7 @@ INITIALIZE_PASS(ReplacePtrsWithInts, "replace-ptrs-with-ints",
 bool ReplacePtrsWithInts::runOnModule(Module &M) {
   DataLayout DL(&M);
   Type *IntPtrType = DL.getIntPtrType(M.getContext());
+  DenseMap<const Function *, DISubprogram> FunctionDIs = makeSubprogramMap(M);
 
   for (Module::iterator Iter = M.begin(), E = M.end(); Iter != E; ) {
     Function *OldFunc = Iter++;
@@ -641,6 +642,16 @@ bool ReplacePtrsWithInts::runOnModule(Module &M) {
       }
     }
     FC.eraseReplacedInstructions();
+
+    // Patch the pointer to LLVM function in debug info descriptor.
+    auto DI = FunctionDIs.find(OldFunc);
+    if (DI != FunctionDIs.end()) {
+      DISubprogram SP = DI->second;
+      SP.replaceFunction(NewFunc);
+      FunctionDIs.erase(DI);
+      FunctionDIs[NewFunc] = SP;
+    }
+
     OldFunc->eraseFromParent();
   }
   // Now that all functions have their normalized types, we can remove
