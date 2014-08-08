@@ -11,6 +11,7 @@
 #define LLVM_TRANSFORMS_NACL_H
 
 #include "llvm/PassManager.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 
 namespace llvm {
@@ -19,7 +20,6 @@ class BasicBlockPass;
 class Function;
 class FunctionPass;
 class FunctionType;
-class Instruction;
 class ModulePass;
 class Use;
 class Value;
@@ -79,9 +79,13 @@ void PhiSafeReplaceUses(Use *U, Value *NewVal);
     if(Original == NULL)
       return New;
     if(static_cast<void*>(New) != static_cast<void*>(Original) &&
-       isa<Instruction>(New) && isa<Instruction>(Original))
-      cast<Instruction>(New)->setMetadata(LLVMContext::MD_dbg,
-                                          cast<Instruction>(Original)->getMetadata(LLVMContext::MD_dbg));
+       isa<Instruction>(New) && isa<Instruction>(Original)) {
+      Instruction* NewI = cast<Instruction>(New);
+      Instruction* OldI = cast<Instruction>(Original);
+      NewI->setDebugLoc(OldI->getDebugLoc());
+      NewI->setMetadata(LLVMContext::MD_dbg,
+                        OldI->getMetadata(LLVMContext::MD_dbg));
+    }
     return New;
   }
 
