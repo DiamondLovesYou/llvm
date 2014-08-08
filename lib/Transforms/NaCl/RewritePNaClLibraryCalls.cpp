@@ -363,11 +363,11 @@ void RewritePNaClLibraryCalls::rewriteMemmoveCall(CallInst *Call) {
                     Call->getArgOperand(2),
                     ConstantInt::get(Type::getInt32Ty(*Context), 1),
                     ConstantInt::get(Type::getInt1Ty(*Context), 0) };
-  CallInst *MemmoveIntrinsicCall = CopyDebug(CallInst::Create(MemmoveIntrinsic,
-                                                              Args,
-                                                              "",
-                                                              Call),
-                                             Call);
+  CopyDebug(CallInst::Create(MemmoveIntrinsic,
+                             Args,
+                             "",
+                             Call),
+            Call);
 
   // libc memmove returns the source pointer, but the LLVM intrinsic doesn't; if
   // the return value has actual uses, just replace them with the dest
