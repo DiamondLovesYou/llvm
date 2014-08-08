@@ -392,6 +392,8 @@ define void @debug_declare(i32 %val) {
 ; CHECK-LABEL: define void @debug_declare(i32 %val) {
 ; CHECK-NEXT:    %var = alloca i32
 ; CHECK-NEXT:    %var.asint = ptrtoint i32* %var to i32
+; CHECK-NEXT:    tail call void @llvm.dbg.declare(metadata !{i32* %var}, metadata !1)
+; CHECK-NEXT:    tail call void @llvm.dbg.declare(metadata !{null}, metadata !1)
 ; CHECK-NEXT:    ret void
 
 ; For now, debugging info for values is lost.  replaceAllUsesWith()
@@ -399,11 +401,13 @@ define void @debug_declare(i32 %val) {
 ; This makes dbg.value too tricky to handle for now.
 define void @debug_value(i32 %val, i8* %ptr) {
   tail call void @llvm.dbg.value(metadata !{i32 %val}, i64 1, metadata !{})
-  tail call void @llvm.dbg.value(metadata !{i8* %ptr}, i64 2, metadata !{})
+  tail call void @llvm.dbg.value(metadata !{null}, i64 2, metadata !{})
   ret void
 }
 ; CHECK-LABEL: define void @debug_value(i32 %val, i32 %ptr) {
-; CHECK-NEXT: ret void
+; CHECK-NEXT:    tail call void @llvm.dbg.value(metadata !{null}, i64 1, metadata !1)
+; CHECK-NEXT:    tail call void @llvm.dbg.value(metadata !{{[0-9]*}}, i64 2, metadata !1)
+; CHECK-NEXT:    ret void
 
 
 declare void @llvm.lifetime.start(i64 %size, i8* %ptr)
@@ -573,8 +577,11 @@ define void @load_md() {
 }
 ; CHECK-LABEL: define void @load_md()
 ; CHECK-NEXT:    %.asptr = inttoptr i32 0 to i32*
-; CHECK-NEXT:    %a = load i32* %.asptr, !range !0
+; CHECK-NEXT:    %a = load i32* %.asptr, !range !{{[0-9]*}}
+
+!llvm.module.flags = !{!1}
 
 !0 = metadata !{i32 0, i32 4}
+!1 = metadata !{i32 2, metadata !"Debug Info Version", i32 1}
 
 ; CHECK: attributes {{.*}}[[NOUNWIND]] = { nounwind }
