@@ -31,9 +31,11 @@ PARALLEL_DIRS := opt llvm-as llvm-dis llc llvm-ar llvm-nm llvm-link \
                  lli llvm-extract llvm-mc bugpoint llvm-bcanalyzer llvm-diff \
                  macho-dump llvm-objdump llvm-readobj llvm-rtdyld \
                  llvm-dwarfdump llvm-cov llvm-size llvm-stress llvm-mcmarkup \
-                 llvm-symbolizer obj2yaml yaml2obj llvm-c-test llvm-profdata \
-                 pnacl-abicheck pnacl-freeze pnacl-thaw pnacl-bcanalyzer \
-                 pnacl-benchmark pnacl-bccompress pnacl-bcdis
+                 llvm-profdata llvm-symbolizer obj2yaml yaml2obj llvm-c-test \
+                 llvm-vtabledump verify-uselistorder pnacl-abicheck          \
+                 pnacl-freeze pnacl-thaw pnacl-bcanalyzer pnacl-benchmark    \
+                 pnacl-bccompress pnacl-bcdis
+
 
 # If Intel JIT Events support is configured, build an extra tool to test it.
 ifeq ($(USE_INTEL_JITEVENTS), 1)

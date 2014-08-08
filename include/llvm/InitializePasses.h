@@ -263,6 +263,7 @@ void initializeNoTTIPass(PassRegistry&);
 void initializeTargetLibraryInfoPass(PassRegistry&);
 void initializeTwoAddressInstructionPassPass(PassRegistry&);
 void initializeTypeBasedAliasAnalysisPass(PassRegistry&);
+void initializeScopedNoAliasAAPass(PassRegistry&);
 void initializeUnifyFunctionExitNodesPass(PassRegistry&);
 void initializeUnreachableBlockElimPass(PassRegistry&);
 void initializeUnreachableMachineBlockElimPass(PassRegistry&);
@@ -277,6 +278,7 @@ void initializeSLPVectorizerPass(PassRegistry&);
 void initializeBBVectorizePass(PassRegistry&);
 void initializeMachineFunctionPrinterPassPass(PassRegistry&);
 void initializeStackMapLivenessPass(PassRegistry&);
+void initializeMachineCombinerPass(PassRegistry &);
 void initializeLoadCombinePass(PassRegistry&);
 
 // Specific to the rust-lang llvm branch:

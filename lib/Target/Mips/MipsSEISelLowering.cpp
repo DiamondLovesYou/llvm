@@ -329,9 +329,10 @@ addMSAFloatType(MVT::SimpleValueType Ty, const TargetRegisterClass *RC) {
 }
 
 bool
-MipsSETargetLowering::allowsUnalignedMemoryAccesses(EVT VT,
-                                                    unsigned,
-                                                    bool *Fast) const {
+MipsSETargetLowering::allowsMisalignedMemoryAccesses(EVT VT,
+                                                     unsigned,
+                                                     unsigned,
+                                                     bool *Fast) const {
   MVT::SimpleValueType SVT = VT.getSimpleVT().SimpleTy;
 
   if (Subtarget.systemSupportsUnalignedAccess()) {
@@ -577,10 +578,9 @@ static SDValue performANDCombine(SDNode *N, SelectionDAG &DAG,
     if ((Op0Opcode == MipsISD::VEXTRACT_ZEXT_ELT && Log2 >= ExtendTySize) ||
         Log2 == ExtendTySize) {
       SDValue Ops[] = { Op0->getOperand(0), Op0->getOperand(1), Op0Op2 };
-      DAG.MorphNodeTo(Op0.getNode(), MipsISD::VEXTRACT_ZEXT_ELT,
-                      Op0->getVTList(),
-                      makeArrayRef(Ops, Op0->getNumOperands()));
-      return Op0;
+      return DAG.getNode(MipsISD::VEXTRACT_ZEXT_ELT, SDLoc(Op0),
+                         Op0->getVTList(),
+                         makeArrayRef(Ops, Op0->getNumOperands()));
     }
   }
 
@@ -922,10 +922,9 @@ static SDValue performSRACombine(SDNode *N, SelectionDAG &DAG,
            TotalBits <= 32)) {
         SDValue Ops[] = { Op0Op0->getOperand(0), Op0Op0->getOperand(1),
                           Op0Op0->getOperand(2) };
-        DAG.MorphNodeTo(Op0Op0.getNode(), MipsISD::VEXTRACT_SEXT_ELT,
-                        Op0Op0->getVTList(),
-                        makeArrayRef(Ops, Op0Op0->getNumOperands()));
-        return Op0Op0;
+        return DAG.getNode(MipsISD::VEXTRACT_SEXT_ELT, SDLoc(Op0Op0),
+                           Op0Op0->getVTList(),
+                           makeArrayRef(Ops, Op0Op0->getNumOperands()));
       }
     }
   }
@@ -1246,13 +1245,13 @@ SDValue MipsSETargetLowering::lowerSTORE(SDValue Op, SelectionDAG &DAG) const {
   // i32 store to lower address.
   Chain = DAG.getStore(Chain, DL, Lo, Ptr, MachinePointerInfo(),
                        Nd.isVolatile(), Nd.isNonTemporal(), Nd.getAlignment(),
-                       Nd.getTBAAInfo());
+                       Nd.getAAInfo());
 
   // i32 store to higher address.
   Ptr = DAG.getNode(ISD::ADD, DL, PtrVT, Ptr, DAG.getConstant(4, PtrVT));
   return DAG.getStore(Chain, DL, Hi, Ptr, MachinePointerInfo(),
                       Nd.isVolatile(), Nd.isNonTemporal(),
-                      std::min(Nd.getAlignment(), 4U), Nd.getTBAAInfo());
+                      std::min(Nd.getAlignment(), 4U), Nd.getAAInfo());
 }
 
 SDValue MipsSETargetLowering::lowerMulDiv(SDValue Op, unsigned NewOpc,

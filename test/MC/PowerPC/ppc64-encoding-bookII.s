@@ -53,6 +53,11 @@
 # CHECK-BE: wait 2                          # encoding: [0x7c,0x40,0x00,0x7c]
 # CHECK-LE: wait 2                          # encoding: [0x7c,0x00,0x40,0x7c]
             wait 2
+# CHECK-BE: mbar 1                          # encoding: [0x7c,0x20,0x06,0xac]
+# CHECK-LE: mbar 1                          # encoding: [0xac,0x06,0x20,0x7c]
+            mbar 1
+# CHECK-BE: mbar 0
+            mbar
 
 # Extended mnemonics
 
@@ -101,6 +106,9 @@
 # CHECK-BE: mftb 2, 268                     # encoding: [0x7c,0x4c,0x42,0xe6]
 # CHECK-LE: mftb 2, 268                     # encoding: [0xe6,0x42,0x4c,0x7c]
             mftb 2
+# CHECK-BE: mftb 2, 268                     # encoding: [0x7c,0x4c,0x42,0xe6]
+# CHECK-LE: mftb 2, 268                     # encoding: [0xe6,0x42,0x4c,0x7c]
+            mftbl 2
 # CHECK-BE: mftb 2, 269                     # encoding: [0x7c,0x4d,0x42,0xe6]
 # CHECK-LE: mftb 2, 269                     # encoding: [0xe6,0x42,0x4d,0x7c]
             mftbu 2

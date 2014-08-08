@@ -13,6 +13,7 @@
 #include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/StringRefMemoryObject.h"
+#include "llvm/Support/Path.h"
 #include "RuntimeDyldCheckerImpl.h"
 #include "RuntimeDyldImpl.h"
 #include <cctype>
@@ -61,8 +62,8 @@ public:
 
     if (LHSResult.getValue() != RHSResult.getValue()) {
       Checker.ErrStream << "Expression '" << Expr << "' is false: "
-                        << format("0x%lx", LHSResult.getValue())
-                        << " != " << format("0x%lx", RHSResult.getValue())
+                        << format("0x%" PRIx64, LHSResult.getValue())
+                        << " != " << format("0x%" PRIx64, RHSResult.getValue())
                         << "\n";
       return false;
     }
@@ -748,12 +749,12 @@ std::pair<uint64_t, std::string> RuntimeDyldCheckerImpl::getStubAddrFor(
 
   uint64_t Addr;
   if (IsInsideLoad) {
-    uint64_t SectionBase = getRTDyld().Sections[SectionID].LoadAddress;
-    Addr = SectionBase + StubOffset;
-  } else {
     uintptr_t SectionBase =
         reinterpret_cast<uintptr_t>(getRTDyld().Sections[SectionID].Address);
     Addr = static_cast<uint64_t>(SectionBase) + StubOffset;
+  } else {
+    uint64_t SectionBase = getRTDyld().Sections[SectionID].LoadAddress;
+    Addr = SectionBase + StubOffset;
   }
 
   return std::make_pair(Addr, std::string(""));
@@ -772,8 +773,9 @@ RuntimeDyldCheckerImpl::getSubsectionStartingAt(StringRef Name) const {
 }
 
 void RuntimeDyldCheckerImpl::registerStubMap(
-    StringRef FileName, unsigned SectionID,
+    StringRef FilePath, unsigned SectionID,
     const RuntimeDyldImpl::StubMap &RTDyldStubs) {
+  StringRef FileName = sys::path::filename(FilePath);
   const SectionEntry &Section = getRTDyld().Sections[SectionID];
   StringRef SectionName = Section.Name;
   for (auto &StubMapEntry : RTDyldStubs) {

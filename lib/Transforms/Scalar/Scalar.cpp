@@ -204,6 +204,10 @@ void LLVMAddTypeBasedAliasAnalysisPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createTypeBasedAliasAnalysisPass());
 }
 
+void LLVMAddScopedNoAliasAAPass(LLVMPassManagerRef PM) {
+  unwrap(PM)->add(createScopedNoAliasAAPass());
+}
+
 void LLVMAddBasicAliasAnalysisPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createBasicAliasAnalysisPass());
 }

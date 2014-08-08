@@ -106,7 +106,7 @@ static void ComputePTXValueVTs(const TargetLowering &TLI, Type *Ty,
 }
 
 // NVPTXTargetLowering Constructor.
-NVPTXTargetLowering::NVPTXTargetLowering(NVPTXTargetMachine &TM)
+NVPTXTargetLowering::NVPTXTargetLowering(const NVPTXTargetMachine &TM)
     : TargetLowering(TM, new NVPTXTargetObjectFile()), nvTM(&TM),
       nvptxSubtarget(TM.getSubtarget<NVPTXSubtarget>()) {
 
@@ -2142,7 +2142,7 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
                                      ISD::SEXTLOAD : ISD::ZEXTLOAD;
             p = DAG.getExtLoad(ExtOp, dl, Ins[InsIdx].VT, Root, srcAddr,
                                MachinePointerInfo(srcValue), partVT, false,
-                               false, partAlign);
+                               false, false, partAlign);
           } else {
             p = DAG.getLoad(partVT, dl, Root, srcAddr,
                             MachinePointerInfo(srcValue), false, false, false,
@@ -2275,6 +2275,7 @@ SDValue NVPTXTargetLowering::LowerFormalArguments(
                                        ISD::SEXTLOAD : ISD::ZEXTLOAD;
         p = DAG.getExtLoad(ExtOp, dl, Ins[InsIdx].VT, Root, Arg,
                            MachinePointerInfo(srcValue), ObjectVT, false, false,
+                           false,
         TD->getABITypeAlignment(ObjectVT.getTypeForEVT(F->getContext())));
       } else {
         p = DAG.getLoad(Ins[InsIdx].VT, dl, Root, Arg,
@@ -3866,8 +3867,8 @@ static SDValue PerformADDCombineWithOperands(SDNode *N, SDValue N0, SDValue N1,
   }
   else if (N0.getOpcode() == ISD::FMUL) {
     if (VT == MVT::f32 || VT == MVT::f64) {
-      NVPTXTargetLowering *TLI =
-        (NVPTXTargetLowering *)&DAG.getTargetLoweringInfo();
+      const auto *TLI = static_cast<const NVPTXTargetLowering *>(
+          &DAG.getTargetLoweringInfo());
       if (!TLI->allowFMA(DAG.getMachineFunction(), OptLevel))
         return SDValue();
 

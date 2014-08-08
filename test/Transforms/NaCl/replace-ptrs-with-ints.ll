@@ -13,8 +13,8 @@ declare %struct* @addr_taken_func(%struct*)
 @blockaddr = global i8* blockaddress(@indirectbr, %l1)
 ; CHECK: @blockaddr = global i8* blockaddress(@indirectbr, %l1)
 
-@function_alias = alias internal i8* (i8*, i64)* @pointer_arg
-; CHECK: @function_alias = alias internal bitcast (i32 (i32, i64)* @pointer_arg to i8* (i8*, i64)*)
+@function_alias = alias i8* (i8*, i64)* @pointer_arg
+; CHECK: @function_alias = alias bitcast (i32 (i32, i64)* @pointer_arg to i8* (i8*, i64)*)
 
 define i8* @pointer_arg(i8* nonnull %ptr, i64 %non_ptr) {
   ret i8* %ptr

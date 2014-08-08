@@ -18,12 +18,30 @@ namespace llvm {
 
 class RuntimeDyldMachOARM
     : public RuntimeDyldMachOCRTPBase<RuntimeDyldMachOARM> {
+private:
+  typedef RuntimeDyldMachOCRTPBase<RuntimeDyldMachOARM> ParentT;
+
 public:
   RuntimeDyldMachOARM(RTDyldMemoryManager *MM) : RuntimeDyldMachOCRTPBase(MM) {}
 
   unsigned getMaxStubSize() override { return 8; }
 
   unsigned getStubAlignment() override { return 4; }
+
+  int64_t decodeAddend(uint8_t *LocalAddress, unsigned NumBytes,
+                       MachO::RelocationInfoType RelType) const {
+    switch (RelType) {
+      default:
+        return ParentT::decodeAddend(LocalAddress, NumBytes, RelType);
+      case MachO::ARM_RELOC_BR24: {
+        uint32_t Temp;
+        memcpy(&Temp, LocalAddress, 4);
+        Temp &= 0x00ffffff; // Mask out the opcode.
+        // Now we've got the shifted immediate, shift by 2, sign extend and ret.
+        return SignExtend32<26>(Temp << 2);
+      }
+    }
+  }
 
   relocation_iterator
   processRelocationRef(unsigned SectionID, relocation_iterator RelI,
@@ -41,9 +59,8 @@ public:
     RelocationValueRef Value(
         getRelocationValueRef(ObjImg, RelI, RE, ObjSectionToID, Symbols));
 
-    bool IsExtern = Obj.getPlainRelocationExternal(RelInfo);
-    if (!IsExtern && RE.IsPCRel)
-      makeValueAddendPCRel(Value, ObjImg, RelI);
+    if (RE.IsPCRel)
+      makeValueAddendPCRel(Value, ObjImg, RelI, 8);
 
     if ((RE.RelType & 0xf) == MachO::ARM_RELOC_BR24)
       processBranchRelocation(RE, Value, Stubs);
@@ -88,11 +105,6 @@ public:
       Value >>= 2;
       // Mask the value to 24 bits.
       uint64_t FinalValue = Value & 0xffffff;
-      // Check for overflow.
-      if (Value != FinalValue) {
-        Error("ARM BR24 relocation out of range.");
-        return;
-      }
       // FIXME: If the destination is a Thumb function (and the instruction
       // is a non-predicated BL instruction), we need to change it to a BLX
       // instruction instead.
@@ -134,7 +146,8 @@ private:
       uint8_t *StubTargetAddr =
           createStubFunction(Section.Address + Section.StubOffset);
       RelocationEntry StubRE(RE.SectionID, StubTargetAddr - Section.Address,
-                             MachO::GENERIC_RELOC_VANILLA, Value.Addend);
+                             MachO::GENERIC_RELOC_VANILLA, Value.Addend, false,
+                             2);
       if (Value.SymbolName)
         addRelocationForSymbol(StubRE, Value.SymbolName);
       else
@@ -142,7 +155,7 @@ private:
       Addr = Section.Address + Section.StubOffset;
       Section.StubOffset += getMaxStubSize();
     }
-    RelocationEntry TargetRE(Value.SectionID, RE.Offset, RE.RelType, 0,
+    RelocationEntry TargetRE(RE.SectionID, RE.Offset, RE.RelType, 0,
                              RE.IsPCRel, RE.Size);
     resolveRelocation(TargetRE, (uint64_t)Addr);
   }

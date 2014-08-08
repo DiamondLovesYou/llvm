@@ -48,6 +48,8 @@ using namespace llvm;
 /// runOnMachineFunction - Emit the function body.
 ///
 bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
+  SMShadowTracker.startFunction(MF);
+
   SetupMachineFunction(MF);
 
   if (Subtarget->isTargetCOFF()) {
@@ -768,6 +770,8 @@ void X86AsmPrinter::EmitEndOfAsmFile(Module &M) {
       }
       Stubs.clear();
     }
+
+    SM.serializeToStackMapSection();
   }
 }
 

@@ -97,6 +97,9 @@ protected:
   bool HasPOPCNTD;
   bool HasLDBRX;
   bool IsBookE;
+  bool IsE500;
+  bool IsPPC4xx;
+  bool IsPPC6xx;
   bool DeprecatedMFTB;
   bool DeprecatedDST;
   bool HasLazyResolverStubs;
@@ -108,6 +111,12 @@ protected:
 
   /// OptLevel - What default optimization level we're emitting code for.
   CodeGenOpt::Level OptLevel;
+
+  enum {
+    PPC_ABI_UNKNOWN,
+    PPC_ABI_ELFv1,
+    PPC_ABI_ELFv2
+  } TargetABI;
 
   PPCFrameLowering FrameLowering;
   const DataLayout DL;
@@ -212,6 +221,9 @@ public:
   bool hasPOPCNTD() const { return HasPOPCNTD; }
   bool hasLDBRX() const { return HasLDBRX; }
   bool isBookE() const { return IsBookE; }
+  bool isPPC4xx() const { return IsPPC4xx; }
+  bool isPPC6xx() const { return IsPPC6xx; }
+  bool isE500() const { return IsE500; }
   bool isDeprecatedMFTB() const { return DeprecatedMFTB; }
   bool isDeprecatedDST() const { return DeprecatedDST; }
 
@@ -227,9 +239,7 @@ public:
 
   bool isDarwinABI() const { return isDarwin(); }
   bool isSVR4ABI() const { return !isDarwin(); }
-  /// FIXME: Should use a command-line option.
-  bool isELFv2ABI() const { return isPPC64() && isSVR4ABI() &&
-                                   isLittleEndian(); }
+  bool isELFv2ABI() const { return TargetABI == PPC_ABI_ELFv2; }
 
   bool enableEarlyIfConversion() const override { return hasISEL(); }
 
