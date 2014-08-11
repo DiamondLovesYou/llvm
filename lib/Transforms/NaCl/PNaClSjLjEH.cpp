@@ -195,18 +195,21 @@ void FuncRewriter::initializeFrame() {
   Value *JmpBufIndexes[] = { ConstantInt::get(I32, 0),
                              ConstantInt::get(I32, 0),
                              ConstantInt::get(I32, 0) };
-  FrameJmpBuf = GetElementPtrInst::Create(Frame, JmpBufIndexes,
-                                          "invoke_jmp_buf", InsertPt);
+  FrameJmpBuf = CopyDebug(GetElementPtrInst::Create(Frame, JmpBufIndexes,
+                                                    "invoke_jmp_buf", InsertPt),
+                          InsertPt);
 
   Value *NextPtrIndexes[] = { ConstantInt::get(I32, 0),
                               ConstantInt::get(I32, 1) };
-  FrameNextPtr = GetElementPtrInst::Create(Frame, NextPtrIndexes,
-                                           "invoke_next", InsertPt);
+  FrameNextPtr = CopyDebug(GetElementPtrInst::Create(Frame, NextPtrIndexes,
+                                                     "invoke_next", InsertPt),
+                          InsertPt);
 
   Value *ExcInfoIndexes[] = { ConstantInt::get(I32, 0),
                               ConstantInt::get(I32, 2) };
-  FrameExcInfo = GetElementPtrInst::Create(Frame, ExcInfoIndexes,
-                                           "exc_info_ptr", InsertPt);
+  FrameExcInfo = CopyDebug(GetElementPtrInst::Create(Frame, ExcInfoIndexes,
+                                                     "exc_info_ptr", InsertPt),
+                          InsertPt);
 }
 
 // Creates the helper function that will do the setjmp() call and
@@ -265,26 +268,24 @@ Value *FuncRewriter::createSetjmpWrappedCall(InvokeInst *Invoke) {
   Value *SetjmpArgs[] = { JmpBufArg };
   CallInst *SetjmpCall = CallInst::Create(SetjmpIntrinsic, SetjmpArgs,
                                           "invoke_sj", EntryBB);
-  CopyDebug(SetjmpCall, Invoke);
   // Setting the "returns_twice" attribute here prevents optimization
   // passes from inlining HelperFunc into its caller.
   SetjmpCall->setCanReturnTwice();
   // Check setjmp()'s result.
-  Value *IsZero = CopyDebug(new ICmpInst(*EntryBB, CmpInst::ICMP_EQ, SetjmpCall,
-                                         ConstantInt::get(I32, 0),
-                                         "invoke_sj_is_zero"), Invoke);
-  CopyDebug(BranchInst::Create(NormalBB, ExceptionBB, IsZero, EntryBB), Invoke);
+  Value *IsZero = new ICmpInst(*EntryBB, CmpInst::ICMP_EQ, SetjmpCall,
+                               ConstantInt::get(I32, 0),
+                               "invoke_sj_is_zero");
+  BranchInst::Create(NormalBB, ExceptionBB, IsZero, EntryBB);
   // Handle the normal, non-exceptional code path.
   CallInst *InnerCall = CallInst::Create(CalleeArg, InnerCallArgs, "",
                                          NormalBB);
-  CopyDebug(InnerCall, Invoke);
   InnerCall->setAttributes(Invoke->getAttributes());
   InnerCall->setCallingConv(Invoke->getCallingConv());
   if (ResultAlloca) {
     InnerCall->setName("result");
     Argument *ResultArg = ArgIter++;
     ResultArg->setName("result_ptr");
-    CopyDebug(new StoreInst(InnerCall, ResultArg, NormalBB), Invoke);
+    new StoreInst(InnerCall, ResultArg, NormalBB);
   }
   ReturnInst::Create(Func->getContext(), ConstantInt::get(I32, 0), NormalBB);
   // Handle the exceptional code path.
@@ -300,7 +301,6 @@ Value *FuncRewriter::createSetjmpWrappedCall(InvokeInst *Invoke) {
     OuterCallArgs.push_back(ResultAlloca);
   CallInst *OuterCall = CallInst::Create(HelperFunc, OuterCallArgs,
                                          "invoke_is_exc", Invoke);
-  CopyDebug(OuterCall, Invoke);
 
   // Retrieve the function return value stored in the alloca.  We only
   // need to do this on the non-exceptional path, but we currently do
@@ -325,7 +325,8 @@ static void convertInvokeToCall(InvokeInst *Invoke) {
   Invoke->replaceAllUsesWith(NewCall);
 
   // Insert an unconditional branch to the normal destination.
-  BranchInst::Create(Invoke->getNormalDest(), Invoke);
+  CopyDebug(BranchInst::Create(Invoke->getNormalDest(), Invoke),
+            Invoke);
   // Remove any PHI node entries from the exception destination.
   Invoke->getUnwindDest()->removePredecessor(Invoke->getParent());
   Invoke->eraseFromParent();
@@ -443,8 +444,11 @@ void FuncRewriter::expandFunc() {
       Instruction *Inst = Iter++;
       if (LandingPadInst *LP = dyn_cast<LandingPadInst>(Inst)) {
         initializeFrame();
-        Value *LPPtr = new BitCastInst(
-            FrameJmpBuf, LP->getType()->getPointerTo(), "landingpad_ptr", LP);
+        Value *LPPtr = CopyDebug(new BitCastInst(FrameJmpBuf,
+                                                 LP->getType()->getPointerTo(),
+                                                 "landingpad_ptr",
+                                                 LP),
+                                 LP);
         Value *LPVal = CopyDebug(new LoadInst(LPPtr, "", LP), LP);
         LPVal->takeName(LP);
         LP->replaceAllUsesWith(LPVal);
