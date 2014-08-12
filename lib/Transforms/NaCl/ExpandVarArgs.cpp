@@ -37,6 +37,7 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
@@ -66,7 +67,9 @@ INITIALIZE_PASS(ExpandVarArgs, "expand-varargs",
                 "Expand out variable argument function definitions and calls",
                 false, false)
 
-static void ExpandVarArgFunc(Function *Func) {
+typedef DenseMap<const Function *, DISubprogram> FunctionDIsMap;
+
+static void ExpandVarArgFunc(Function *Func, FunctionDIsMap& FunctionDIs) {
   Type *PtrType = Type::getInt8PtrTy(Func->getContext());
 
   FunctionType *FTy = Func->getFunctionType();
@@ -108,6 +111,15 @@ static void ExpandVarArgFunc(Function *Func) {
         VAS->eraseFromParent();
       }
     }
+  }
+
+  // Patch the pointer to LLVM function in debug info descriptor.
+  auto DI = FunctionDIs.find(Func);
+  if (DI != FunctionDIs.end()) {
+    DISubprogram SP = DI->second;
+    SP.replaceFunction(NewFunc);
+    FunctionDIs.erase(DI);
+    FunctionDIs[NewFunc] = SP;
   }
 }
 
@@ -296,6 +308,8 @@ static bool ExpandVarArgCall(InstType *Call, DataLayout *DL) {
 bool ExpandVarArgs::runOnModule(Module &M) {
   bool Changed = false;
   DataLayout DL(&M);
+  
+  FunctionDIsMap FunctionDIs = makeSubprogramMap(M);
 
   for (Module::iterator Iter = M.begin(), E = M.end(); Iter != E; ) {
     Function *Func = Iter++;
@@ -326,7 +340,7 @@ bool ExpandVarArgs::runOnModule(Module &M) {
 
     if (Func->isVarArg()) {
       Changed = true;
-      ExpandVarArgFunc(Func);
+      ExpandVarArgFunc(Func, FunctionDIs);
     }
   }
 

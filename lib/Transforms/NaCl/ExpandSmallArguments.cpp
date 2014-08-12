@@ -32,6 +32,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -85,8 +86,10 @@ static FunctionType *NormalizeFunctionType(FunctionType *FTy) {
                            ArgTypes, false);
 }
 
+typedef DenseMap<const Function *, DISubprogram> FunctionDIsMap;
+
 // Convert the given function to use normalized argument/return types.
-static bool ConvertFunction(Function *Func) {
+static bool ConvertFunction(Function *Func, FunctionDIsMap& FunctionDIs) {
   FunctionType *FTy = Func->getFunctionType();
   FunctionType *NFTy = NormalizeFunctionType(FTy);
   if (NFTy == FTy)
@@ -131,6 +134,15 @@ static bool ConvertFunction(Function *Func) {
         }
       }
     }
+  }
+
+  // Patch the pointer to LLVM function in debug info descriptor.
+  auto DI = FunctionDIs.find(Func);
+  if (DI != FunctionDIs.end()) {
+    DISubprogram SP = DI->second;
+    SP.replaceFunction(NewFunc);
+    FunctionDIs.erase(DI);
+    FunctionDIs[NewFunc] = SP;
   }
 
   Func->eraseFromParent();
@@ -220,6 +232,7 @@ static bool ConvertCall(T *Call, Pass* P) {
 }
 
 bool ExpandSmallArguments::runOnModule(Module &M) {
+  FunctionDIsMap FunctionDIs = makeSubprogramMap(M);
   bool Changed = false;
   for (Module::iterator Iter = M.begin(), E = M.end(); Iter != E; ) {
     Function *Func = Iter++;
@@ -245,7 +258,7 @@ bool ExpandSmallArguments::runOnModule(Module &M) {
       }
     }
 
-    Changed |= ConvertFunction(Func);
+    Changed |= ConvertFunction(Func, FunctionDIs);
   }
   return Changed;
 }
