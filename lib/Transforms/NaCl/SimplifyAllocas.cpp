@@ -7,9 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
+// Simplify all allocas into allocas of byte arrays.
+//
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -19,114 +22,77 @@ using namespace llvm;
 
 struct SimplifyAllocas : public BasicBlockPass {
   static char ID; // Pass identification, replacement for typeid
-  SimplifyAllocas() : BasicBlockPass(ID) {
+  SimplifyAllocas() : BasicBlockPass(ID), DL("") {
     initializeSimplifyAllocasPass(*PassRegistry::getPassRegistry());
   }
 
   const Module *M  = nullptr;
   Type* IntPtrType = nullptr;
   Type* Int8Type   = nullptr;
-  std::unique_ptr<DataLayout> DL;
+  DataLayout DL;
 
   using llvm::Pass::doInitialization;
   bool doInitialization(Function &F) override {
     if (M != F.getParent()) {
       M = F.getParent();
-      DL.reset(new DataLayout(M));
-      IntPtrType = DL->getIntPtrType(M->getContext());
+      DL.reset(M->getDataLayoutStr());
+      IntPtrType = DL.getIntPtrType(M->getContext());
       Int8Type = Type::getInt8Ty(M->getContext());
+      return true;
     }
     return this->BasicBlockPass::doInitialization(F);
   }
 
   bool runOnBasicBlock(BasicBlock &BB) override {
-    SmallVector<std::tuple<AllocaInst*,     // old alloca
-                           AllocaInst*,     // new alloca
-                           BinaryOperator*, // if non-null, mul array
-                           BitCastInst*>,   // bitcast -> expected type
-                8> BCs;
-
     bool Changed = false;
-    for(auto I = BB.getFirstInsertionPt(); I != BB.end(); I++) {
-      if(!isa<AllocaInst>(I)) {
-        continue;
+    for(auto I = BB.getFirstInsertionPt(); I != BB.end();) {
+      if(AllocaInst* Alloca = dyn_cast<AllocaInst>(I++)) {
+        Changed = true;
+        Type *ElementTy = Alloca->getType()->getPointerElementType();
+        Constant *ElementSize = ConstantInt::get(IntPtrType,
+                                                 DL.getTypeAllocSize(ElementTy));
+        // Expand out alloca's built-in multiplication.
+        Value *MulSize;
+        if (ConstantInt *C = dyn_cast<ConstantInt>(Alloca->getArraySize())) {
+          const APInt Value =
+            C->getValue().zextOrTrunc(IntPtrType->getScalarSizeInBits());
+          MulSize = ConstantExpr::getMul(ElementSize,
+                                         ConstantInt::get(IntPtrType, Value));
+        } else {
+          Value *ArraySize = Alloca->getArraySize();
+          if (ArraySize->getType() != IntPtrType) {
+            ArraySize = CastInst::CreateIntegerCast(ArraySize,
+                                                    IntPtrType,
+                                                    // TODO(rdiamond): this is an assumption.
+                                                    false,
+                                                    "",
+                                                    Alloca);
+          }
+          MulSize =
+            CopyDebug(BinaryOperator::Create(Instruction::Mul, ElementSize,
+                                             ArraySize,
+                                             Alloca->getName() + ".alloca_mul",
+                                             Alloca),
+                      Alloca);
+
+        }
+        unsigned Alignment = Alloca->getAlignment();
+        if (Alignment == 0)
+          Alignment = DL.getPrefTypeAlignment(ElementTy);
+        AllocaInst *Tmp = CopyDebug(new AllocaInst(Int8Type,
+                                                   MulSize,
+                                                   Alignment,
+                                                   "",
+                                                   Alloca),
+                                    Alloca);
+        Tmp->takeName(Alloca);
+        auto* BC = CopyDebug(new BitCastInst(Tmp, Alloca->getType(),
+                                             Tmp->getName() + ".bc",
+                                             Alloca),
+                             Alloca);
+        Alloca->replaceAllUsesWith(BC);
+        Alloca->eraseFromParent();
       }
-      Changed = true;
-      AllocaInst* Alloca = cast<AllocaInst>(I);
-      Type *ElementTy = Alloca->getType()->getPointerElementType();
-      Type* ArraySizeTy = Alloca->getArraySize()->getType();
-      Constant *ElementSize = ConstantInt::get(ArraySizeTy,
-                                               DL->getTypeAllocSize(ElementTy));
-      // Expand out alloca's built-in multiplication.
-      Value *MulSize;
-      if (ConstantInt *C = dyn_cast<ConstantInt>(Alloca->getArraySize())) {
-        const auto Value = C->getValue().zextOrTrunc(ArraySizeTy->getScalarSizeInBits());
-        MulSize = ConstantExpr::getMul(ElementSize,
-                                       ConstantInt::get(ArraySizeTy,
-                                                        Value));
-      } else {
-        MulSize = CopyDebug(BinaryOperator::Create(Instruction::Mul,
-                                                   ElementSize,
-                                                   Alloca->getArraySize(),
-                                                   Alloca->getName() + ".alloca_mul"),
-                            Alloca);
-      }
-      unsigned Alignment = Alloca->getAlignment();
-      if (Alignment == 0)
-        Alignment = DL->getPrefTypeAlignment(ElementTy);
-      AllocaInst *Tmp = CopyDebug(new AllocaInst(Int8Type,
-                                                 MulSize,
-                                                 Alignment,
-                                                 ""),
-                                  Alloca);
-      Tmp->takeName(Alloca);
-      auto* BC = CopyDebug(new BitCastInst(Tmp, Alloca->getType(), Tmp->getName() + ".bc"),
-                           Alloca);
-      Alloca->replaceAllUsesWith(BC);
-      BCs.push_back(std::make_tuple(Alloca,
-                                    Tmp,
-                                    dyn_cast<BinaryOperator>(MulSize),
-                                    BC));
-    }
-
-    // Insert the various new instructions into the BB:
-    // I use multiple loops because I'd like to keep the instructions grouped
-    // together. This makes it easier for me to read while diff-ing.
-    Instruction* IPt = BB.getFirstNonPHI();
-    for(auto I : BCs) {
-      AllocaInst* New = std::get<1>(I);
-      BinaryOperator* MulSize = std::get<2>(I);
-
-      if(MulSize == nullptr) {
-        New->insertBefore(IPt);
-      }
-    }
-
-    for(auto I : BCs) {
-      BinaryOperator* MulSize = std::get<2>(I);
-
-      if(MulSize != nullptr) {
-        MulSize->insertBefore(IPt);
-      }
-    }
-
-    for(auto I : BCs) {
-      AllocaInst* New = std::get<1>(I);
-      BinaryOperator* MulSize = std::get<2>(I);
-
-      if(MulSize != nullptr) {
-        New->insertBefore(IPt);
-      }
-    }
-
-    for(auto I : BCs) {
-      BitCastInst* BC = std::get<3>(I);
-      BC->insertBefore(IPt);
-    }
-
-    for(auto I : BCs) {
-      AllocaInst* Old = std::get<0>(I);
-      Old->eraseFromParent();
     }
     return Changed;
   }
