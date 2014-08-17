@@ -123,7 +123,9 @@ static bool ExpandOpForIntSize(Module *M, unsigned Bits, bool Mul) {
     // Construct the struct result.
     Value *NewStruct = UndefValue::get(Call->getType());
     NewStruct = CreateInsertValue(NewStruct, 0, ArithResult, Call);
+    CopyDebug(NewStruct, Call);
     NewStruct = CreateInsertValue(NewStruct, 1, OverflowResult, Call);
+    CopyDebug(NewStruct, Call);
     Call->replaceAllUsesWith(NewStruct);
     Call->eraseFromParent();
   }

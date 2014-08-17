@@ -134,7 +134,8 @@ static bool ExpandCall(DataLayout *DL, InstType *Call) {
       Function *Func = Call->getParent()->getParent();
       Func->getEntryBlock().getInstList().push_front(CopyBuf);
       IRBuilder<> Builder(Call);
-      Builder.CreateLifetimeStart(CopyBuf, ArgSize);
+      CopyDebug(Builder.CreateLifetimeStart(CopyBuf, ArgSize),
+                Call);
       // Using the argument's alignment attribute for the memcpy
       // should be OK because the LLVM Language Reference says that
       // the alignment attribute specifies "the alignment of the stack
@@ -149,12 +150,15 @@ static bool ExpandCall(DataLayout *DL, InstType *Call) {
       if (isa<CallInst>(Call)) {
         BasicBlock::iterator It = BasicBlock::iterator(Call);
         Builder.SetInsertPoint(++It);
-        Builder.CreateLifetimeEnd(CopyBuf, ArgSize);
+        CopyDebug(Builder.CreateLifetimeEnd(CopyBuf, ArgSize),
+                  &*It);
       } else if (InvokeInst *Invoke = dyn_cast<InvokeInst>(Call)) {
         Builder.SetInsertPoint(Invoke->getNormalDest()->getFirstInsertionPt());
-        Builder.CreateLifetimeEnd(CopyBuf, ArgSize);
+        CopyDebug(Builder.CreateLifetimeEnd(CopyBuf, ArgSize),
+                  &*Invoke->getNormalDest()->getFirstInsertionPt());
         Builder.SetInsertPoint(Invoke->getUnwindDest()->getFirstInsertionPt());
-        Builder.CreateLifetimeEnd(CopyBuf, ArgSize);
+        CopyDebug(Builder.CreateLifetimeEnd(CopyBuf, ArgSize),
+                  &*Invoke->getNormalDest()->getFirstInsertionPt());
       }
     }
   }
