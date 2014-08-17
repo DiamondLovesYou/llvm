@@ -163,9 +163,11 @@ static void ProcessLoadOrStoreAttrs(InstType *Dest, InstType *Src) {
 }
 template <class T>
 static void SplitUpStore(StoreInst *Store, T* Ty, bool& NeedsAnotherPass) {
-  std::vector<Instruction*> EVs;
-  std::vector<Instruction*> GEPs;
-  std::vector<Instruction*> Stores;
+
+  // organize the new instructions for easier diff-ing:
+  SmallVector<Instruction *, 4> EVs;
+  SmallVector<Instruction *, 4> GEPs;
+  SmallVector<Instruction *, 4> Stores;
 
   // Create a separate store instruction for each struct field.
   for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
@@ -204,9 +206,9 @@ static void SplitUpStore(StoreInst *Store, T* Ty, bool& NeedsAnotherPass) {
 template <class T>
 static void SplitUpLoad(LoadInst *Load, T* Ty, bool& NeedsAnotherPass) {
   Value *NewStruct = UndefValue::get(Ty);
-  std::vector<Instruction*> IVs;
-  std::vector<Instruction*> GEPs;
-  std::vector<Instruction*> Loads;
+  SmallVector<Instruction *, 4> IVs;
+  SmallVector<Instruction *, 4> GEPs;
+  SmallVector<Instruction *, 4> Loads;
 
   // Create a separate load instruction for each struct field.
   for (unsigned Index = 0; Index < Ty->getNumElements(); ++Index) {
