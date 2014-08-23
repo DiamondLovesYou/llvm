@@ -60,12 +60,6 @@ void llvm::PNaClABISimplifyAddPreOptPasses(PassManagerBase &PM, const bool Build
   // Expand out some uses of struct types.
   PM.add(createExpandArithWithOverflowPass());
 
-  // This small collection of passes is targeted toward Rust generated IR
-  // solely for the purpose of helping later NaCl transformations handle the
-  // high number of structures Rust outputs.
-  PM.add(createPromoteReturnedStructsPass());
-  PM.add(createPromoteStructureArgsPass());
-
   // ExpandStructRegs must be run after ExpandArithWithOverflow to
   // expand out the insertvalue instructions that
   // ExpandArithWithOverflow introduces.

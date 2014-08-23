@@ -41,8 +41,6 @@ FunctionPass *createPromoteIntegersPass();
 FunctionPass *createRemoveAsmMemoryPass();
 FunctionPass *createResolvePNaClIntrinsicsPass();
 FunctionPass *createReplaceAggregatesWithIntsPass();
-ModulePass *createPromoteReturnedStructsPass();
-ModulePass *createPromoteStructureArgsPass();
 ModulePass *createAddPNaClExternalDeclsPass();
 ModulePass *createCanonicalizeMemIntrinsicsPass();
 ModulePass *createExpandArithWithOverflowPass();

@@ -313,8 +313,6 @@ void initializePNaClABIVerifyModulePass(PassRegistry&);
 void initializePNaClSjLjEHPass(PassRegistry&);
 void initializePromoteI1OpsPass(PassRegistry&);
 void initializePromoteIntegersPass(PassRegistry&);
-void initializePromoteReturnedStructsPass(PassRegistry&);
-void initializePromoteStructureArgsPass(PassRegistry&);
 void initializeRemoveAsmMemoryPass(PassRegistry&);
 void initializeReplacePtrsWithIntsPass(PassRegistry&);
 void initializeResolveAliasesPass(PassRegistry&);
