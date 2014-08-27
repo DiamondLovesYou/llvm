@@ -160,8 +160,6 @@ int main(int argc, char **argv) {
   initializePNaClSjLjEHPass(Registry);
   initializePromoteI1OpsPass(Registry);
   initializePromoteIntegersPass(Registry);
-  initializePromoteReturnedStructsPass(Registry);
-  initializePromoteStructureArgsPass(Registry);
   initializeRemoveAsmMemoryPass(Registry);
   initializeReplacePtrsWithIntsPass(Registry);
   initializeResolveAliasesPass(Registry);
