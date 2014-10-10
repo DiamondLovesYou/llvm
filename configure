@@ -1924,7 +1924,7 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 LLVM_VERSION_MAJOR=3
-LLVM_VERSION_MINOR=6
+LLVM_VERSION_MINOR=5
 LLVM_VERSION_PATCH=0
 LLVM_VERSION_SUFFIX=svn
 
@@ -20367,4 +20367,3 @@ echo "$as_me: error: $ac_sub_configure failed for $ac_dir" >&2;}
     cd "$ac_popdir"
   done
 fi
-
