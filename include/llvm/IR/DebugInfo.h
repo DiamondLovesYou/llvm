@@ -343,8 +343,8 @@ public:
 
   /// replaceAllUsesWith - Replace all uses of debug info referenced by
   /// this descriptor.
-  void replaceAllUsesWith(LLVMContext &VMContext, DIDescriptor D);
-  void replaceAllUsesWith(MDNode *D);
+  void replaceAllUsesWith(LLVMContext &VMContext, DIDescriptor D, const bool DontDeleteSelf = false);
+  void replaceAllUsesWith(MDNode *D, const bool DontDeleteSelf = false);
 };
 
 /// DIBasicType - A basic type, like 'int' or 'float'.

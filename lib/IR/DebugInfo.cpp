@@ -363,7 +363,7 @@ bool DIDescriptor::isImportedEntity() const {
 
 /// replaceAllUsesWith - Replace all uses of the MDNode used by this
 /// type with the one in the passed descriptor.
-void DIType::replaceAllUsesWith(LLVMContext &VMContext, DIDescriptor D) {
+void DIType::replaceAllUsesWith(LLVMContext &VMContext, DIDescriptor D, const bool DontDeleteSelf) {
 
   assert(DbgNode && "Trying to replace an unverified type!");
 
@@ -383,21 +383,28 @@ void DIType::replaceAllUsesWith(LLVMContext &VMContext, DIDescriptor D) {
   MDNode *Node = const_cast<MDNode *>(DbgNode);
   const Value *V = cast_or_null<Value>(DN);
   Node->replaceAllUsesWith(const_cast<Value *>(V));
-  MDNode::deleteTemporary(Node);
+  if (!DontDeleteSelf) {
+    MDNode::deleteTemporary(Node);
+  }
   DbgNode = D;
 }
 
 /// replaceAllUsesWith - Replace all uses of the MDNode used by this
 /// type with the one in D.
-void DIType::replaceAllUsesWith(MDNode *D) {
+void DIType::replaceAllUsesWith(MDNode *D, const bool DontDeleteSelf) {
 
   assert(DbgNode && "Trying to replace an unverified type!");
+
+  if (DbgNode == D && DontDeleteSelf) return; // Nothing to do.
   assert(DbgNode != D && "This replacement should always happen");
+
   MDNode *Node = const_cast<MDNode *>(DbgNode);
   const MDNode *DN = D;
   const Value *V = cast_or_null<Value>(DN);
   Node->replaceAllUsesWith(const_cast<Value *>(V));
-  MDNode::deleteTemporary(Node);
+  if (!DontDeleteSelf) {
+    MDNode::deleteTemporary(Node);
+  }
 }
 
 /// Verify - Verify that a compile unit is well formed.

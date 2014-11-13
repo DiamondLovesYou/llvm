@@ -37,7 +37,7 @@ DIBuilder::DIBuilder(Module &m)
 /// finalize - Construct any deferred debug info descriptors.
 void DIBuilder::finalize() {
   DIArray Enums = getOrCreateArray(AllEnumTypes);
-  DIType(TempEnumTypes).replaceAllUsesWith(Enums);
+  DIType(TempEnumTypes).replaceAllUsesWith(Enums, InitializedWithCU);
 
   SmallVector<Value *, 16> RetainValues;
   // Declarations and definitions of the same type may be retained. Some
@@ -49,10 +49,10 @@ void DIBuilder::finalize() {
     if (RetainSet.insert(AllRetainTypes[I]))
       RetainValues.push_back(AllRetainTypes[I]);
   DIArray RetainTypes = getOrCreateArray(RetainValues);
-  DIType(TempRetainTypes).replaceAllUsesWith(RetainTypes);
+  DIType(TempRetainTypes).replaceAllUsesWith(RetainTypes, InitializedWithCU);
 
   DIArray SPs = getOrCreateArray(AllSubprograms);
-  DIType(TempSubprograms).replaceAllUsesWith(SPs);
+  DIType(TempSubprograms).replaceAllUsesWith(SPs, InitializedWithCU);
   for (unsigned i = 0, e = SPs.getNumElements(); i != e; ++i) {
     DISubprogram SP(SPs.getElement(i));
     SmallVector<Value *, 4> Variables;
@@ -63,18 +63,62 @@ void DIBuilder::finalize() {
     }
     if (MDNode *Temp = SP.getVariablesNodes()) {
       DIArray AV = getOrCreateArray(Variables);
-      DIType(Temp).replaceAllUsesWith(AV);
+      DIType(Temp).replaceAllUsesWith(AV, InitializedWithCU);
     }
   }
 
   DIArray GVs = getOrCreateArray(AllGVs);
-  DIType(TempGVs).replaceAllUsesWith(GVs);
+  DIType(TempGVs).replaceAllUsesWith(GVs, InitializedWithCU);
 
   SmallVector<Value *, 16> RetainValuesI;
   for (unsigned I = 0, E = AllImportedModules.size(); I < E; I++)
     RetainValuesI.push_back(AllImportedModules[I]);
   DIArray IMs = getOrCreateArray(RetainValuesI);
-  DIType(TempImportedModules).replaceAllUsesWith(IMs);
+  DIType(TempImportedModules).replaceAllUsesWith(IMs, InitializedWithCU);
+}
+
+/// initialize - Initialize DIBuilder with an existing compile unit.
+void DIBuilder::initialize(DICompileUnit CU) {
+  auto EnumTypes = CU.getEnumTypes();
+  auto RetainTypes = CU.getRetainedTypes();
+  auto Subprograms = CU.getSubprograms();
+  auto GVs = CU.getGlobalVariables();
+  auto ImportedModules = CU.getImportedEntities();
+
+  TempEnumTypes = EnumTypes;
+  TempRetainTypes = RetainTypes;
+  TempSubprograms = Subprograms;
+  TempGVs = GVs;
+  TempImportedModules = ImportedModules;
+
+  InitializedWithCU = true;
+
+  AllEnumTypes.clear();
+  for (unsigned I = 0; I < EnumTypes.getNumElements(); ++I) {
+    AllEnumTypes.push_back(EnumTypes.getElement(I));
+  }
+
+  AllRetainTypes.clear();
+  for (unsigned I = 0; I < RetainTypes.getNumElements(); ++I) {
+    auto T = TrackingVH<llvm::MDNode>(RetainTypes.getElement(I));
+    AllRetainTypes.push_back(T);
+  }
+
+  AllSubprograms.clear();
+  for (unsigned I = 0; I < Subprograms.getNumElements(); ++I) {
+    AllSubprograms.push_back(Subprograms.getElement(I));
+  }
+
+  AllGVs.clear();
+  for (unsigned I = 0; I < GVs.getNumElements(); ++I) {
+    AllGVs.push_back(GVs.getElement(I));
+  }
+
+  AllImportedModules.clear();
+  for (unsigned I = 0; I < ImportedModules.getNumElements(); ++I) {
+    auto T = TrackingVH<llvm::MDNode>(RetainTypes.getElement(I));
+    AllImportedModules.push_back(T);
+  }
 }
 
 /// getNonCompileUnitScope - If N is compile unit return NULL otherwise return
@@ -120,6 +164,8 @@ DICompileUnit DIBuilder::createCompileUnit(unsigned Lang, StringRef Filename,
   TempGVs = MDNode::getTemporary(VMContext, TElts);
 
   TempImportedModules = MDNode::getTemporary(VMContext, TElts);
+
+  InitializedWithCU = false;
 
   Value *Elts[] = {
     GetTagConstant(VMContext, dwarf::DW_TAG_compile_unit),

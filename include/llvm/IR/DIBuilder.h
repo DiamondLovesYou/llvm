@@ -56,6 +56,9 @@ namespace llvm {
     Module &M;
     LLVMContext &VMContext;
 
+    /// Were we initialized with an existing DICompileUnit?
+    bool InitializedWithCU;
+
     MDNode *TempEnumTypes;
     MDNode *TempRetainTypes;
     MDNode *TempSubprograms;
@@ -90,6 +93,9 @@ namespace llvm {
 
     /// finalize - Construct any deferred debug info descriptors.
     void finalize();
+
+    /// initialize - Initialize DIBuilder with an existing compile unit.
+    void initialize(DICompileUnit CU);
 
     /// createCompileUnit - A CompileUnit provides an anchor for all debugging
     /// information generated during this instance of compilation.

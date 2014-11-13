@@ -599,6 +599,7 @@ const char *llvm::dwarf::LanguageString(unsigned Language) {
   case DW_LANG_OCaml:                    return "DW_LANG_OCaml";
   case DW_LANG_lo_user:                  return "DW_LANG_lo_user";
   case DW_LANG_hi_user:                  return "DW_LANG_hi_user";
+  case DW_LANG_Rust:                     return "DW_LANG_Rust";
   }
   return nullptr;
 }

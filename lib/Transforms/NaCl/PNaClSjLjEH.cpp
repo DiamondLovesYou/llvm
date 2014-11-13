@@ -95,6 +95,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
@@ -107,6 +109,41 @@
 using namespace llvm;
 
 namespace {
+  struct FunctionDIEntry {
+    DebugLoc FirstDebugLoc;
+    DISubprogram Subprogram;
+    DICompileUnit Unit;
+  };
+  typedef DenseMap<const Function *, FunctionDIEntry> FunctionDIsMap;
+
+  void makeSubprogramMap(const Module &M, FunctionDIsMap &R) {
+    NamedMDNode *CU_Nodes = M.getNamedMetadata("llvm.dbg.cu");
+    if (CU_Nodes) {
+      for (MDNode *N : CU_Nodes->operands()) {
+        DICompileUnit CUNode(N);
+        DIArray SPs = CUNode.getSubprograms();
+        for (unsigned i = 0, e = SPs.getNumElements(); i != e; ++i) {
+          DISubprogram SP(SPs.getElement(i));
+          if (Function *F = SP.getFunction()) {
+            FunctionDIEntry entry;
+            entry.Subprogram = SP;
+            entry.Unit = CUNode;
+
+            for (auto BB = F->begin(); BB != F->end(); ++BB) {
+              for (auto II = BB->begin();
+                   II != BB->end() && entry.FirstDebugLoc.isUnknown();
+                   entry.FirstDebugLoc = (II++)->getDebugLoc()) {
+              }
+              if (!entry.FirstDebugLoc.isUnknown()) break;
+            }
+            R.insert(std::make_pair(F, entry));
+          }
+        }
+      }
+    }
+  }
+  typedef DenseMap<Function*, Function*> FunctionWrapperMap;
+
   // This is a ModulePass so that it can introduce new global variables.
   class PNaClSjLjEH : public ModulePass {
   public:
@@ -118,7 +155,244 @@ namespace {
     virtual bool runOnModule(Module &M);
   };
 
+  class FunctionWrapper {
+  public:
+    FunctionWrapper(Module &M, Type* JmpBufTy)
+      : Builder(M)
+      , M(&M)
+      , C(M.getContext())
+      , JmpBufTy(JmpBufTy) {
+      I32 = Type::getInt32Ty(C);
+      I8Ptr = Type::getInt8Ty(C)->getPointerTo();
+      SetjmpIntrinsic = Intrinsic::getDeclaration(&M, Intrinsic::nacl_setjmp);
+      makeSubprogramMap(M, DIs);
+    }
+    FunctionWrapper(FunctionWrapper&) = delete;
+    ~FunctionWrapper() {
+      if (LastCU) {
+        Builder.finalize();
+      }
+    }
+
+    Function* wrap(InvokeInst *Invoke) {
+      Value *Called = Invoke->getCalledValue();
+      if (Function *Func = dyn_cast<Function>(Called)) {
+        auto W = Wrapped.find(Func);
+        if (W == Wrapped.end()) {
+          auto *Wrapper = createWrapperFunc(Func, Invoke);
+          Wrapped.insert(std::make_pair(Func, Wrapper));
+          return Wrapper;
+        } else {
+          return W->second;
+        }
+      } else {
+        auto *Wrapper = createWrapperFunc(Invoke);
+        return Wrapper;
+      }
+    }
+
+  private:
+    void createWrapperFunc(StringRef BaseName,
+                           FunctionType *FTy,
+                           Value *Called,
+                           CallingConv::ID CC,
+                           Function *InsertAfter,
+                           Function *&HelperFunc) {
+      BasicBlock *NormalBB = NULL, *EntryBB = NULL, *ExceptionBB = NULL;
+      auto* CalledFTy =
+        cast<FunctionType>(Called->getType()->getContainedType(0));
+      const bool HasReturn = !CalledFTy->getReturnType()->isVoidTy();
+
+      HelperFunc = Function::Create(FTy,
+                                    GlobalValue::InternalLinkage,
+                                    BaseName + "_setjmp_caller");
+      M->getFunctionList().insertAfter(InsertAfter,
+                                       HelperFunc);
+      EntryBB = BasicBlock::Create(C, "", HelperFunc);
+      NormalBB = BasicBlock::Create(C, "normal",
+                                    HelperFunc);
+      ExceptionBB = BasicBlock::Create(C, "exception",
+                                       HelperFunc);
+
+      // Unpack the helper function's arguments in reverse order so we can handle va arg.
+      Function::arg_iterator ArgIter = HelperFunc->arg_end();
+      ArgIter--;
+      if (!isa<Function>(Called)) {
+        Called = ArgIter--;
+        Called->setName("func_ptr");
+      }
+      Argument *ResultArg = nullptr;
+      if (HasReturn) {
+        ResultArg = ArgIter--;
+      }
+      Argument *JmpBufArg = ArgIter;
+      JmpBufArg->setName("jmp_buf");
+
+      SmallVector<Value *, 10> InnerCallArgs;
+      // now forward:
+      for (auto I = HelperFunc->arg_begin(); I != ArgIter; ++I) {
+        I->setName("arg");
+        InnerCallArgs.push_back(I);
+      }
+
+      // Create setjmp() call.
+      Value *SetjmpArgs[] = { JmpBufArg };
+      CallInst *SetjmpCall = CallInst::Create(SetjmpIntrinsic, SetjmpArgs,
+                                              "invoke_sj", EntryBB);
+      // Setting the "returns_twice" attribute here prevents optimization
+      // passes from inlining HelperFunc into its caller.
+      SetjmpCall->setCanReturnTwice();
+      // Check setjmp()'s result.
+      Value *IsZero = new ICmpInst(*EntryBB, CmpInst::ICMP_EQ, SetjmpCall,
+                                   ConstantInt::get(I32, 0),
+                                   "invoke_sj_is_zero");
+      BranchInst::Create(NormalBB, ExceptionBB, IsZero, EntryBB);
+
+      // Handle the normal, non-exceptional code path.
+      CallInst *InnerCall = CallInst::Create(Called, InnerCallArgs, "",
+                                             NormalBB);
+
+      InnerCall->setCallingConv(CC);
+
+      if (HasReturn) {
+        InnerCall->setName("result");
+        ResultArg->setName("result_ptr");
+        new StoreInst(InnerCall, ResultArg, NormalBB);
+      }
+
+      ReturnInst::Create(C, ConstantInt::get(I32, 0), NormalBB);
+      // Handle the exceptional code path.
+      ReturnInst::Create(C, ConstantInt::get(I32, 1), ExceptionBB);
+    }
+
+    Function* createWrapperFunc(InvokeInst *Invoke) {
+      Value *Called = Invoke->getCalledValue();
+      FunctionType* Ty =
+        cast<FunctionType>(Called->getType()->getContainedType(0));
+      const bool HasReturn = !Ty->getReturnType()->isVoidTy();
+
+      // Create type for the helper function.
+      SmallVector<Type *, 10> ArgTypes;
+      for (unsigned I = 0, E = Invoke->getNumArgOperands(); I < E; ++I) {
+        ArgTypes.push_back(Invoke->getArgOperand(I)->getType());
+      }
+      ArgTypes.push_back(I8Ptr); // setjmp buffer.
+      if (HasReturn) {
+        ArgTypes.push_back(Ty->getReturnType()->getPointerTo());
+      }
+      ArgTypes.push_back(Called->getType());
+      FunctionType *FTy = FunctionType::get(I32, ArgTypes, false);
+      Function *HelperFunc = NULL;
+      createWrapperFunc(Invoke->getParent()->getParent()->getName(),
+                        FTy,
+                        Called,
+                        Invoke->getCallingConv(),
+                        Invoke->getParent()->getParent(),
+                        HelperFunc);
+      HelperFunc->setUnnamedAddr(true);
+      return HelperFunc;
+    }
+
+    Function* createWrapperFunc(Function *Called, InvokeInst *Invoke) {
+      const bool HasReturn = !Called->getReturnType()->isVoidTy();
+
+      // Create type for the helper function.
+      SmallVector<Type *, 10> ArgTypes;
+      for (unsigned I = 0; I < Invoke->getNumArgOperands(); ++I) {
+        Value *V = Invoke->getArgOperand(I);
+        ArgTypes.push_back(V->getType());
+      }
+      ArgTypes.push_back(I8Ptr); // setjmp buffer
+      if (HasReturn) {
+        ArgTypes.push_back(Called->getReturnType()->getPointerTo());
+      }
+      FunctionType *FTy = FunctionType::get(I32, ArgTypes, false);
+      Function* HelperFunc = nullptr;
+      // Create the helper function.
+      createWrapperFunc(Called->getName(),
+                        FTy,
+                        Called,
+                        Called->getCallingConv(),
+                        Called,
+                        HelperFunc);
+      HelperFunc->setUnnamedAddr(Called->hasUnnamedAddr());
+
+      auto Scope = DIs[Called];
+      if (Scope.Unit != LastCU) {
+        if (LastCU) {
+          Builder.finalize();
+        }
+        Builder.initialize(Scope.Unit);
+        LastCU = Scope.Unit;
+      }
+
+      auto OrigLoc = DILocation(Scope.FirstDebugLoc.getAsMDNode(C));
+      DIFile File;
+      if (!OrigLoc.getFilename().empty()) {
+        File = Builder.createFile(OrigLoc.getFilename(),
+                                  OrigLoc.getDirectory());
+      }
+
+      SmallVector<Value*, 8> Types;
+      for (unsigned I = 0; I < ArgTypes.size(); ++I) {
+        auto Elm = Builder.createUnspecifiedType("arg");
+        Types.push_back(Elm);
+      }
+
+      auto SubroutineTypeArray = Builder.getOrCreateTypeArray(Types);
+      auto WrapperDITy =
+        Builder.createSubroutineType(File,
+                                     SubroutineTypeArray,
+                                     DIDescriptor::FlagArtificial);
+      auto WrapperNameTwine = Called->getName() + "_setjmp_caller";
+      auto WrapperName = WrapperNameTwine.str();
+      auto Trampoline = Builder.createFunction(Scope.Subprogram,
+                                               WrapperName,
+                                               WrapperName,
+                                               File,
+                                               0,
+                                               WrapperDITy,
+                                               true,
+                                               true,
+                                               0,
+                                               DIDescriptor::FlagArtificial,
+                                               false,
+                                               HelperFunc);
+
+      if (OrigLoc.Verify()) {
+        auto LexBlock = Builder.createLexicalBlock(Trampoline,
+                                                   File,
+                                                   OrigLoc.getLineNumber(),
+                                                   OrigLoc.getColumnNumber(),
+                                                   OrigLoc.getDiscriminator());
+        auto NewLoc = OrigLoc.copyWithNewScope(C, LexBlock);
+        auto HelperDebugLoc = DebugLoc::getFromDILocation(NewLoc);
+        for (auto BB = HelperFunc->begin(); BB != HelperFunc->end(); ++BB) {
+          for (auto II = BB->begin();
+               II != BB->end();
+               ++II) {
+            II->setDebugLoc(HelperDebugLoc);
+          }
+        }
+      }
+
+      return HelperFunc;
+    }
+    DIBuilder Builder;
+    DICompileUnit LastCU;
+    Type *I32;
+    Type *I8Ptr;
+    Module *M;
+    LLVMContext &C;
+    FunctionWrapperMap Wrapped;
+    FunctionDIsMap DIs;
+    Function *SetjmpIntrinsic;  // setjmp() intrinsic function
+    Type* JmpBufTy;
+  };
+
   class FuncRewriter {
+    FunctionWrapper     &Wrapper;
+
     StructType *ExceptionFrameTy;
     ExceptionInfoWriter *ExcInfoWriter;
     Function *Func;
@@ -141,14 +415,16 @@ namespace {
 
   public:
     FuncRewriter(StructType *ExceptionFrameTy, ExceptionInfoWriter *ExcInfoWriter,
-                 Function *Func):
+                 FunctionWrapper &Wrapper, Function *Func)
+      : Wrapper(Wrapper),
         ExceptionFrameTy(ExceptionFrameTy),
         ExcInfoWriter(ExcInfoWriter),
         Func(Func),
         FrameInitialized(false),
         SetjmpIntrinsic(NULL), EHStackTlsVar(NULL),
-        Frame(NULL), FrameJmpBuf(NULL), FrameNextPtr(NULL), FrameExcInfo(NULL),
-        EHResumeFunc(NULL) {}
+        Frame(NULL), FrameJmpBuf(NULL),
+        FrameNextPtr(NULL), FrameExcInfo(NULL),
+      EHResumeFunc(NULL) {}
 
     Value *createSetjmpWrappedCall(InvokeInst *Invoke);
     void expandInvokeInst(InvokeInst *Invoke);
@@ -218,89 +494,33 @@ void FuncRewriter::initializeFrame() {
 // execution path and non-zero if the landingpad block should be
 // entered.
 Value *FuncRewriter::createSetjmpWrappedCall(InvokeInst *Invoke) {
-  Type *I32 = Type::getInt32Ty(Func->getContext());
-
   // Allocate space for storing the invoke's result temporarily (so
   // that the helper function can return multiple values).  We don't
   // need to do this if the result is unused, and we can't if its type
   // is void.
   Instruction *ResultAlloca = NULL;
-  if (!Invoke->use_empty()) {
+  if (!Invoke->getType()->isVoidTy()) {
     ResultAlloca =
       new AllocaInst(Invoke->getType(),
                      "invoke_result_ptr",
                      Func->getEntryBlock().getFirstNonPHIOrDbgOrLifetime());
   }
 
-  // Create type for the helper function.
-  SmallVector<Type *, 10> ArgTypes;
-  for (unsigned I = 0, E = Invoke->getNumArgOperands(); I < E; ++I)
-    ArgTypes.push_back(Invoke->getArgOperand(I)->getType());
-  ArgTypes.push_back(Invoke->getCalledValue()->getType());
-  ArgTypes.push_back(FrameJmpBuf->getType());
-  if (ResultAlloca)
-    ArgTypes.push_back(Invoke->getType()->getPointerTo());
-  FunctionType *FTy = FunctionType::get(I32, ArgTypes, false);
-
-  // Create the helper function.
-  Function *HelperFunc = Function::Create(
-      FTy, GlobalValue::InternalLinkage, Func->getName() + "_setjmp_caller");
-  Func->getParent()->getFunctionList().insertAfter(Func, HelperFunc);
-  BasicBlock *EntryBB = BasicBlock::Create(Func->getContext(), "", HelperFunc);
-  BasicBlock *NormalBB = BasicBlock::Create(Func->getContext(), "normal",
-                                            HelperFunc);
-  BasicBlock *ExceptionBB = BasicBlock::Create(Func->getContext(), "exception",
-                                               HelperFunc);
-
-  // Unpack the helper function's arguments.
-  Function::arg_iterator ArgIter = HelperFunc->arg_begin();
-  SmallVector<Value *, 10> InnerCallArgs;
-  for (unsigned I = 0, E = Invoke->getNumArgOperands(); I < E; ++I) {
-    ArgIter->setName("arg");
-    InnerCallArgs.push_back(ArgIter++);
-  }
-  Argument *CalleeArg = ArgIter++;
-  Argument *JmpBufArg = ArgIter++;
-  CalleeArg->setName("func_ptr");
-  JmpBufArg->setName("jmp_buf");
-
-  // Create setjmp() call.
-  Value *SetjmpArgs[] = { JmpBufArg };
-  CallInst *SetjmpCall = CallInst::Create(SetjmpIntrinsic, SetjmpArgs,
-                                          "invoke_sj", EntryBB);
-  // Setting the "returns_twice" attribute here prevents optimization
-  // passes from inlining HelperFunc into its caller.
-  SetjmpCall->setCanReturnTwice();
-  // Check setjmp()'s result.
-  Value *IsZero = new ICmpInst(*EntryBB, CmpInst::ICMP_EQ, SetjmpCall,
-                               ConstantInt::get(I32, 0),
-                               "invoke_sj_is_zero");
-  BranchInst::Create(NormalBB, ExceptionBB, IsZero, EntryBB);
-  // Handle the normal, non-exceptional code path.
-  CallInst *InnerCall = CallInst::Create(CalleeArg, InnerCallArgs, "",
-                                         NormalBB);
-  InnerCall->setAttributes(Invoke->getAttributes());
-  InnerCall->setCallingConv(Invoke->getCallingConv());
-  if (ResultAlloca) {
-    InnerCall->setName("result");
-    Argument *ResultArg = ArgIter++;
-    ResultArg->setName("result_ptr");
-    new StoreInst(InnerCall, ResultArg, NormalBB);
-  }
-  ReturnInst::Create(Func->getContext(), ConstantInt::get(I32, 0), NormalBB);
-  // Handle the exceptional code path.
-  ReturnInst::Create(Func->getContext(), ConstantInt::get(I32, 1), ExceptionBB);
+  Function *HelperFunc = Wrapper.wrap(Invoke);
 
   // Create the outer call to the helper function.
   SmallVector<Value *, 10> OuterCallArgs;
   for (unsigned I = 0, E = Invoke->getNumArgOperands(); I < E; ++I)
     OuterCallArgs.push_back(Invoke->getArgOperand(I));
-  OuterCallArgs.push_back(Invoke->getCalledValue());
   OuterCallArgs.push_back(FrameJmpBuf);
   if (ResultAlloca)
     OuterCallArgs.push_back(ResultAlloca);
-  CallInst *OuterCall = CallInst::Create(HelperFunc, OuterCallArgs,
-                                         "invoke_is_exc", Invoke);
+  if (!isa<Function>(Invoke->getCalledValue())) {
+    OuterCallArgs.push_back(Invoke->getCalledValue());
+  }
+  CallInst *OuterCall = CopyDebug(CallInst::Create(HelperFunc, OuterCallArgs,
+                                                   "invoke_is_exc", Invoke),
+                                  Invoke);
 
   // Retrieve the function return value stored in the alloca.  We only
   // need to do this on the non-exceptional path, but we currently do
@@ -336,7 +556,8 @@ void FuncRewriter::expandInvokeInst(InvokeInst *Invoke) {
   // Calls to ReturnsTwice functions, i.e. setjmp(), can't be moved
   // into a helper function.  setjmp() can't throw an exception
   // anyway, so convert the invoke to a call.
-  if (Invoke->hasFnAttr(Attribute::ReturnsTwice)) {
+  if (Invoke->hasFnAttr(Attribute::ReturnsTwice) ||
+      Invoke->hasFnAttr(Attribute::NoUnwind)) {
     convertInvokeToCall(Invoke);
     return;
   }
@@ -461,6 +682,12 @@ void FuncRewriter::expandFunc() {
 bool PNaClSjLjEH::runOnModule(Module &M) {
   Type *JmpBufTy = ArrayType::get(Type::getInt8Ty(M.getContext()),
                                   kPNaClJmpBufSize);
+  DITypeIdentifierMap TypeIdentifierMap;
+  NamedMDNode *CU_Nodes = M.getNamedMetadata("llvm.dbg.cu");
+  if (CU_Nodes) {
+    TypeIdentifierMap = generateDITypeIdentifierMap(CU_Nodes);
+  }
+  FunctionWrapper FWrapper(M, JmpBufTy->getPointerTo());
 
   // Define "struct ExceptionFrame".
   StructType *ExceptionFrameTy = StructType::create(M.getContext(),
@@ -474,7 +701,8 @@ bool PNaClSjLjEH::runOnModule(Module &M) {
 
   ExceptionInfoWriter ExcInfoWriter(&M.getContext());
   for (Module::iterator Func = M.begin(), E = M.end(); Func != E; ++Func) {
-    FuncRewriter Rewriter(ExceptionFrameTy, &ExcInfoWriter, Func);
+    FuncRewriter Rewriter(ExceptionFrameTy, &ExcInfoWriter, FWrapper,
+                          Func);
     Rewriter.expandFunc();
   }
   ExcInfoWriter.defineGlobalVariables(&M);
