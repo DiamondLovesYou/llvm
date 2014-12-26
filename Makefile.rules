@@ -322,7 +322,7 @@ endif
 ifeq ($(ENABLE_CXX1Y),1)
   CXX.Flags += -std=c++1y
 else
-  ifeq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
+  ifeq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW NativeClient))
     # MinGW and Cygwin are a bit stricter and lack things like
     # 'strdup', 'stricmp', etc in c++11 mode.
     CXX.Flags += -std=gnu++11
