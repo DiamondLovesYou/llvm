@@ -151,6 +151,13 @@ void stripGlobalValueAttrs(GlobalValue *GV) {
 
   GV->setUnnamedAddr(false);
 
+  if (GV->hasSection()) {
+    if(GlobalObject* GO = dyn_cast<GlobalObject>(GV)) {
+      GO->setSection("");
+    }
+    // Nothing we can do if GV isn't a GlobalObject.
+  }
+
   // Convert "private" linkage to "internal" to reduce the number of
   // linkage types that need to be represented in PNaCl's wire format.
   //
