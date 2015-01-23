@@ -44,7 +44,13 @@ private:
   void *ConnectionData;
 };
 
+// @LOCALMOD-BEGIN
+#if defined(__native_client__)
+int main(int argc, char *argv[]) {
+#else
 int main() {
+#endif
+// @LOCALMOD-END
   LLIChildTarget  ThisChild;
   ThisChild.RT = new RemoteTarget();
   ThisChild.initialize();

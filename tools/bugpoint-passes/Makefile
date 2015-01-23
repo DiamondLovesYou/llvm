@@ -9,7 +9,11 @@
 
 LEVEL := ../..
 LIBRARYNAME := BugpointPasses
-LOADABLE_MODULE := 1
+# @LOCALMOD-BEGIN
+ifneq ($(HOST_OS),NativeClient)
+  LOADABLE_MODULE := 1
+endif
+# @LOCALMOD-END
 USEDLIBS :=
 
 # If we don't need RTTI or EH, there's no reason to export anything

@@ -140,14 +140,20 @@ static ld_plugin_status claim_file_hook(const ld_plugin_input_file *file,
 static ld_plugin_status all_symbols_read_hook(void);
 static ld_plugin_status cleanup_hook(void);
 
+// @LOCALMOD-BEGIN
+#if defined(__native_client__)
+extern "C" ld_plugin_status LLVMgold_onload(ld_plugin_tv *tv);
+ld_plugin_status LLVMgold_onload(ld_plugin_tv *tv) {
+#else
 extern "C" ld_plugin_status onload(ld_plugin_tv *tv);
 ld_plugin_status onload(ld_plugin_tv *tv) {
+#endif
+// @LOCALMOD-END
   InitializeAllTargetInfos();
   InitializeAllTargets();
   InitializeAllTargetMCs();
   InitializeAllAsmParsers();
   InitializeAllAsmPrinters();
-
   // We're given a pointer to the first transfer vector. We read through them
   // until we find one where tv_tag == LDPT_NULL. The REGISTER_* tagged values
   // contain pointers to functions that we need to call to register our own

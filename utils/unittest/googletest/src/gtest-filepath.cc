@@ -51,6 +51,10 @@
 # define GTEST_PATH_MAX_ _MAX_PATH
 #elif defined(PATH_MAX)
 # define GTEST_PATH_MAX_ PATH_MAX
+// @LOCALMOD-BEGIN
+#elif defined(__native_client__)
+# define GTEST_PATH_MAX 1024
+// @LOCALMOD-END
 #elif defined(_XOPEN_PATH_MAX)
 # define GTEST_PATH_MAX_ _XOPEN_PATH_MAX
 #else

@@ -52,7 +52,9 @@ process::id_type self_process::get_id() {
 }
 
 static std::pair<TimeValue, TimeValue> getRUsageTimes() {
-#if defined(HAVE_GETRUSAGE)
+// @LOCALMOD-BEGIN
+#if defined(HAVE_GETRUSAGE) && !defined(__native_client__)
+// @LOCALMOD-END
   struct rusage RU;
   ::getrusage(RUSAGE_SELF, &RU);
   return std::make_pair(
@@ -65,7 +67,7 @@ static std::pair<TimeValue, TimeValue> getRUsageTimes() {
           static_cast<TimeValue::NanoSecondsType>(
               RU.ru_stime.tv_usec * TimeValue::NANOSECONDS_PER_MICROSECOND)));
 #else
-#warning Cannot get usage times on this platform
+//#warning Cannot get usage times on this platform
   return std::make_pair(TimeValue(), TimeValue());
 #endif
 }
@@ -95,6 +97,8 @@ static unsigned getPageSize() {
   const int page_size = ::getpagesize();
 #elif defined(HAVE_SYSCONF)
   long page_size = ::sysconf(_SC_PAGE_SIZE);
+#elif defined(__native_client__)
+  long page_size = 65536;
 #else
 #warning Cannot get the page size on this machine
 #endif

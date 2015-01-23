@@ -449,7 +449,9 @@ ifeq ($(HOST_OS),MingW)
   endif
 endif
 
-CXX.Flags     += -Woverloaded-virtual
+ifneq ($(HOST_OS),NativeClient)
+  CXX.Flags     += -Woverloaded-virtual
+endif
 CPP.BaseFlags += $(CPP.Defines)
 AR.Flags      := cru
 
@@ -639,7 +641,7 @@ ifndef NO_DEAD_STRIP
   ifeq ($(HOST_OS),Darwin)
     LD.Flags += -Wl,-dead_strip
   else
-    ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
+    ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW NativeClient))
       LD.Flags += -Wl,--gc-sections
     endif
   endif
@@ -665,7 +667,9 @@ ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
   endif
 endif
 
-ifeq ($(NACL_SANDBOX),1)
+#@LOCALMOD-BEGIN
+ifeq ($(PNACL_BROWSER_TRANSLATOR),1)
+  CPP.Flags += -DPNACL_BROWSER_TRANSLATOR
   # NOTE: we specify --noirt to tell the driver that we should link
   # against private (non-stable, non-IRT) libraries for the
   # sandboxed translator.  This could have been specified directly,
@@ -679,6 +683,7 @@ ifeq ($(NACL_SANDBOX),1)
     C.Flags += -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
   endif
 endif
+# @LOCALMOD-END
 
 #----------------------------------------------------------
 # Options To Invoke Tools
@@ -1430,13 +1435,20 @@ else
 $(ToolBuildPath): $(ToolDir)/.dir
 endif
 
+ifeq ($(HOST_OS),NativeClient)
+  LIBC_SUPPLEMENT := -lglibc-compat
+else
+  LIBC_SUPPLEMENT :=
+endif
+
 ifdef CODESIGN_TOOLS
 TOOL_CODESIGN_IDENTITY ?= -
 
 $(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
 	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
 	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
-	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
+	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS) \
+	$(LIBC_SUPPLEMENT)
 	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
           $(StripWarnMsg)
 	$(Echo) ======= Code-Signing $(BuildMode) Executable $(TOOLNAME)
@@ -1445,7 +1457,8 @@ else
 $(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
 	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
 	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
-	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
+	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS) \
+	$(LIBC_SUPPLEMENT)
 	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
           $(StripWarnMsg)
 endif

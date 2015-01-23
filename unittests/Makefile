@@ -7,6 +7,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
+ifeq ($(HOST_OS),NativeClient)
+all:
+	echo skipping
+
+install:
+	echo skipping
+
+else
+
 LEVEL = ..
 
 PARALLEL_DIRS = ADT Analysis Bitcode CodeGen DebugInfo ExecutionEngine IR \
@@ -17,3 +26,5 @@ include $(LLVM_SRC_ROOT)/unittests/Makefile.unittest
 
 clean::
 	$(Verb) $(RM) -f *Tests
+
+endif

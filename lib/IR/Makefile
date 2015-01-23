@@ -28,6 +28,8 @@ $(GENFILE): $(ObjDir)/Intrinsics.gen.tmp $(PROJ_OBJ_ROOT)/include/llvm/IR/.dir
 	  $(EchoCmd) Updated Intrinsics.gen because Intrinsics.gen.tmp \
 	    changed significantly. )
 
+ifndef NO_INSTALL
 install-local:: $(GENFILE)
 	$(Echo) Installing $(DESTDIR)$(PROJ_includedir)/llvm/IR/Intrinsics.gen
 	$(Verb) $(DataInstall) $(GENFILE) $(DESTDIR)$(PROJ_includedir)/llvm/IR/Intrinsics.gen
+endif
