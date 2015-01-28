@@ -327,6 +327,9 @@ namespace {
       }
 
       auto OrigLoc = DILocation(Scope.FirstDebugLoc.getAsMDNode(C));
+      if (OrigLoc.getOrigLocation()) {
+        OrigLoc = OrigLoc.getOrigLocation();
+      }
       DIFile File;
       if (!OrigLoc.getFilename().empty()) {
         File = Builder.createFile(OrigLoc.getFilename(),
