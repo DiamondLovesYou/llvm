@@ -117,6 +117,7 @@ namespace {
   typedef DenseMap<const Function *, FunctionDIEntry> FunctionDIsMap;
 
   void makeSubprogramMap(const Module &M, FunctionDIsMap &R) {
+    auto &C = M.getContext();
     NamedMDNode *CU_Nodes = M.getNamedMetadata("llvm.dbg.cu");
     if (CU_Nodes) {
       for (MDNode *N : CU_Nodes->operands()) {
@@ -136,6 +137,12 @@ namespace {
               }
               if (!entry.FirstDebugLoc.isUnknown()) break;
             }
+
+            while (entry.FirstDebugLoc.getInlinedAt(C)) {
+              entry.FirstDebugLoc =
+                DebugLoc::getFromDILocation(entry.FirstDebugLoc.getInlinedAt(C));
+            }
+
             R.insert(std::make_pair(F, entry));
           }
         }
