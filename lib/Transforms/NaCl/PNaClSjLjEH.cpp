@@ -173,7 +173,8 @@ void FuncRewriter::initializeFrame() {
 
   SetjmpIntrinsic = Intrinsic::getDeclaration(M, Intrinsic::nacl_setjmp);
 
-  Value *EHStackTlsVarUncast = M->getGlobalVariable("__pnacl_eh_stack");
+  Value *EHStackTlsVarUncast = M->getGlobalVariable("__pnacl_eh_stack",
+                                                    /* AllowInternal */ true);
   if (!EHStackTlsVarUncast)
     report_fatal_error("__pnacl_eh_stack not defined");
   EHStackTlsVar = new BitCastInst(
