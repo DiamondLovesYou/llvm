@@ -22,6 +22,7 @@
 #include "llvm/IR/InstVisitor.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/NaClAtomicIntrinsics.h"
 #include "llvm/Pass.h"
@@ -82,12 +83,22 @@ public:
   void visitAtomicRMWInst(AtomicRMWInst &I);
   void visitFenceInst(FenceInst &I);
 
+  void rewriteDelayedAtomics();
+  void rewriteDelayedRMWNandInst(AtomicRMWInst *I);
+
 private:
   Module &M;
   LLVMContext &C;
   const DataLayout TD;
   NaCl::AtomicIntrinsics AI;
   bool ModifiedModule;
+
+  /// We can't modify the CFG whilst visiting the instructions within.
+  /// Thus we collect all of those that need such to rewrite, waiting until
+  /// after we've finished visiting the whole module. After InstVisitor::visit
+  /// completes, RewriteAtomics calls rewriteDelayedAtomics to rewrite these
+  /// instructions.
+  SmallVector<AtomicRMWInst*, 64> DelayedAtomics;
 
   AtomicVisitor() LLVM_DELETED_FUNCTION;
   AtomicVisitor(const AtomicVisitor &) LLVM_DELETED_FUNCTION;
@@ -117,6 +128,8 @@ private:
 
   /// Create a cast before Instruction \p I from \p Src to \p Dst with \p Name.
   CastInst *createCast(Instruction &I, Value *Src, Type *Dst, Twine Name) const;
+  /// Get the cast operation needed to cast Instruction \p I from \p Src to \p Dst
+  Instruction::CastOps castOp(Instruction &I, Value *Src, Type *Dst, Twine Name) const;
 
   /// Try to find the atomic intrinsic of with its \p ID and \OverloadedType.
   /// Report fatal error on failure.
@@ -171,6 +184,7 @@ INITIALIZE_PASS(RewriteAtomics, "nacl-rewrite-atomics",
 bool RewriteAtomics::runOnModule(Module &M) {
   AtomicVisitor AV(M, *this);
   AV.visit(M);
+  AV.rewriteDelayedAtomics();
   return AV.modifiedModule();
 }
 
@@ -247,6 +261,12 @@ void AtomicVisitor::checkAlignment(const Instruction &I, unsigned ByteAlignment,
 
 CastInst *AtomicVisitor::createCast(Instruction &I, Value *Src, Type *Dst,
                                     Twine Name) const {
+  const auto Op = castOp(I, Src, Dst, Name);
+  return CastInst::Create(Op, Src, Dst, Name, &I);
+}
+Instruction::CastOps AtomicVisitor::castOp(Instruction &I,
+                                           Value *Src, Type *Dst,
+                                           Twine Name) const {
   Type *SrcT = Src->getType();
   Instruction::CastOps Op = SrcT->isIntegerTy() && Dst->isPointerTy()
                                 ? Instruction::IntToPtr
@@ -257,7 +277,7 @@ CastInst *AtomicVisitor::createCast(Instruction &I, Value *Src, Type *Dst,
     report_fatal_error("cannot emit atomic instruction while converting type " +
                        ToStr(*SrcT) + " to " + ToStr(*Dst) + " for " + Name +
                        " in " + ToStr(I));
-  return CastInst::Create(Op, Src, Dst, Name, &I);
+  return Op;
 }
 
 const NaCl::AtomicIntrinsics::AtomicIntrinsic *
@@ -361,6 +381,15 @@ void AtomicVisitor::visitAtomicRMWInst(AtomicRMWInst &I) {
   case AtomicRMWInst::Or:  Op = NaCl::AtomicOr;  break;
   case AtomicRMWInst::Xor: Op = NaCl::AtomicXor; break;
   case AtomicRMWInst::Xchg: Op = NaCl::AtomicExchange; break;
+
+  // Rewrite these ops using a loop:
+  case AtomicRMWInst::Nand:
+  case AtomicRMWInst::Max:
+  case AtomicRMWInst::Min:
+  case AtomicRMWInst::UMax:
+  case AtomicRMWInst::UMin:
+    DelayedAtomics.push_back(&I);
+    return;
   }
   PointerHelper<AtomicRMWInst> PH(*this, I);
   const NaCl::AtomicIntrinsics::AtomicIntrinsic *Intrinsic =
@@ -431,6 +460,97 @@ void AtomicVisitor::visitFenceInst(FenceInst &I) {
     Value *Args[] = {freezeMemoryOrder(I, I.getOrdering())};
     replaceInstructionWithIntrinsicCall(I, Intrinsic, T, T, Args);
   }
+}
+void AtomicVisitor::rewriteDelayedAtomics() {
+  for(auto& I : DelayedAtomics) {
+    rewriteDelayedRMWNandInst(I);
+    I->eraseFromParent();
+  }
+}
+
+/// Lifted from X86AtomicExpandPass:
+/// Emit IR to implement the given atomicrmw operation on values in registers,
+/// returning the new value.
+static Value *performAtomicOp(AtomicRMWInst::BinOp Op, IRBuilder<> &Builder,
+                              Value *Loaded, Value *Inc) {
+  Value *NewVal;
+  switch (Op) {
+  case AtomicRMWInst::Xchg:
+  case AtomicRMWInst::Add:
+  case AtomicRMWInst::Sub:
+  case AtomicRMWInst::And:
+  case AtomicRMWInst::Or:
+    llvm_unreachable("Op not handled by AtomicVisitor::visitAtomicRMWInst!");
+  case AtomicRMWInst::Nand:
+    return Builder.CreateNot(Builder.CreateAnd(Loaded, Inc), "new");
+  case AtomicRMWInst::Max:
+    NewVal = Builder.CreateICmpSGT(Loaded, Inc);
+    return Builder.CreateSelect(NewVal, Loaded, Inc, "new");
+  case AtomicRMWInst::Min:
+    NewVal = Builder.CreateICmpSLE(Loaded, Inc);
+    return Builder.CreateSelect(NewVal, Loaded, Inc, "new");
+  case AtomicRMWInst::UMax:
+    NewVal = Builder.CreateICmpUGT(Loaded, Inc);
+    return  Builder.CreateSelect(NewVal, Loaded, Inc, "new");
+  case AtomicRMWInst::UMin:
+    NewVal = Builder.CreateICmpULE(Loaded, Inc);
+    return Builder.CreateSelect(NewVal, Loaded, Inc, "new");
+  default:
+    break;
+  }
+  llvm_unreachable("Unknown atomic op");
+}
+
+void AtomicVisitor::rewriteDelayedRMWNandInst(AtomicRMWInst *I) {
+  ModifiedModule = true;
+
+  // The following was lifted from X86AtomicExpandPass and modified to create
+  // PNaCl variety atomics.
+  BasicBlock *BB = I->getParent();
+  Function *F = BB->getParent();
+  LLVMContext &Ctx = F->getContext();
+  const auto Order = freezeMemoryOrder(*I, I->getOrdering());
+
+  PointerHelper<AtomicRMWInst> PH(*this, *I);
+  // LLVM permits only integer atomicrmw, so our PH should never create a cast.
+  assert(PH.PET == PH.OriginalPET && "atomicrmw on non-integers?");
+
+  BasicBlock *ExitBB = BB->splitBasicBlock(I, "atomicrmw.end");
+  BasicBlock *LoopBB =  BasicBlock::Create(Ctx, "atomicrmw.start", F, ExitBB);
+
+  // Get the debug location from I:
+  IRBuilder<> Builder(I);
+
+  // The split call above "helpfully" added a branch at the end of BB (to the
+  // wrong place), but we want a load. It's easiest to just remove
+  // the branch entirely.
+  std::prev(BB->end())->eraseFromParent();
+  Builder.SetInsertPoint(BB);
+  LoadInst *InitLoaded = Builder.CreateLoad(PH.P);
+  InitLoaded->setAlignment(I->getType()->getPrimitiveSizeInBits());
+  Builder.CreateBr(LoopBB);
+  // Start the main loop block now that we've taken care of the preliminaries.
+  Builder.SetInsertPoint(LoopBB);
+  PHINode *Loaded = Builder.CreatePHI(PH.PET, 2, "loaded");
+  Loaded->addIncoming(InitLoaded, BB);
+
+  Value *NewVal =
+    performAtomicOp(I->getOperation(), Builder, Loaded, I->getValOperand());
+
+  Value *XChgArgs[] = {ConstantInt::get(Type::getInt32Ty(Ctx), NaCl::AtomicExchange),
+                       PH.P, NewVal, Order};
+  const NaCl::AtomicIntrinsics::AtomicIntrinsic *Intrinsic =
+      findAtomicIntrinsic(*I, Intrinsic::nacl_atomic_rmw, PH.PET);
+
+  CallInst *CmpXchg = Builder.CreateCall(Intrinsic->getDeclaration(&M),
+                                         XChgArgs);
+  Loaded->addIncoming(CmpXchg, LoopBB);
+  Instruction *Cmp = cast<Instruction>(Builder.CreateICmpEQ(CmpXchg, NewVal));
+  Builder.CreateCondBr(Cmp, ExitBB, LoopBB);
+  // End lift.
+
+  CmpXchg->takeName(I);
+  I->replaceAllUsesWith(CmpXchg);
 }
 
 ModulePass *llvm::createRewriteAtomicsPass() { return new RewriteAtomics(); }
