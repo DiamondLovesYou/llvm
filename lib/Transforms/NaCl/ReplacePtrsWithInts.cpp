@@ -169,7 +169,7 @@ void FunctionConverter::recordConvertedAndErase(Instruction *From, Value *To) {
 Value *FunctionConverter::stripNoopCasts(Value *Val) {
   SmallPtrSet<Value *, 4> Visited;
   for (;;) {
-    if (!Visited.insert(Val)) {
+    if (!Visited.insert(Val).second) {
       // It is possible to get a circular reference in unreachable
       // basic blocks.  Handle this case for completeness.
       return UndefValue::get(Val->getType());
@@ -324,11 +324,13 @@ static AttributeSet RemovePointerAttrs(LLVMContext &Context,
           report_fatal_error("ReplacePtrsWithInts cannot handle "
                              "byval, sret or nest attrs");
           break;
-        // Strip NoCapture and NoAlias because they are only allowed
-        // on arguments of pointer type, and we are removing the
-        // pointer types.
+        // Strip these attributes because they apply only to pointers. This pass
+        // rewrites pointer arguments, thus these parameter attributes are
+        // meaningless. Also, they are rejected by the PNaCl module verifier.
         case Attribute::NoCapture:
         case Attribute::NoAlias:
+        case Attribute::ReadNone:
+        case Attribute::ReadOnly:
           break;
         default:
           AB.addAttribute(*Attr);

@@ -35,7 +35,7 @@ public:
     Values.push_back(Indent);
   }
 
-  ~TextIndenter() {}
+  virtual ~TextIndenter() {}
 
   /// Returns the current indentation to use.
   const std::string &GetIndent() const {
@@ -211,7 +211,7 @@ public:
                          unsigned LineWidth = 80,
                          const char *Tab = DefaultTab);
 
-  ~TextFormatter();
+  ~TextFormatter() override;
 
   /// Returns the user-level text stream of the formatter that tokens
   /// should be written to.
@@ -424,7 +424,7 @@ protected:
   void FinishClustering();
 
   /// Adds a newline that ends the current instruction being printed.
-  virtual void WriteEndline();
+  void WriteEndline();
 
   /// Called just before the first character on a line is printed, to
   /// add indentation text for the line.
@@ -495,7 +495,7 @@ private:
         : Directive(Formatter) {}
 
   public:
-    virtual ~GetTokenDirective() {}
+    ~GetTokenDirective() override {}
 
     /// Allocates an instance of a GetTokenDirective.
     /// Note: Will be reclaimed when MyApply is called.
@@ -503,7 +503,7 @@ private:
                                const std::string &Text);
 
   protected:
-    virtual void MyApply(bool Replay) const {
+    void MyApply(bool Replay) const override {
       WriteToken(Text);
       if (!IsClustering())
         Formatter->GetTokenFreeList.Free(const_cast<GetTokenDirective*>(this));
@@ -535,10 +535,10 @@ public:
   explicit TokenizeTextDirective(TextFormatter *Formatter)
       : TextFormatter::Directive(Formatter) {}
 
-  virtual ~TokenizeTextDirective() {}
+  ~TokenizeTextDirective() override {}
 
 protected:
-  virtual void MyApply(bool Replay) const {}
+  void MyApply(bool Replay) const override {}
 };
 
 /// Defines a token which doesn't need whitespace on either side of
@@ -549,10 +549,10 @@ public:
       : TextFormatter::Directive(Formatter), Text(Str) {
   }
 
-  virtual ~TokenTextDirective() {}
+  ~TokenTextDirective() override {}
 
 protected:
-  virtual void MyApply(bool Replay) const {
+  void MyApply(bool Replay) const override {
     WriteToken(Text);
   }
 
@@ -573,7 +573,7 @@ public:
   ~SpaceTextDirective() {}
 
 protected:
-  virtual void MyApply(bool Replay) const {
+  void MyApply(bool Replay) const override {
     if (!AddLineWrapIfNeeded(Space.size()))
       WriteToken(Space);
   }
@@ -587,10 +587,10 @@ public:
   explicit EndlineTextDirective(TextFormatter *Formatter)
       : TextFormatter::Directive(Formatter) {}
 
-  virtual ~EndlineTextDirective() {}
+  ~EndlineTextDirective() override {}
 
 protected:
-  virtual void MyApply(bool Replay) const {
+  void MyApply(bool Replay) const override {
     WriteEndline();
   }
 };
@@ -604,10 +604,10 @@ public:
   OpenTextDirective(TextFormatter *Formatter, const std::string &Text)
       : TokenTextDirective(Formatter, Text) {}
 
-  virtual ~OpenTextDirective() {}
+  ~OpenTextDirective() override {}
 
 protected:
-  virtual void MyApply(bool Replay) const {
+  void MyApply(bool Replay) const override {
     TokenTextDirective::MyApply(Replay);
     PushIndent();
   }
@@ -620,10 +620,10 @@ public:
   CloseTextDirective(TextFormatter *Formatter, const std::string &Text)
       : TokenTextDirective(Formatter, Text) {}
 
-  virtual ~CloseTextDirective() {}
+  ~CloseTextDirective() override {}
 
 protected:
-  virtual void MyApply(bool Replay) const {
+  void MyApply(bool Replay) const override {
     TokenTextDirective::MyApply(Replay);
     PopIndent();
   }
@@ -636,14 +636,14 @@ public:
   explicit StartClusteringDirective(TextFormatter *Formatter)
       : TextFormatter::Directive(Formatter) {}
 
-  virtual ~StartClusteringDirective() {}
+  ~StartClusteringDirective() override {}
 
 protected:
-  virtual void MyApply(bool Replay) const {
+  void MyApply(bool Replay) const override {
     StartClustering();
   }
 
-  virtual void MaybeSaveForReplay() const {
+  void MaybeSaveForReplay() const override {
     if (GetClusteringLevel() > 1) AppendForReplay(this);
   }
 };
@@ -653,10 +653,10 @@ public:
   explicit FinishClusteringDirective(TextFormatter *Formatter)
       : TextFormatter::Directive(Formatter) {}
 
-  virtual ~FinishClusteringDirective() {}
+  ~FinishClusteringDirective() override {}
 
 protected:
-  virtual void MyApply(bool Replay) const {
+  void MyApply(bool Replay) const override {
     FinishClustering();
   }
 };
@@ -669,12 +669,16 @@ static int32_t ABBREV_INDEX_NOT_SPECIFIED = -1;
 
 /// The formatter used for dumping records in ObjDumpStream.
 class RecordTextFormatter : public TextFormatter {
+  RecordTextFormatter(const RecordTextFormatter&) = delete;
+  RecordTextFormatter &operator=(const RecordTextFormatter&) = delete;
 public:
   /// The address write width used to print the number of
   /// bytes in the record bit address, when printing records.
   static const unsigned AddressWriteWidth = 8;
 
   explicit RecordTextFormatter(ObjDumpStream *ObjDump);
+
+  ~RecordTextFormatter() override {}
 
   /// Writes out the given record of values as an instruction.
   void WriteValues(uint64_t Bit,
@@ -684,22 +688,10 @@ public:
   /// Returns text corresponding to an empty label column.
   std::string GetEmptyLabelColumn();
 
-  // Converts the given start bit to the corresponding address to
-  // print. That is, generate "Bit/8:Bit%8" value.
-  static std::string RecordAddress(uint64_t Bit, unsigned MinByteWidth);
-
-  // Returns the record address (when printing records) associated with
-  // the given bit.
-  static std::string RecordAddress(uint64_t Bit) {
-    return RecordAddress(Bit, AddressWriteWidth);
-  }
-
 protected:
-  virtual void WriteLineIndents();
+  void WriteLineIndents() override;
 
 private:
-  // The object dumper this formatter is associated with.
-  ObjDumpStream *ObjDump;
   // The address label associated with the current line.
   std::string Label;
   // The open brace '<' for a record.
@@ -842,6 +834,7 @@ public:
   /// Write a fatal error message to the dump stream, and then
   /// stop the executable. If any assembly, comments, or errors have
   /// been buffered, they will be printed first.
+  LLVM_ATTRIBUTE_NORETURN
   void Fatal(const std::string &Message) {
     Fatal(LastKnownBit, Message);
   }
@@ -850,11 +843,13 @@ public:
   /// stop the executable. If any assembly, comments, or errors have
   /// been buffered, they will be printed first. Associates fatal error
   /// Message with the given Bit.
+  LLVM_ATTRIBUTE_NORETURN
   void Fatal(uint64_t Bit, const std::string &Message);
 
   /// Write a fatal error message to the dump stream, and then
   /// stop the executable. If any assembly, comments, or errors have
   /// been buffered, they will be printed first, along with the given record.
+  LLVM_ATTRIBUTE_NORETURN
   void Fatal(uint64_t Bit,
              const llvm::NaClBitcodeRecordData &Record,
              const std::string &Message);
@@ -905,12 +900,6 @@ public:
     return DumpAssembly;
   }
 
-  /// Changes the default assumption that bit addresses start
-  /// at index 0.
-  void SetStartOffset(uint64_t Offset) {
-    StartOffset = Offset;
-  }
-
   /// Changes the maximum number of errors allowed.
   void SetMaxErrors(unsigned NewMax) {
     MaxErrors = NewMax;
@@ -937,18 +926,6 @@ public:
     LastKnownBit = Bit;
   }
 
-  // Converts the given start bit to the corresponding address to
-  // print. That is, generate "Bit/8:Bit%8" value.
-  std::string ObjDumpAddress(uint64_t Bit, unsigned MinByteWidth=1) {
-    return RecordFormatter.RecordAddress(Bit + StartOffset, MinByteWidth);
-  }
-
-  // Returns the record address (when printing records) associated with
-  // the given bit.
-  std::string RecordAddress(uint64_t Bit) {
-    return RecordFormatter.RecordAddress(Bit + StartOffset);
-  }
-
 private:
   // The stream to dump to.
   raw_ostream &Stream;
@@ -962,9 +939,6 @@ private:
   unsigned MaxErrors;
   // The number of columns available to print bitcode records.
   unsigned RecordWidth;
-  // The number of bits to add to the record bit address, to correct
-  // the record bit address passed to the write routines.
-  uint64_t StartOffset;
   // The buffer for assembly to be printed during the next write.
   std::string AssemblyBuffer;
   // The stream to buffer assembly into the assembly buffer.
@@ -994,7 +968,8 @@ private:
 
   // Returns the message stream with 'Label(Bit/8:Bit%8): '.
   raw_ostream &PrintMessagePrefix(const char *Label, uint64_t Bit) {
-    return Comments() << Label << "(" << ObjDumpAddress(Bit) << "): ";
+    return Comments() << Label << "(" << NaClBitstreamReader::getBitAddress(Bit)
+                      << "): ";
   }
 };
 

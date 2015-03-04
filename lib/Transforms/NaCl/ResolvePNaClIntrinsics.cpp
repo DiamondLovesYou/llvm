@@ -192,7 +192,8 @@ struct IsLockFreeToConstant {
       report_fatal_error("Unhandled arch from __builtin_nacl_target_arch()");
     }
 #   elif defined(__i386__) || defined(__x86_64__) || defined(__arm__) || \
-         defined(__native_client__)
+         defined(__pnacl__)
+    // TODO(jfb): MaxLockFreeByteSize should actually be selected at runtime.
     // Continue.
 #   elif defined(__mips__)
     MaxLockFreeByteSize = 4;

@@ -165,7 +165,7 @@ class NaClBitcodeReader : public GVMaterializer {
   UpgradedIntrinsicMap UpgradedIntrinsics;
 
   // Several operations happen after the module header has been read, but
-  // before function bodies are processed.  This keeps track of whether
+  // before function bodies are processed. This keeps track of whether
   // we've done this yet.
   bool SeenFirstFunctionBody;
 
@@ -189,16 +189,18 @@ public:
     CouldNotFindFunctionInStream, // Unable to find function in bitcode stream.
     InsufficientFunctionProtos,
     InvalidBitstream,         // Error in bitstream format.
+    InvalidBlock,             // Invalid block found in bitcode.
     InvalidConstantReference, // Bad constant reference.
+    InvalidDataAfterModule,   // Invalid data after module.
     InvalidInstructionWithNoBB,  // No basic block for instruction.
-    InvalidMultipleBlocks, // Multiple blocks for a kind of block that should
-                           // have only one.
-    InvalidRecord, // Record doesn't have expected size or structure.
-    InvalidSkippedBlock, // Unable to skip unknown block in bitcode file.
-    InvalidType,   // Invalid type in record.
-    InvalidTypeForValue, // Type of value incorrect.
-    InvalidValue,  // Invalid value in record.
-    MalformedBlock, // Unable to advance over block.
+    InvalidMultipleBlocks,    // Multiple blocks for a kind of block that should
+                              // have only one.
+    InvalidRecord,            // Record doesn't have expected size or structure.
+    InvalidSkippedBlock,      // Unable to skip unknown block in bitcode file.
+    InvalidType,              // Invalid type in record.
+    InvalidTypeForValue,      // Type of value incorrect.
+    InvalidValue,             // Invalid value in record.
+    MalformedBlock            // Unable to advance over block.
   };
 
   explicit NaClBitcodeReader(MemoryBuffer *buffer, LLVMContext &C,
@@ -230,12 +232,11 @@ public:
 
   void FreeState();
 
-  bool isMaterializable(const GlobalValue *GV) const override;
   bool isDematerializable(const GlobalValue *GV) const override;
-  std::error_code Materialize(GlobalValue *GV) override;
+  std::error_code materialize(GlobalValue *GV) override;
   std::error_code MaterializeModule(Module *M) override;
   void Dematerialize(GlobalValue *GV) override;
-  void releaseBuffer() override;
+  void releaseBuffer();
 
   std::error_code Error(ErrorType E) const {
     return std::error_code(E, BitcodeErrorCategory());

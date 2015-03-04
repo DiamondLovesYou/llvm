@@ -271,13 +271,12 @@ public:
         CloseSquare(this, "]"),
         Endline(this),
         StartCluster(this),
-        FinishCluster(this),
-        ObjDump(ObjDump)
+        FinishCluster(this)
   {
     ContinuationIndent = GetIndent(2);
   }
 
-  ~AssemblyTextFormatter() {}
+  ~AssemblyTextFormatter() override {}
 
   naclbitc::TokenTextDirective Comma;
   naclbitc::TokenTextDirective Semicolon;
@@ -338,9 +337,6 @@ public:
   }
 
 private:
-  // The ObjDumpStream associated with this text formatter.
-  naclbitc::ObjDumpStream &ObjDump;
-
   // Converts the given type to tokens, based on the values passed in
   // by TokenizeType, TokenizeFunctionType, or TokenizeFunctionSignature.
   void TokenizeTypeInternal(Type *Typ, BitcodeId* FcnName, bool AddParams);
@@ -467,33 +463,25 @@ void AssemblyTextFormatter::TokenizeTypeInternal(
 
 void AssemblyTextFormatter::TokenizeAbbrevOp(const NaClBitCodeAbbrevOp &Op) {
   // Note: Mimics NaClBitCodeAbbrevOp::Print in NaClBitCodes.cpp
-  if (Op.isLiteral()) {
-    Tokens() << Op.getLiteralValue();
+  switch (Op.getEncoding()) {
+  case NaClBitCodeAbbrevOp::Literal:
+    Tokens() << Op.getValue();
+    return;
+  case NaClBitCodeAbbrevOp::Fixed:
+    Tokens() << StartCluster << "fixed" << OpenParen << Op.getValue()
+             << CloseParen << FinishCluster;
+    return;
+  case NaClBitCodeAbbrevOp::VBR:
+    Tokens() << StartCluster << "vbr" << OpenParen << Op.getValue()
+             << CloseParen << FinishCluster;
+    return;
+  case NaClBitCodeAbbrevOp::Array:
+    Tokens() << "array";
+    return;
+  case NaClBitCodeAbbrevOp::Char6:
+    Tokens() << "char6";
     return;
   }
-  if (Op.isEncoding()) {
-    switch (Op.getEncoding()) {
-    case NaClBitCodeAbbrevOp::Fixed:
-      Tokens() << StartCluster << "fixed" << OpenParen << Op.getEncodingData()
-               << CloseParen << FinishCluster;
-      return;
-    case NaClBitCodeAbbrevOp::VBR:
-      Tokens() << StartCluster << "vbr" << OpenParen << Op.getEncodingData()
-               << CloseParen << FinishCluster;
-      return;
-    case NaClBitCodeAbbrevOp::Array:
-      Tokens() << "array";
-      return;
-    case NaClBitCodeAbbrevOp::Char6:
-      Tokens() << "char6";
-      return;
-    default:
-      break;
-    }
-  }
-  // If reached, don't know how to print.
-  Tokens() << "???";
-  ObjDump.Error() << "Unknown abbreviation operator in abbreviation record\n";
 }
 
 void AssemblyTextFormatter::
@@ -543,24 +531,20 @@ void AssemblyTextFormatter::AbbrevIndexDirective::MyApply(bool Replay) const {
 }
 
 // Holds possible alignements for loads/stores etc. Used to extract
-// expected value.
+// expected values.
 static unsigned NaClPossibleLoadStoreAlignments[] = {
-  // Note: Because all primitive types can be aligned 1 (for packing),
-  // that value must be last in the list.
-  2, 4, 8, 1
+  1, 2, 4, 8
 };
 
-// Finds the expected alignment for the load/store, for type Ty.
-// Returns 0 if no expected alignment can be found.
-static unsigned NaClGetExpectedLoadStoreAlignment(
-    const DataLayout &DL, Type *Ty) {
+// Finds the expected alignments for the load/store, for type Ty.
+static void NaClGetExpectedLoadStoreAlignment(
+    const DataLayout &DL, Type *Ty, std::vector<unsigned> &ValidAlignments) {
   for (size_t i = 0; i < array_lengthof(NaClPossibleLoadStoreAlignments); ++i) {
     unsigned Alignment = NaClPossibleLoadStoreAlignments[i];
     if (PNaClABIProps::isAllowedAlignment(&DL, Alignment, Ty)) {
-      return Alignment;
+      ValidAlignments.push_back(Alignment);
     }
   }
-  return 0;
 }
 
 /// Top-level class to parse bitcode file and transform to
@@ -571,7 +555,6 @@ class NaClDisTopLevelParser : public NaClBitcodeParser {
 
 public:
   NaClDisTopLevelParser(NaClBitcodeHeader &Header,
-                        const unsigned char *HeaderBuffer,
                         NaClBitstreamCursor &Cursor,
                         naclbitc::ObjDumpStream &ObjDump)
       : NaClBitcodeParser(Cursor),
@@ -582,7 +565,6 @@ public:
         AllowedIntrinsics(&Mod.getContext()),
         AssemblyFormatter(ObjDump),
         Header(Header),
-        HeaderBuffer(HeaderBuffer),
         NumFunctions(0),
         NumGlobals(0),
         ExpectedNumGlobals(0),
@@ -607,21 +589,23 @@ public:
   }
 
   /// Generates an error with the given message.
-  bool Error(const std::string &Message) override {
+  bool ErrorAt(uint64_t Bit, const std::string &Message) final {
     // Use local error routine so that all errors are treated uniformly.
-    ObjDump.Error() << Message << "\n";
+    ObjDump.Error(Bit) << Message << "\n";
     return true;
   }
 
   /// Flushes out objdump and then exits with fatal error.
+  LLVM_ATTRIBUTE_NORETURN
   void Fatal() {
-    Fatal("");
+    NaClBitcodeParser::Fatal();
   }
 
   /// Flushes out objdump and then exits with fatal error, using
   /// the given message.
-  void Fatal(const std::string &Message) {
-    ObjDump.Fatal(Message);
+  LLVM_ATTRIBUTE_NORETURN
+  void FatalAt(uint64_t Bit, const std::string &Message) final {
+    ObjDump.Fatal(Bit, Message);
   }
 
   /// Parses the top-level module block.
@@ -952,11 +936,22 @@ public:
                                    unsigned Alignment) {
     if (IgnorePNaClABIChecks) return;
     if (!PNaClABIProps::isAllowedAlignment(&DL, Alignment, Ty)) {
-      if (unsigned Expected = NaClGetExpectedLoadStoreAlignment(DL, Ty)) {
-        Errors() << Op << ": Illegal alignment for " << *Ty
-                 << ". Expects: " << Expected << "\n";
+      raw_ostream &Errs = Errors();
+      std::vector<unsigned> Alignments;
+      NaClGetExpectedLoadStoreAlignment(DL, Ty, Alignments);
+      if (!Alignments.empty()) {
+        Errs << Op << ": Illegal alignment for " << *Ty << ". Expects: ";
+        bool isFirst = true;
+        for (auto Align : Alignments) {
+          if (isFirst)
+            isFirst = false;
+          else
+            Errs << " or ";
+          Errs << Align;
+        }
+        Errs << "\n";
       } else {
-        Errors() << Op << ": Not allowed for type: " << *Ty << "\n";
+        Errs << Op << ": Not allowed for type: " << *Ty << "\n";
       }
     }
   }
@@ -1125,8 +1120,6 @@ private:
   AssemblyTextFormatter AssemblyFormatter;
   // The header appearing before the beginning of the input stream.
   NaClBitcodeHeader &Header;
-  // Pointer to the buffer containing the header.
-  const unsigned char *HeaderBuffer;
   // The list of known types (index i defines the type associated with
   // type index i).
   std::vector<Type*> TypeIdType;
@@ -1376,8 +1369,8 @@ protected:
     return Context->Fatal();
   }
 
-  void Fatal(const std::string &Message) {
-    return Context->Fatal(Message);
+  void FatalAt(uint64_t Bit, const std::string &Message) override {
+    return Context->FatalAt(Bit, Message);
   }
 
   const std::string &GetAssemblyIndent() const {
@@ -3493,16 +3486,21 @@ void NaClDisModuleParser::ProcessRecord() {
 }
 
 bool NaClDisTopLevelParser::ParseBlock(unsigned BlockID) {
-  // Before parsing top-level module block. Describe header.
-  NaClBitcodeRecordData Record;
+  // Before parsing top-level module block. Describe header by
+  // reconstructing the corresponding header record.
+  NaClBitcodeRecordData HeaderRecord;
   size_t HeaderSize = Header.getHeaderSize();
-  Record.Code = naclbitc::BLK_CODE_HEADER;
+  HeaderRecord.Code = naclbitc::BLK_CODE_HEADER;
+  NaClBitstreamCursor &Cursor = Record.GetCursor();
+  uint64_t CurPos = Cursor.GetCurrentBitNo();
+  Cursor.JumpToBit(0);
   for (size_t i = 0; i < HeaderSize; ++i) {
-    Record.Values.push_back(HeaderBuffer[i]);
+    HeaderRecord.Values.push_back(Cursor.Read(CHAR_BIT));
   }
+  Cursor.JumpToBit(CurPos);
   if (ObjDump.GetDumpRecords() && ObjDump.GetDumpAssembly()) {
     if (HeaderSize >= 4) {
-      const NaClRecordVector &Values = Record.Values;
+      const NaClRecordVector &Values = HeaderRecord.Values;
       Tokens() << "Magic" << Space() << "Number" << Colon()
                << Space() << StartCluster() << StartCluster() << "'"
                << (char) Values[0] << (char) Values[1]
@@ -3520,8 +3518,7 @@ bool NaClDisTopLevelParser::ParseBlock(unsigned BlockID) {
       Tokens() << Header.GetField(i)->Contents() << Endline();
     }
   }
-  ObjDump.Write(0, Record);
-  ObjDump.SetStartOffset(HeaderSize * 8);
+  ObjDump.Write(0, HeaderRecord);
 
   if (BlockID != naclbitc::MODULE_BLOCK_ID)
     return Error("Module block expected at top-level, but not found");
@@ -3552,17 +3549,18 @@ bool NaClObjDump(MemoryBuffer *MemBuf, raw_ostream &Output,
 
   // Read header and verify it is good.
   NaClBitcodeHeader Header;
-  if (Header.Read(BufPtr, EndBufPtr) || !Header.IsSupported()) {
+  if (Header.Read(HeaderPtr, EndBufPtr) || !Header.IsSupported()) {
     ObjDump.Error() << "Invalid PNaCl bitcode header.\n";
     return true;
   }
 
   // Create a bitstream reader to read the bitcode file.
-  NaClBitstreamReader InputStreamFile(BufPtr, EndBufPtr);
+  NaClBitstreamReader InputStreamFile(BufPtr, EndBufPtr,
+                                      Header.getHeaderSize());
   NaClBitstreamCursor InputStream(InputStreamFile);
 
   // Parse the the bitcode file.
-  ::NaClDisTopLevelParser Parser(Header, HeaderPtr, InputStream, ObjDump);
+  ::NaClDisTopLevelParser Parser(Header, InputStream, ObjDump);
   int NumBlocksRead = 0;
   bool ErrorsFound = false;
   while (!InputStream.AtEndOfStream()) {

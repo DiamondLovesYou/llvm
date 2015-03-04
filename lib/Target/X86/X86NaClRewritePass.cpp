@@ -236,6 +236,7 @@ bool X86NaClRewritePass::ApplyStackSFI(MachineBasicBlock &MBB,
   case X86::ADD64ri32: NewOpc = X86::NACL_ASPi32; break;
   case X86::SUB64ri8 : NewOpc = X86::NACL_SSPi8; break;
   case X86::SUB64ri32: NewOpc = X86::NACL_SSPi32; break;
+  case X86::AND64ri8 : NewOpc = X86::NACL_ANDSPi8; break;
   case X86::AND64ri32: NewOpc = X86::NACL_ANDSPi32; break;
   }
   if (NewOpc) {
@@ -702,8 +703,8 @@ bool X86NaClRewritePass::runOnMachineFunction(MachineFunction &MF) {
   bool Modified = false;
 
   TM = &MF.getTarget();
-  TII = TM->getInstrInfo();
-  TRI = TM->getRegisterInfo();
+  TII = MF.getSubtarget().getInstrInfo();
+  TRI = MF.getSubtarget().getRegisterInfo();
   Subtarget = &TM->getSubtarget<X86Subtarget>();
   Is64Bit = Subtarget->is64Bit();
 

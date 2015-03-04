@@ -45,7 +45,7 @@ InputFileFormat(
         clEnumValN(LLVMFormat, "llvm", "LLVM file (default)"),
         clEnumValN(PNaClFormat, "pnacl", "PNaCl bitcode file"),
         clEnumValEnd),
-    cl::init(LLVMFormat));
+    cl::init(AutodetectFileFormat));
 
 // Print any errors collected by the error reporter. Return true if
 // there were any.
@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
   ErrorsFound |= CheckABIVerifyErrors(ABIErrorReporter, "Module");
 
   std::unique_ptr<FunctionPassManager> PM(new FunctionPassManager(&*Mod));
-  PM->add(new DataLayoutPass(&*Mod));
+  PM->add(new DataLayoutPass());
   PM->add(createPNaClABIVerifyFunctionsPass(&ABIErrorReporter));
 
   PM->doInitialization();
