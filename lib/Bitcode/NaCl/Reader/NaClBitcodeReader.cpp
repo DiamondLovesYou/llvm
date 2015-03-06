@@ -1869,6 +1869,11 @@ std::error_code NaClBitcodeReader::InitLazyStream() {
   return std::error_code();
 }
 
+std::vector<StructType *> NaClBitcodeReader::getIdentifiedStructTypes() const {
+  /// We never have any structs.
+  return std::vector<StructType *>();
+}
+
 //===----------------------------------------------------------------------===//
 // External interface
 //===----------------------------------------------------------------------===//

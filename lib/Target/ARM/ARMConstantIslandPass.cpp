@@ -1272,7 +1272,7 @@ void ARMConstantIslands::createNewWater(unsigned CPUserIndex,
       unsigned MaxDisp = getUnconditionalBrDisp(UncondBr);
       ImmBranches.push_back(ImmBranch(&UserMBB->back(),
                                       MaxDisp, false, UncondBr));
-      BBInfo[UserMBB->getNumber()].Size += Delta;
+      computeBlockSize(UserMBB);
       adjustBBOffsetsAfter(UserMBB);
       return;
     }
@@ -1954,7 +1954,9 @@ bool ARMConstantIslands::optimizeThumb2JumpTables() {
       DEBUG(dbgs() << "Shrink JT: " << *MI << "     addr: " << *AddrMI
                    << "      lea: " << *LeaMI);
       unsigned Opc = ByteOk ? ARM::t2TBB_JT : ARM::t2TBH_JT;
-      MachineInstr *NewJTMI = BuildMI(MBB, MI->getDebugLoc(), TII->get(Opc))
+      MachineBasicBlock::iterator MI_JT = MI;
+      MachineInstr *NewJTMI =
+        BuildMI(*MBB, MI_JT, MI->getDebugLoc(), TII->get(Opc))
         .addReg(IdxReg, getKillRegState(IdxRegKill))
         .addJumpTableIndex(JTI, JTOP.getTargetFlags())
         .addImm(MI->getOperand(JTOpIdx+1).getImm());

@@ -17,9 +17,9 @@
 #define LLVM_CODEGEN_REGALLOCPBQP_H
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/PBQPRAConstraint.h"
 #include "llvm/CodeGen/PBQP/CostAllocator.h"
 #include "llvm/CodeGen/PBQP/ReductionRules.h"
+#include "llvm/CodeGen/PBQPRAConstraint.h"
 #include "llvm/Support/ErrorHandling.h"
 
 namespace llvm {
@@ -192,8 +192,10 @@ public:
     : RS(Other.RS), NumOpts(Other.NumOpts), DeniedOpts(Other.DeniedOpts),
       OptUnsafeEdges(new unsigned[NumOpts]), VReg(Other.VReg),
       AllowedRegs(Other.AllowedRegs) {
-    std::copy(&Other.OptUnsafeEdges[0], &Other.OptUnsafeEdges[NumOpts],
-              &OptUnsafeEdges[0]);
+    if (NumOpts > 0) {
+      std::copy(&Other.OptUnsafeEdges[0], &Other.OptUnsafeEdges[NumOpts],
+                &OptUnsafeEdges[0]);
+    }
   }
 
   // FIXME: Re-implementing default behavior to work around MSVC. Remove once
@@ -246,7 +248,7 @@ public:
   void setReductionState(ReductionState RS) { this->RS = RS; }
 
   void handleAddEdge(const MatrixMetadata& MD, bool Transpose) {
-    DeniedOpts += Transpose ? MD.getWorstCol() : MD.getWorstRow();
+    DeniedOpts += Transpose ? MD.getWorstRow() : MD.getWorstCol();
     const bool* UnsafeOpts =
       Transpose ? MD.getUnsafeCols() : MD.getUnsafeRows();
     for (unsigned i = 0; i < NumOpts; ++i)
@@ -254,7 +256,7 @@ public:
   }
 
   void handleRemoveEdge(const MatrixMetadata& MD, bool Transpose) {
-    DeniedOpts -= Transpose ? MD.getWorstCol() : MD.getWorstRow();
+    DeniedOpts -= Transpose ? MD.getWorstRow() : MD.getWorstCol();
     const bool* UnsafeOpts =
       Transpose ? MD.getUnsafeCols() : MD.getUnsafeRows();
     for (unsigned i = 0; i < NumOpts; ++i)

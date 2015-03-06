@@ -45,6 +45,8 @@ private:
                          const TargetRegisterClass *RC,
                          const MachineOperand &Op) const;
 
+  void swapOperands(MachineBasicBlock::iterator Inst) const;
+
   void splitScalar64BitUnaryOp(SmallVectorImpl<MachineInstr *> &Worklist,
                                MachineInstr *Inst, unsigned Opcode) const;
 
@@ -108,6 +110,10 @@ public:
 
   bool expandPostRAPseudo(MachineBasicBlock::iterator MI) const override;
 
+  // \brief Returns an opcode that can be used to move a value to a \p DstRC
+  // register.  If there is no hardware instruction that can store to \p
+  // DstRC, then AMDGPU::COPY is returned.
+  unsigned getMovOpcode(const TargetRegisterClass *DstRC) const;
   unsigned commuteOpcode(unsigned Opcode) const;
 
   MachineInstr *commuteInstruction(MachineInstr *MI,
@@ -207,7 +213,7 @@ public:
 
   /// \brief Return true if the given offset Size in bytes can be folded into
   /// the immediate offsets of a memory instruction for the given address space.
-  static bool canFoldOffset(unsigned OffsetSize, unsigned AS) LLVM_READNONE;
+  bool canFoldOffset(unsigned OffsetSize, unsigned AS) const;
 
   /// \brief Return true if this 64-bit VALU instruction has a 32-bit encoding.
   /// This function will return false if you pass it a 32-bit instruction.
@@ -308,6 +314,9 @@ public:
                                         unsigned OpName) const {
     return getNamedOperand(const_cast<MachineInstr &>(MI), OpName);
   }
+
+  uint64_t getDefaultRsrcDataFormat() const;
+
 };
 
 namespace AMDGPU {
@@ -316,7 +325,6 @@ namespace AMDGPU {
   int getVOPe32(uint16_t Opcode);
   int getCommuteRev(uint16_t Opcode);
   int getCommuteOrig(uint16_t Opcode);
-  int getMCOpcode(uint16_t Opcode, unsigned Gen);
   int getAddr64Inst(uint16_t Opcode);
   int getAtomicRetOp(uint16_t Opcode);
   int getAtomicNoRetOp(uint16_t Opcode);

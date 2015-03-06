@@ -161,10 +161,10 @@ protected:
 
   /// True if unaligned 32-byte memory accesses are slow.
   bool IsUAMem32Slow;
-  
-  /// HasVectorUAMem - True if SIMD operations can have unaligned memory
-  /// operands. This may require setting a feature bit in the processor.
-  bool HasVectorUAMem;
+
+  /// True if SSE operations can have unaligned memory operands.
+  /// This may require setting a configuration bit in the processor.
+  bool HasSSEUnalignedMem;
 
   /// HasCmpxchg16b - True if this processor has the CMPXCHG16B instruction;
   /// this is true for most x86-64 chips, but not the first AMD chips.
@@ -208,7 +208,7 @@ protected:
   /// For this to be profitable, the cost of FDIV must be
   /// substantially higher than normal FP ops like FADD and FMUL.
   bool UseReciprocalEst;
-  
+
   /// Processor has AVX-512 PreFetch Instructions
   bool HasPFI;
 
@@ -381,7 +381,7 @@ public:
   bool isSHLDSlow() const { return IsSHLDSlow; }
   bool isUnalignedMemAccessFast() const { return IsUAMemFast; }
   bool isUnalignedMem32Slow() const { return IsUAMem32Slow; }
-  bool hasVectorUAMem() const { return HasVectorUAMem; }
+  bool hasSSEUnalignedMem() const { return HasSSEUnalignedMem; }
   bool hasCmpxchg16b() const { return HasCmpxchg16b; }
   bool useLeaForSP() const { return UseLeaForSP; }
   bool hasSlowDivide32() const { return HasSlowDivide32; }
@@ -407,11 +407,12 @@ public:
 
   bool isTargetDarwin() const { return TargetTriple.isOSDarwin(); }
   bool isTargetFreeBSD() const { return TargetTriple.isOSFreeBSD(); }
+  bool isTargetDragonFly() const { return TargetTriple.isOSDragonFly(); }
   bool isTargetSolaris() const { return TargetTriple.isOSSolaris(); }
 
   bool isTargetELF() const { return TargetTriple.isOSBinFormatELF(); }
   bool isTargetCOFF() const { return TargetTriple.isOSBinFormatCOFF(); }
-  bool isTargetMacho() const { return TargetTriple.isOSBinFormatMachO(); }
+  bool isTargetMachO() const { return TargetTriple.isOSBinFormatMachO(); }
 
   bool isTargetLinux() const { return TargetTriple.isOSLinux(); }
   bool isTargetNaCl() const { return TargetTriple.isOSNaCl(); }

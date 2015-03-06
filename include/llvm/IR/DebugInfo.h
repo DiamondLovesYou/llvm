@@ -18,10 +18,10 @@
 #define LLVM_IR_DEBUGINFO_H
 
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/iterator_range.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Dwarf.h"
@@ -168,8 +168,9 @@ public:
 
   bool Verify() const;
 
-  operator MDNode *() const { return const_cast<MDNode *>(DbgNode); }
-  MDNode *operator->() const { return const_cast<MDNode *>(DbgNode); }
+  MDNode *get() const { return const_cast<MDNode *>(DbgNode); }
+  operator MDNode *() const { return get(); }
+  MDNode *operator->() const { return get(); }
 
   // An explicit operator bool so that we can do testing of DI values
   // easily.
@@ -499,6 +500,7 @@ public:
 // FIXME: Make this derive from DIType directly & just store the
 // base type in a single DIType field.
 class DICompositeType : public DIDerivedType {
+  friend class DIBuilder;
   friend class DIDescriptor;
   void printInternal(raw_ostream &OS) const;
 
@@ -512,6 +514,8 @@ public:
     assert(!isSubroutineType() && "no elements for DISubroutineType");
     return getFieldAs<DIArray>(4);
   }
+
+private:
   template <typename T>
   void setArrays(DITypedArray<T> Elements, DIArray TParams = DIArray()) {
     assert((!TParams || DbgNode->getNumOperands() == 8) &&
@@ -519,13 +523,18 @@ public:
            "for that!");
     setArraysHelper(Elements, TParams);
   }
+
+public:
   unsigned getRunTimeLang() const {
     return getHeaderFieldAs<unsigned>(7);
   }
   DITypeRef getContainingType() const { return getFieldAs<DITypeRef>(5); }
 
+private:
   /// \brief Set the containing type.
   void setContainingType(DICompositeType ContainingType);
+
+public:
   DIArray getTemplateParams() const { return getFieldAs<DIArray>(6); }
   MDString *getIdentifier() const;
 
@@ -740,7 +749,7 @@ public:
 
   DIScopeRef getContext() const { return getFieldAs<DIScopeRef>(1); }
   DITypeRef getType() const { return getFieldAs<DITypeRef>(2); }
-  Value *getValue() const;
+  Metadata *getValue() const;
   StringRef getFilename() const { return getFieldAs<DIFile>(4).getFilename(); }
   StringRef getDirectory() const {
     return getFieldAs<DIFile>(4).getDirectory();
@@ -868,10 +877,26 @@ class DILocation : public DIDescriptor {
 public:
   explicit DILocation(const MDNode *N) : DIDescriptor(N) {}
 
-  unsigned getLineNumber() const { return getUnsignedField(0); }
-  unsigned getColumnNumber() const { return getUnsignedField(1); }
-  DIScope getScope() const { return getFieldAs<DIScope>(2); }
-  DILocation getOrigLocation() const { return getFieldAs<DILocation>(3); }
+  unsigned getLineNumber() const {
+    if (auto *L = dyn_cast_or_null<MDLocation>(DbgNode))
+      return L->getLine();
+    return 0;
+  }
+  unsigned getColumnNumber() const {
+    if (auto *L = dyn_cast_or_null<MDLocation>(DbgNode))
+      return L->getColumn();
+    return 0;
+  }
+  DIScope getScope() const {
+    if (auto *L = dyn_cast_or_null<MDLocation>(DbgNode))
+      return DIScope(dyn_cast_or_null<MDNode>(L->getScope()));
+    return DIScope(nullptr);
+  }
+  DILocation getOrigLocation() const {
+    if (auto *L = dyn_cast_or_null<MDLocation>(DbgNode))
+      return DILocation(dyn_cast_or_null<MDNode>(L->getInlinedAt()));
+    return DILocation(nullptr);
+  }
   StringRef getFilename() const { return getScope().getFilename(); }
   StringRef getDirectory() const { return getScope().getDirectory(); }
   bool Verify() const;
@@ -892,7 +917,9 @@ public:
     // sure this location is a lexical block before retrieving its
     // value.
     return getScope().isLexicalBlockFile()
-               ? getFieldAs<DILexicalBlockFile>(2).getDiscriminator()
+               ? DILexicalBlockFile(
+                     cast<MDNode>(cast<MDLocation>(DbgNode)->getScope()))
+                     .getDiscriminator()
                : 0;
   }
 

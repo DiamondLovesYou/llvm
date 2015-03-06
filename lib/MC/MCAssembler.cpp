@@ -12,6 +12,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCAsmBackend.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
@@ -21,6 +22,7 @@
 #include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCSection.h"
+#include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/Debug.h"
@@ -28,7 +30,6 @@
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/MC/MCSectionELF.h"
 #include <tuple>
 using namespace llvm;
 
@@ -457,8 +458,8 @@ const MCSymbolData *MCAssembler::getAtom(const MCSymbolData *SD) const {
 
   // Non-linker visible symbols in sections which can't be atomized have no
   // defining atom.
-  if (!getBackend().isSectionAtomizable(
-        SD->getFragment()->getParent()->getSection()))
+  if (!getContext().getAsmInfo()->isSectionAtomizableBySymbols(
+          SD->getFragment()->getParent()->getSection()))
     return nullptr;
 
   // Otherwise, return the atom for the containing fragment.

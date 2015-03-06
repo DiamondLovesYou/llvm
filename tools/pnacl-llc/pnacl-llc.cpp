@@ -325,18 +325,25 @@ static Module* getModule(StringRef ProgramName, LLVMContext &Context,
   raw_string_ostream VerboseStrm(VerboseBuffer);
   if (LazyBitcode) {
     std::string StrError;
+
+    std::unique_ptr<StreamingMemoryObject>
+      Buffer(new ThreadedStreamingCache(StreamingObject));
+
     switch (InputFileFormat) {
     case PNaClFormat:
-      M.reset(getNaClStreamedBitcodeModule(
-          InputFilename,
-          new ThreadedStreamingCache(StreamingObject), Context, &VerboseStrm,
-          &StrError));
+      M.reset(getNaClStreamedBitcodeModule(InputFilename, Buffer.release(),
+                                           Context, &VerboseStrm));
       break;
-    case LLVMFormat:
-      M.reset(getStreamedBitcodeModule(
-          InputFilename,
-          new ThreadedStreamingCache(StreamingObject), Context, &StrError));
+    case LLVMFormat: {
+      ErrorOr<std::unique_ptr<Module>> MOrErr =
+        getStreamedBitcodeModule(InputFilename, Buffer.release(), Context);
+      if (!MOrErr) {
+        StrError = MOrErr.getError().message();
+      } else {
+        M = std::move(*MOrErr);
+      }
       break;
+    }
     case AutodetectFileFormat:
       report_fatal_error("Command can't autodetect file format!");
     }

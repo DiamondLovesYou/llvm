@@ -444,7 +444,7 @@ const char *PNaClABIVerifyFunctions::checkInstruction(const DataLayout *DL,
           if (!(isValidScalarOperand(Arg) ||
                 isValidVectorOperand(Arg) ||
                 isNormalizedPtr(Arg) ||
-                isa<MDNode>(Arg)))
+                isa<MetadataAsValue>(Arg)))
             return "bad intrinsic operand";
         }
 

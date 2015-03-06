@@ -250,7 +250,7 @@ void NaClValueEnumerator::EnumerateValue(const Value *VIn) {
   if (V != VIn) return;
 
   assert(!V->getType()->isVoidTy() && "Can't insert void values!");
-  assert(!isa<MDNode>(V) && !isa<MDString>(V) &&
+  assert(!isa<MetadataAsValue>(V) &&
          "EnumerateValue doesn't handle Metadata!");
 
   // Check to see if it's already in!

@@ -27,16 +27,17 @@ add_llvm_library(LLVMCore
   IntrinsicInst.cpp
   LLVMContext.cpp
   LLVMContextImpl.cpp
-  LeakDetector.cpp
   LegacyPassManager.cpp
   MDBuilder.cpp
   Mangler.cpp
   Metadata.cpp
+  MetadataTracking.cpp
   Module.cpp
   NaClAtomicIntrinsics.cpp
   Pass.cpp
   PassManager.cpp
   PassRegistry.cpp
+  Statepoint.cpp
   Type.cpp
   TypeFinder.cpp
   Use.cpp

@@ -21,6 +21,8 @@
 #include "llvm/Bitcode/NaCl/NaClReaderWriter.h"  // @LOCALMOD
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
@@ -127,6 +129,17 @@ public:
 
 } // end anon namespace
 
+static void diagnosticHandler(const DiagnosticInfo &DI, void *Context) {
+  assert(DI.getSeverity() == DS_Error && "Only expecting errors");
+
+  raw_ostream &OS = errs();
+  OS << (char *)Context << ": ";
+  DiagnosticPrinterRawOStream DP(OS);
+  DI.print(DP);
+  OS << '\n';
+  exit(1);
+}
+
 int main(int argc, char **argv) {
   // Print a stack trace if we signal out.
   sys::PrintStackTraceOnErrorSignal();
@@ -135,6 +148,7 @@ int main(int argc, char **argv) {
   LLVMContext &Context = getGlobalContext();
   llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
 
+  Context.setDiagnosticHandler(diagnosticHandler, argv[0]);
 
   cl::ParseCommandLineOptions(argc, argv, "llvm .bc -> .ll disassembler\n");
 
@@ -142,10 +156,10 @@ int main(int argc, char **argv) {
   std::unique_ptr<Module> M;
 
   // Use the bitcode streaming interface
-  DataStreamer *streamer(getDataFileStreamer(InputFilename, &ErrorMessage));
-  if (streamer) {
+  DataStreamer *Streamer = getDataFileStreamer(InputFilename, &ErrorMessage);
+  if (Streamer) {
     std::unique_ptr<StreamingMemoryObject> Buffer(
-        new StreamingMemoryObjectImpl(streamer));  // @LOCALMOD
+        new StreamingMemoryObjectImpl(Streamer));  // @LOCALMOD
     std::string DisplayFilename;
     if (InputFilename == "-")
       DisplayFilename = "<stdin>";
@@ -154,12 +168,18 @@ int main(int argc, char **argv) {
 
     // @LOCALMOD-BEGIN
     switch (InputFileFormat) {
-      case LLVMFormat:
+      case LLVMFormat: {
         // The Module's BitcodeReader's BitstreamReader takes ownership
-        // of the StreamingMemoryObject.
-        M.reset(getStreamedBitcodeModule(
-            DisplayFilename, Buffer.release(), Context, &ErrorMessage));
+        // of the StreamedMemoryObject.
+        ErrorOr<std::unique_ptr<Module>> MOrErr =
+          getStreamedBitcodeModule(DisplayFilename, Buffer.release(), Context);
+        if (!MOrErr) {
+          ErrorMessage = MOrErr.getError().message();
+        } else {
+          M = std::move(*MOrErr);
+        }
         break;
+      }
       case PNaClFormat: {
         M.reset(getNaClStreamedBitcodeModule(
             DisplayFilename, Buffer.release(), Context, nullptr,

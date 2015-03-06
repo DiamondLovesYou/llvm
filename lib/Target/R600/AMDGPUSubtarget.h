@@ -20,15 +20,17 @@
 #include "AMDGPUIntrinsicInfo.h"
 #include "AMDGPUSubtarget.h"
 #include "R600ISelLowering.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 
 #define GET_SUBTARGETINFO_HEADER
 #include "AMDGPUGenSubtargetInfo.inc"
 
 namespace llvm {
+
+class SIMachineFunctionInfo;
 
 class AMDGPUSubtarget : public AMDGPUGenSubtargetInfo {
 
@@ -39,7 +41,8 @@ public:
     EVERGREEN,
     NORTHERN_ISLANDS,
     SOUTHERN_ISLANDS,
-    SEA_ISLANDS
+    SEA_ISLANDS,
+    VOLCANIC_ISLANDS,
   };
 
 private:
@@ -62,12 +65,14 @@ private:
   unsigned WavefrontSize;
   bool CFALUBug;
   int LocalMemorySize;
+  bool EnableVGPRSpilling;
 
   const DataLayout DL;
   AMDGPUFrameLowering FrameLowering;
   std::unique_ptr<AMDGPUTargetLowering> TLInfo;
   std::unique_ptr<AMDGPUInstrInfo> InstrInfo;
   InstrItineraryData InstrItins;
+  Triple TargetTriple;
 
 public:
   AMDGPUSubtarget(StringRef TT, StringRef CPU, StringRef FS, TargetMachine &TM);
@@ -198,9 +203,15 @@ public:
     return LocalMemorySize;
   }
 
+  unsigned getAmdKernelCodeChipID() const;
+
   bool enableMachineScheduler() const override {
     return getGeneration() <= NORTHERN_ISLANDS;
   }
+
+  void overrideSchedPolicy(MachineSchedPolicy &Policy,
+                           MachineInstr *begin, MachineInstr *end,
+                           unsigned NumRegionInstrs) const override;
 
   // Helper functions to simplify if statements
   bool isTargetELF() const {
@@ -216,6 +227,18 @@ public:
   }
   bool r600ALUEncoding() const {
     return R600ALUInst;
+  }
+  bool isAmdHsaOS() const {
+    return TargetTriple.getOS() == Triple::AMDHSA;
+  }
+  bool isVGPRSpillingEnabled(const SIMachineFunctionInfo *MFI) const;
+
+  unsigned getMaxWavesPerCU() const {
+    if (getGeneration() >= AMDGPUSubtarget::SOUTHERN_ISLANDS)
+      return 10;
+
+    // FIXME: Not sure what this is for other subtagets.
+    llvm_unreachable("do not know max waves per CU for this subtarget.");
   }
 };
 

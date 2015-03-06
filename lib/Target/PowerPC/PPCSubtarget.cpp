@@ -19,6 +19,7 @@
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
@@ -31,6 +32,9 @@ using namespace llvm;
 #define GET_SUBTARGETINFO_TARGET_DESC
 #define GET_SUBTARGETINFO_CTOR
 #include "PPCGenSubtargetInfo.inc"
+
+static cl::opt<bool> UseSubRegLiveness("ppc-track-subreg-liveness",
+cl::desc("Enable subregister liveness tracking for PPC"), cl::Hidden);
 
 /// Return the datalayout string of a subtarget.
 static std::string getDataLayoutString(const Triple &T) {
@@ -108,6 +112,7 @@ void PPCSubtarget::initializeEnvironment() {
   HasFPCVT = false;
   HasISEL = false;
   HasPOPCNTD = false;
+  HasCMPB = false;
   HasLDBRX = false;
   IsBookE = false;
   HasOnlyMSYNC = false;
@@ -153,13 +158,6 @@ void PPCSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
 
   // Determine endianness.
   IsLittleEndian = (TargetTriple.getArch() == Triple::ppc64le);
-
-  // FIXME: For now, we disable VSX in little-endian mode until endian
-  // issues in those instructions can be addressed.
-  if (IsLittleEndian) {
-    HasVSX = false;
-    HasP8Vector = false;
-  }
 
   // Determine default ABI.
   if (TargetABI == PPC_ABI_UNKNOWN) {
@@ -238,5 +236,9 @@ void PPCSubtarget::overrideSchedPolicy(MachineSchedPolicy &Policy,
 bool PPCSubtarget::useAA() const {
   // Use AA during code generation for the embedded cores.
   return needsAggressiveScheduling(DarwinDirective);
+}
+
+bool PPCSubtarget::enableSubRegLiveness() const {
+  return UseSubRegLiveness;
 }
 

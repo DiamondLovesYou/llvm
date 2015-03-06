@@ -83,6 +83,7 @@ namespace lltok {
     kw_inteldialect,
     kw_gc,
     kw_prefix,
+    kw_prologue,
     kw_c,
 
     kw_cc, kw_ccc, kw_fastcc, kw_coldcc,
@@ -180,6 +181,9 @@ namespace lltok {
 
     kw_extractelement, kw_insertelement, kw_shufflevector,
     kw_extractvalue, kw_insertvalue, kw_blockaddress,
+
+    // Metadata types.
+    kw_distinct,
 
     // Use-list order directives.
     kw_uselistorder, kw_uselistorder_bb,

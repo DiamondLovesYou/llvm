@@ -72,7 +72,30 @@ LLVMContextImpl::~LLVMContextImpl() {
   // the container. Avoid iterators during this operation:
   while (!OwnedModules.empty())
     delete *OwnedModules.begin();
-  
+
+  // Drop references for MDNodes.  Do this before Values get deleted to avoid
+  // unnecessary RAUW when nodes are still unresolved.
+  for (auto *I : DistinctMDNodes)
+    I->dropAllReferences();
+  for (auto *I : MDTuples)
+    I->dropAllReferences();
+  for (auto *I : MDLocations)
+    I->dropAllReferences();
+
+  // Also drop references that come from the Value bridges.
+  for (auto &Pair : ValuesAsMetadata)
+    Pair.second->dropUsers();
+  for (auto &Pair : MetadataAsValues)
+    Pair.second->dropUse();
+
+  // Destroy MDNodes.
+  for (UniquableMDNode *I : DistinctMDNodes)
+    I->deleteAsSubclass();
+  for (MDTuple *I : MDTuples)
+    delete I;
+  for (MDLocation *I : MDLocations)
+    delete I;
+
   // Free the constants.  This is important to do here to ensure that they are
   // freed before the LeakDetector is torn down.
   std::for_each(ExprConstants.map_begin(), ExprConstants.map_end(),
@@ -120,18 +143,20 @@ LLVMContextImpl::~LLVMContextImpl() {
     delete &*Elem;
   }
 
-  // Destroy MDNodes.  ~MDNode can move and remove nodes between the MDNodeSet
-  // and the NonUniquedMDNodes sets, so copy the values out first.
-  SmallVector<GenericMDNode *, 8> MDNodes;
-  MDNodes.reserve(MDNodeSet.size() + NonUniquedMDNodes.size());
-  MDNodes.append(MDNodeSet.begin(), MDNodeSet.end());
-  MDNodes.append(NonUniquedMDNodes.begin(), NonUniquedMDNodes.end());
-  for (GenericMDNode *I : MDNodes)
-    I->dropAllReferences();
-  for (GenericMDNode *I : MDNodes)
-    delete I;
-  assert(MDNodeSet.empty() && NonUniquedMDNodes.empty() &&
-         "Destroying all MDNodes didn't empty the Context's sets.");
+  // Destroy MetadataAsValues.
+  {
+    SmallVector<MetadataAsValue *, 8> MDVs;
+    MDVs.reserve(MetadataAsValues.size());
+    for (auto &Pair : MetadataAsValues)
+      MDVs.push_back(Pair.second);
+    MetadataAsValues.clear();
+    for (auto *V : MDVs)
+      delete V;
+  }
+
+  // Destroy ValuesAsMetadata.
+  for (auto &Pair : ValuesAsMetadata)
+    delete Pair.second;
 
   // Destroy MDStrings.
   MDStringCache.clear();

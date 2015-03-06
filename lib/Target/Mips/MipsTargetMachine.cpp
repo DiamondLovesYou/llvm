@@ -60,11 +60,11 @@ MipsTargetMachine::MipsTargetMachine(const Target &T, StringRef TT,
       isLittle(isLittle),
       TLOF(make_unique<MipsTargetObjectFile>()),
       Subtarget(nullptr),
-      DefaultSubtarget(TT, CPU, FS, isLittle, this),
+      DefaultSubtarget(TT, CPU, FS, isLittle, *this),
       NoMips16Subtarget(TT, CPU, FS.empty() ? "-mips16" : FS.str() + ",-mips16",
-                        isLittle, this),
+                        isLittle, *this),
       Mips16Subtarget(TT, CPU, FS.empty() ? "+mips16" : FS.str() + ",+mips16",
-                      isLittle, this) {
+                      isLittle, *this) {
   Subtarget = &DefaultSubtarget;
   initAsmInfo();
 }
@@ -133,7 +133,7 @@ MipsTargetMachine::getSubtargetImpl(const Function &F) const {
     // creation will depend on the TM and the code generation flags on the
     // function that reside in TargetOptions.
     resetTargetOptions(F);
-    I = llvm::make_unique<MipsSubtarget>(TargetTriple, CPU, FS, isLittle, this);
+    I = llvm::make_unique<MipsSubtarget>(TargetTriple, CPU, FS, isLittle, *this);
   }
   return I.get();
 }
@@ -170,9 +170,9 @@ public:
   void addIRPasses() override;
   bool addInstSelector() override;
   void addMachineSSAOptimization() override;
-  bool addPreEmitPass() override;
+  void addPreEmitPass() override;
 
-  bool addPreRegAlloc() override;
+  void addPreRegAlloc() override;
 
 };
 } // namespace
@@ -203,13 +203,9 @@ void MipsPassConfig::addMachineSSAOptimization() {
   TargetPassConfig::addMachineSSAOptimization();
 }
 
-bool MipsPassConfig::addPreRegAlloc() {
-  if (getOptLevel() == CodeGenOpt::None) {
+void MipsPassConfig::addPreRegAlloc() {
+  if (getOptLevel() == CodeGenOpt::None)
     addPass(createMipsOptimizePICCallPass(getMipsTargetMachine()));
-    return true;
-  }
-  else
-    return false;
 }
 
 void MipsTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
@@ -228,10 +224,9 @@ void MipsTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
 // Implemented by targets that want to run passes immediately before
 // machine code is emitted. return true if -print-machineinstrs should
 // print out the code after the passes.
-bool MipsPassConfig::addPreEmitPass() {
+void MipsPassConfig::addPreEmitPass() {
   MipsTargetMachine &TM = getMipsTargetMachine();
   addPass(createMipsDelaySlotFillerPass(TM));
   addPass(createMipsLongBranchPass(TM));
   addPass(createMipsConstantIslandPass(TM));
-  return true;
 }

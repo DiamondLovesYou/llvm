@@ -187,9 +187,6 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
   setOperationAction(ISD::LOAD, MVT::v2f32, Promote);
   AddPromotedToType(ISD::LOAD, MVT::v2f32, MVT::v2i32);
 
-  setOperationAction(ISD::LOAD, MVT::i64, Promote);
-  AddPromotedToType(ISD::LOAD, MVT::i64, MVT::v2i32);
-
   setOperationAction(ISD::LOAD, MVT::v4f32, Promote);
   AddPromotedToType(ISD::LOAD, MVT::v4f32, MVT::v4i32);
 
@@ -216,18 +213,28 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
   setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v8f32, Custom);
   setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v8i32, Custom);
 
-  setLoadExtAction(ISD::EXTLOAD, MVT::v2i8, Expand);
-  setLoadExtAction(ISD::SEXTLOAD, MVT::v2i8, Expand);
-  setLoadExtAction(ISD::ZEXTLOAD, MVT::v2i8, Expand);
-  setLoadExtAction(ISD::EXTLOAD, MVT::v4i8, Expand);
-  setLoadExtAction(ISD::SEXTLOAD, MVT::v4i8, Expand);
-  setLoadExtAction(ISD::ZEXTLOAD, MVT::v4i8, Expand);
-  setLoadExtAction(ISD::EXTLOAD, MVT::v2i16, Expand);
-  setLoadExtAction(ISD::SEXTLOAD, MVT::v2i16, Expand);
-  setLoadExtAction(ISD::ZEXTLOAD, MVT::v2i16, Expand);
-  setLoadExtAction(ISD::EXTLOAD, MVT::v4i16, Expand);
-  setLoadExtAction(ISD::SEXTLOAD, MVT::v4i16, Expand);
-  setLoadExtAction(ISD::ZEXTLOAD, MVT::v4i16, Expand);
+  // There are no 64-bit extloads. These should be done as a 32-bit extload and
+  // an extension to 64-bit.
+  for (MVT VT : MVT::integer_valuetypes()) {
+    setLoadExtAction(ISD::EXTLOAD, MVT::i64, VT, Expand);
+    setLoadExtAction(ISD::SEXTLOAD, MVT::i64, VT, Expand);
+    setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, VT, Expand);
+  }
+
+  for (MVT VT : MVT::integer_vector_valuetypes()) {
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::v2i8, Expand);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::v2i8, Expand);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::v2i8, Expand);
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::v4i8, Expand);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::v4i8, Expand);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::v4i8, Expand);
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::v2i16, Expand);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::v2i16, Expand);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::v2i16, Expand);
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::v4i16, Expand);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::v4i16, Expand);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::v4i16, Expand);
+  }
 
   setOperationAction(ISD::BR_CC, MVT::i1, Expand);
 
@@ -246,7 +253,8 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
 
   setOperationAction(ISD::FP16_TO_FP, MVT::f64, Expand);
 
-  setLoadExtAction(ISD::EXTLOAD, MVT::f16, Expand);
+  setLoadExtAction(ISD::EXTLOAD, MVT::f32, MVT::f16, Expand);
+  setLoadExtAction(ISD::EXTLOAD, MVT::f64, MVT::f16, Expand);
   setTruncStoreAction(MVT::f32, MVT::f16, Expand);
   setTruncStoreAction(MVT::f64, MVT::f16, Expand);
 
@@ -400,6 +408,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
   // large sequence of instructions.
   setIntDivIsCheap(false);
   setPow2SDivIsCheap(false);
+  setFsqrtIsCheap(true);
 
   // FIXME: Need to really handle these.
   MaxStoresPerMemcpy  = 4096;
@@ -432,6 +441,29 @@ bool AMDGPUTargetLowering::ShouldShrinkFPConstant(EVT VT) const {
   return (ScalarVT != MVT::f32 && ScalarVT != MVT::f64);
 }
 
+bool AMDGPUTargetLowering::shouldReduceLoadWidth(SDNode *N,
+                                                 ISD::LoadExtType,
+                                                 EVT NewVT) const {
+
+  unsigned NewSize = NewVT.getStoreSizeInBits();
+
+  // If we are reducing to a 32-bit load, this is always better.
+  if (NewSize == 32)
+    return true;
+
+  EVT OldVT = N->getValueType(0);
+  unsigned OldSize = OldVT.getStoreSizeInBits();
+
+  // Don't produce extloads from sub 32-bit types. SI doesn't have scalar
+  // extloads, so doing one requires using a buffer_load. In cases where we
+  // still couldn't use a scalar load, using the wider load shouldn't really
+  // hurt anything.
+
+  // If the old size already had to be an extload, there's no harm in continuing
+  // to reduce the width.
+  return (OldSize < 32);
+}
+
 bool AMDGPUTargetLowering::isLoadBitCastBeneficial(EVT LoadTy,
                                                    EVT CastTy) const {
   if (LoadTy.getSizeInBits() != CastTy.getSizeInBits())
@@ -443,6 +475,18 @@ bool AMDGPUTargetLowering::isLoadBitCastBeneficial(EVT LoadTy,
   return ((LScalarSize <= CastScalarSize) ||
           (CastScalarSize >= 32) ||
           (LScalarSize < 32));
+}
+
+// SI+ has instructions for cttz / ctlz for 32-bit values. This is probably also
+// profitable with the expansion for 64-bit since it's generally good to
+// speculate things.
+// FIXME: These should really have the size as a parameter.
+bool AMDGPUTargetLowering::isCheapToSpeculateCttz() const {
+  return true;
+}
+
+bool AMDGPUTargetLowering::isCheapToSpeculateCtlz() const {
+  return true;
 }
 
 //===---------------------------------------------------------------------===//
@@ -892,7 +936,19 @@ SDValue AMDGPUTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
       return DAG.getNode(AMDGPUISD::RSQ_LEGACY, DL, VT, Op.getOperand(1));
 
     case Intrinsic::AMDGPU_rsq_clamped:
-      return DAG.getNode(AMDGPUISD::RSQ_CLAMPED, DL, VT, Op.getOperand(1));
+      if (Subtarget->getGeneration() >= AMDGPUSubtarget::VOLCANIC_ISLANDS) {
+        Type *Type = VT.getTypeForEVT(*DAG.getContext());
+        APFloat Max = APFloat::getLargest(Type->getFltSemantics());
+        APFloat Min = APFloat::getLargest(Type->getFltSemantics(), true);
+
+        SDValue Rsq = DAG.getNode(AMDGPUISD::RSQ, DL, VT, Op.getOperand(1));
+        SDValue Tmp = DAG.getNode(ISD::FMINNUM, DL, VT, Rsq,
+                                  DAG.getConstantFP(Max, VT));
+        return DAG.getNode(ISD::FMAXNUM, DL, VT, Tmp,
+                           DAG.getConstantFP(Min, VT));
+      } else {
+        return DAG.getNode(AMDGPUISD::RSQ_CLAMPED, DL, VT, Op.getOperand(1));
+      }
 
     case Intrinsic::AMDGPU_ldexp:
       return DAG.getNode(AMDGPUISD::LDEXP, DL, VT, Op.getOperand(1),
@@ -965,6 +1021,10 @@ SDValue AMDGPUTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     case AMDGPUIntrinsic::AMDGPU_brev:
       return DAG.getNode(AMDGPUISD::BREV, DL, VT, Op.getOperand(1));
 
+  case Intrinsic::AMDGPU_class:
+    return DAG.getNode(AMDGPUISD::FP_CLASS, DL, VT,
+                       Op.getOperand(1), Op.getOperand(2));
+
     case AMDGPUIntrinsic::AMDIL_exp: // Legacy name.
       return DAG.getNode(ISD::FEXP2, DL, VT, Op.getOperand(1));
 
@@ -1003,17 +1063,21 @@ SDValue AMDGPUTargetLowering::LowerIntrinsicLRP(SDValue Op,
 }
 
 /// \brief Generate Min/Max node
-SDValue AMDGPUTargetLowering::CombineFMinMax(SDLoc DL,
-                                             EVT VT,
-                                             SDValue LHS,
-                                             SDValue RHS,
-                                             SDValue True,
-                                             SDValue False,
-                                             SDValue CC,
-                                             SelectionDAG &DAG) const {
+SDValue AMDGPUTargetLowering::CombineFMinMaxLegacy(SDLoc DL,
+                                                   EVT VT,
+                                                   SDValue LHS,
+                                                   SDValue RHS,
+                                                   SDValue True,
+                                                   SDValue False,
+                                                   SDValue CC,
+                                                   DAGCombinerInfo &DCI) const {
+  if (Subtarget->getGeneration() >= AMDGPUSubtarget::VOLCANIC_ISLANDS)
+    return SDValue();
+
   if (!(LHS == True && RHS == False) && !(LHS == False && RHS == True))
     return SDValue();
 
+  SelectionDAG &DAG = DCI.DAG;
   ISD::CondCode CCOpcode = cast<CondCodeSDNode>(CC)->get();
   switch (CCOpcode) {
   case ISD::SETOEQ:
@@ -1030,27 +1094,47 @@ SDValue AMDGPUTargetLowering::CombineFMinMax(SDLoc DL,
   case ISD::SETO:
     break;
   case ISD::SETULE:
-  case ISD::SETULT:
-  case ISD::SETOLE:
-  case ISD::SETOLT:
-  case ISD::SETLE:
-  case ISD::SETLT: {
-    // We need to permute the operands to get the correct NaN behavior. The
-    // selected operand is the second one based on the failing compare with NaN,
-    // so permute it based on the compare type the hardware uses.
+  case ISD::SETULT: {
     if (LHS == True)
       return DAG.getNode(AMDGPUISD::FMIN_LEGACY, DL, VT, RHS, LHS);
     return DAG.getNode(AMDGPUISD::FMAX_LEGACY, DL, VT, LHS, RHS);
   }
-  case ISD::SETGT:
-  case ISD::SETGE:
+  case ISD::SETOLE:
+  case ISD::SETOLT:
+  case ISD::SETLE:
+  case ISD::SETLT: {
+    // Ordered. Assume ordered for undefined.
+
+    // Only do this after legalization to avoid interfering with other combines
+    // which might occur.
+    if (DCI.getDAGCombineLevel() < AfterLegalizeDAG &&
+        !DCI.isCalledByLegalizer())
+      return SDValue();
+
+    // We need to permute the operands to get the correct NaN behavior. The
+    // selected operand is the second one based on the failing compare with NaN,
+    // so permute it based on the compare type the hardware uses.
+    if (LHS == True)
+      return DAG.getNode(AMDGPUISD::FMIN_LEGACY, DL, VT, LHS, RHS);
+    return DAG.getNode(AMDGPUISD::FMAX_LEGACY, DL, VT, RHS, LHS);
+  }
   case ISD::SETUGE:
-  case ISD::SETOGE:
-  case ISD::SETUGT:
-  case ISD::SETOGT: {
+  case ISD::SETUGT: {
     if (LHS == True)
       return DAG.getNode(AMDGPUISD::FMAX_LEGACY, DL, VT, RHS, LHS);
     return DAG.getNode(AMDGPUISD::FMIN_LEGACY, DL, VT, LHS, RHS);
+  }
+  case ISD::SETGT:
+  case ISD::SETGE:
+  case ISD::SETOGE:
+  case ISD::SETOGT: {
+    if (DCI.getDAGCombineLevel() < AfterLegalizeDAG &&
+        !DCI.isCalledByLegalizer())
+      return SDValue();
+
+    if (LHS == True)
+      return DAG.getNode(AMDGPUISD::FMAX_LEGACY, DL, VT, LHS, RHS);
+    return DAG.getNode(AMDGPUISD::FMIN_LEGACY, DL, VT, RHS, LHS);
   }
   case ISD::SETCC_INVALID:
     llvm_unreachable("Invalid setcc condcode!");
@@ -1332,24 +1416,6 @@ SDValue AMDGPUTargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   ISD::LoadExtType ExtType = Load->getExtensionType();
   EVT VT = Op.getValueType();
   EVT MemVT = Load->getMemoryVT();
-
-  if (ExtType != ISD::NON_EXTLOAD && !VT.isVector() && VT.getSizeInBits() > 32) {
-    // We can do the extload to 32-bits, and then need to separately extend to
-    // 64-bits.
-
-    SDValue ExtLoad32 = DAG.getExtLoad(ExtType, DL, MVT::i32,
-                                       Load->getChain(),
-                                       Load->getBasePtr(),
-                                       MemVT,
-                                       Load->getMemOperand());
-
-    SDValue Ops[] = {
-      DAG.getNode(ISD::getExtForLoadExtType(ExtType), DL, VT, ExtLoad32),
-      ExtLoad32.getValue(1)
-    };
-
-    return DAG.getMergeValues(Ops, DL);
-  }
 
   if (ExtType == ISD::NON_EXTLOAD && VT.getSizeInBits() < 32) {
     assert(VT == MVT::i1 && "Only i1 non-extloads expected");
@@ -2235,27 +2301,9 @@ SDValue AMDGPUTargetLowering::PerformDAGCombine(SDNode *N,
       simplifyI24(N1, DCI);
       return SDValue();
     }
-  case ISD::SELECT_CC: {
-    SDLoc DL(N);
-    EVT VT = N->getValueType(0);
-
-    if (VT == MVT::f32 ||
-        (VT == MVT::f64 &&
-         Subtarget->getGeneration() >= AMDGPUSubtarget::SOUTHERN_ISLANDS)) {
-      SDValue LHS = N->getOperand(0);
-      SDValue RHS = N->getOperand(1);
-      SDValue True = N->getOperand(2);
-      SDValue False = N->getOperand(3);
-      SDValue CC = N->getOperand(4);
-
-      return CombineFMinMax(DL, VT, LHS, RHS, True, False, CC, DAG);
-    }
-
-    break;
-  }
   case ISD::SELECT: {
     SDValue Cond = N->getOperand(0);
-    if (Cond.getOpcode() == ISD::SETCC) {
+    if (Cond.getOpcode() == ISD::SETCC && Cond.hasOneUse()) {
       SDLoc DL(N);
       EVT VT = N->getValueType(0);
       SDValue LHS = Cond.getOperand(0);
@@ -2265,11 +2313,8 @@ SDValue AMDGPUTargetLowering::PerformDAGCombine(SDNode *N,
       SDValue True = N->getOperand(1);
       SDValue False = N->getOperand(2);
 
-      if (VT == MVT::f32 ||
-          (VT == MVT::f64 &&
-           Subtarget->getGeneration() >= AMDGPUSubtarget::SOUTHERN_ISLANDS)) {
-        return CombineFMinMax(DL, VT, LHS, RHS, True, False, CC, DAG);
-      }
+      if (VT == MVT::f32)
+        return CombineFMinMaxLegacy(DL, VT, LHS, RHS, True, False, CC, DCI);
 
       // TODO: Implement min / max Evergreen instructions.
       if (VT == MVT::i32 &&
@@ -2478,6 +2523,7 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(RSQ_LEGACY)
   NODE_NAME_CASE(RSQ_CLAMPED)
   NODE_NAME_CASE(LDEXP)
+  NODE_NAME_CASE(FP_CLASS)
   NODE_NAME_CASE(DOT4)
   NODE_NAME_CASE(BFE_U32)
   NODE_NAME_CASE(BFE_I32)
@@ -2507,6 +2553,46 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(STORE_MSKOR)
   NODE_NAME_CASE(TBUFFER_STORE_FORMAT)
   }
+}
+
+SDValue AMDGPUTargetLowering::getRsqrtEstimate(SDValue Operand,
+                                               DAGCombinerInfo &DCI,
+                                               unsigned &RefinementSteps,
+                                               bool &UseOneConstNR) const {
+  SelectionDAG &DAG = DCI.DAG;
+  EVT VT = Operand.getValueType();
+
+  if (VT == MVT::f32) {
+    RefinementSteps = 0;
+    return DAG.getNode(AMDGPUISD::RSQ, SDLoc(Operand), VT, Operand);
+  }
+
+  // TODO: There is also f64 rsq instruction, but the documentation is less
+  // clear on its precision.
+
+  return SDValue();
+}
+
+SDValue AMDGPUTargetLowering::getRecipEstimate(SDValue Operand,
+                                               DAGCombinerInfo &DCI,
+                                               unsigned &RefinementSteps) const {
+  SelectionDAG &DAG = DCI.DAG;
+  EVT VT = Operand.getValueType();
+
+  if (VT == MVT::f32) {
+    // Reciprocal, < 1 ulp error.
+    //
+    // This reciprocal approximation converges to < 0.5 ulp error with one
+    // newton rhapson performed with two fused multiple adds (FMAs).
+
+    RefinementSteps = 0;
+    return DAG.getNode(AMDGPUISD::RCP, SDLoc(Operand), VT, Operand);
+  }
+
+  // TODO: There is also f64 rcp instruction, but the documentation is less
+  // clear on its precision.
+
+  return SDValue();
 }
 
 static void computeKnownBitsForMinMax(const SDValue Op0,

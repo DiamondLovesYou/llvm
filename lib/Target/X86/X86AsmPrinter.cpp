@@ -535,7 +535,7 @@ bool X86AsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
 }
 
 void X86AsmPrinter::EmitStartOfAsmFile(Module &M) {
-  if (Subtarget->isTargetMacho())
+  if (Subtarget->isTargetMachO())
     OutStreamer.SwitchSection(getObjFileLowering().getTextSection());
 
   if (Subtarget->isTargetCOFF()) {
@@ -639,10 +639,10 @@ void X86AsmPrinter::GenerateExportDirective(const MCSymbol *Sym, bool IsData) {
 }
 
 void X86AsmPrinter::EmitEndOfAsmFile(Module &M) {
-  if (Subtarget->isTargetMacho()) {
+  if (Subtarget->isTargetMachO()) {
     // All darwin targets use mach-o.
     MachineModuleInfoMachO &MMIMacho =
-      MMI->getObjFileInfo<MachineModuleInfoMachO>();
+        MMI->getObjFileInfo<MachineModuleInfoMachO>();
 
     // Output stubs for dynamically-linked functions.
     MachineModuleInfoMachO::SymbolListTy Stubs;
@@ -724,11 +724,11 @@ void X86AsmPrinter::EmitEndOfAsmFile(Module &M) {
     std::vector<const MCSymbol*> DLLExportedFns, DLLExportedGlobals;
 
     for (const auto &Function : M)
-      if (Function.hasDLLExportStorageClass())
+      if (Function.hasDLLExportStorageClass() && !Function.isDeclaration())
         DLLExportedFns.push_back(getSymbol(&Function));
 
     for (const auto &Global : M.globals())
-      if (Global.hasDLLExportStorageClass())
+      if (Global.hasDLLExportStorageClass() && !Global.isDeclaration())
         DLLExportedGlobals.push_back(getSymbol(&Global));
 
     for (const auto &Alias : M.aliases()) {

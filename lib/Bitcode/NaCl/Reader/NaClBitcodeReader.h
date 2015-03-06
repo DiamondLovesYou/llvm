@@ -237,6 +237,8 @@ public:
   std::error_code MaterializeModule(Module *M) override;
   void Dematerialize(GlobalValue *GV) override;
   void releaseBuffer();
+  std::vector<StructType *>
+  getIdentifiedStructTypes() const override final;
 
   std::error_code Error(ErrorType E) const {
     return std::error_code(E, BitcodeErrorCategory());

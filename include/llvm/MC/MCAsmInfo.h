@@ -47,6 +47,7 @@ enum class ExceptionHandling {
   SjLj,         /// setjmp/longjmp based exceptions
   ARM,          /// ARM EHABI
   ItaniumWinEH, /// Itanium EH built on Windows unwind info (.pdata and .xdata)
+  MSVC,         /// MSVC compatible exception handling
 };
 
 namespace LCOMM {
@@ -122,6 +123,10 @@ protected:
   /// completely private to the .s file and should not have names in the .o
   /// file.  Defaults to "L"
   const char *PrivateGlobalPrefix;
+
+  /// This prefix is used for labels for basic blocks. Defaults to the same as
+  /// PrivateGlobalPrefix.
+  const char *PrivateLabelPrefix;
 
   /// This prefix is used for symbols that should be passed through the
   /// assembler but be removed by the linker.  This is 'l' on Darwin, currently
@@ -377,6 +382,12 @@ public:
     return nullptr;
   }
 
+  /// \brief True if the section is atomized using the symbols in it.
+  /// This is false if the section is not atomized at all (most ELF sections) or
+  /// if it is atomized based on its contents (MachO' __TEXT,__cstring for
+  /// example).
+  virtual bool isSectionAtomizableBySymbols(const MCSection &Section) const;
+
   virtual const MCExpr *getExprForPersonalitySymbol(const MCSymbol *Sym,
                                                     unsigned Encoding,
                                                     MCStreamer &Streamer) const;
@@ -418,6 +429,7 @@ public:
 
   bool useAssignmentForEHBegin() const { return UseAssignmentForEHBegin; }
   const char *getPrivateGlobalPrefix() const { return PrivateGlobalPrefix; }
+  const char *getPrivateLabelPrefix() const { return PrivateLabelPrefix; }
   bool hasLinkerPrivateGlobalPrefix() const {
     return LinkerPrivateGlobalPrefix[0] != '\0';
   }
@@ -485,6 +497,11 @@ public:
             ExceptionsType == ExceptionHandling::ARM ||
             // This Windows EH type uses the Itanium LSDA encoding.
             ExceptionsType == ExceptionHandling::ItaniumWinEH);
+  }
+
+  bool usesWindowsCFI() const {
+    return ExceptionsType == ExceptionHandling::ItaniumWinEH ||
+           ExceptionsType == ExceptionHandling::MSVC;
   }
 
   bool doesDwarfUseRelocationsAcrossSections() const {

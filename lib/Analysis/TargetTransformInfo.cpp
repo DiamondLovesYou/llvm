@@ -101,6 +101,17 @@ bool TargetTransformInfo::isLegalICmpImmediate(int64_t Imm) const {
   return PrevTTI->isLegalICmpImmediate(Imm);
 }
 
+bool TargetTransformInfo::isLegalMaskedLoad(Type *DataType,
+                                            int Consecutive) const {
+  return false;
+}
+
+bool TargetTransformInfo::isLegalMaskedStore(Type *DataType,
+                                             int Consecutive) const {
+  return false;
+}
+
+
 bool TargetTransformInfo::isLegalAddressingMode(Type *Ty, GlobalValue *BaseGV,
                                                 int64_t BaseOffset,
                                                 bool HasBaseReg,
@@ -208,7 +219,6 @@ unsigned TargetTransformInfo::getMemoryOpCost(unsigned Opcode, Type *Src,
                                               unsigned Alignment,
                                               unsigned AddressSpace) const {
   return PrevTTI->getMemoryOpCost(Opcode, Src, Alignment, AddressSpace);
-  ;
 }
 
 unsigned

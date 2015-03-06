@@ -1,5 +1,5 @@
 ; RUN: llc < %s -mtriple=x86_64-linux -O0 | FileCheck %s --check-prefix=X64
-; RUN: llc < %s -mtriple=x86_64-win32 -O0 | FileCheck %s --check-prefix=X64
+; RUN: llc < %s -mtriple=x86_64-windows-itanium -O0 | FileCheck %s --check-prefix=X64
 ; RUN: llc < %s -march=x86 -O0 | FileCheck %s --check-prefix=X32
 ; @LOCALMOD-BEGIN
 ; RUN: pnacl-llc < %s -mtriple=i686-nacl -march=x86 -O0 | FileCheck %s --check-prefix=NACL32
