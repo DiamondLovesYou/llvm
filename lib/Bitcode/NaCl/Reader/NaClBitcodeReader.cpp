@@ -192,10 +192,8 @@ static_assert(
 std::error_code NaClBitcodeReader::Error(ErrorType E,
                                          const std::string &Message) const {
   if (Verbose) {
-    uint64_t Bit = Stream.GetCurrentBitNo();
-    *Verbose << "Error: (" <<  (Bit / CHAR_BIT) << ":"
-             << static_cast<unsigned>(Bit % CHAR_BIT)
-             << ") " << Message << "\n";
+    naclbitc::ErrorAt(*Verbose, naclbitc::Error, Stream.GetCurrentBitNo())
+        << Message << "\n";
   }
   return Error(E);
 }
@@ -1846,10 +1844,12 @@ std::error_code NaClBitcodeReader::InitStreamFromBuffer() {
     return Error(InvalidBitstream,
                  "Bitcode stream should be a multiple of 4 bytes in length");
 
-  if (Header.Read(BufPtr, BufEnd))
+  const unsigned char *HeaderPtr = BufPtr;
+  if (Header.Read(HeaderPtr, BufEnd))
     return Error(InvalidBitstream, Header.Unsupported());
 
-  StreamFile.reset(new NaClBitstreamReader(BufPtr, BufEnd));
+  StreamFile.reset(new NaClBitstreamReader(BufPtr, BufEnd,
+                                           Header.getHeaderSize()));
   Stream.init(StreamFile.get());
 
   if (AcceptHeader())

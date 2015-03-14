@@ -31,7 +31,7 @@ OPTIONAL_DIRS := lldb
 # in parallel builds.  Please retain this ordering.
 DIRS := llvm-config
 PARALLEL_DIRS := pnacl-llc pnacl-abicheck pnacl-bcanalyzer pnacl-freeze \
-                 pnacl-benchmark pnacl-thaw pnacl-bccompress pnacl-bcdis \
+                 pnacl-thaw pnacl-bccompress pnacl-bcdis \
                  opt llvm-as llvm-dis llc llvm-ar llvm-nm llvm-link \
                  lli llvm-extract llvm-mc bugpoint llvm-bcanalyzer llvm-diff \
                  macho-dump llvm-objdump llvm-readobj llvm-rtdyld \
@@ -47,8 +47,13 @@ endif
 # Let users override the set of tools to build from the command line.
 ifdef ONLY_TOOLS
   OPTIONAL_PARALLEL_DIRS :=
+  # @LOCALMOD-BEGIN -- Allow subzero to be built as a tool if requested.
+  ifneq ($(findstring subzero,$(ONLY_TOOLS)),)
+    OPTIONAL_PARALLEL_DIRS += $(SUBZERO_SRC_ROOT)
+  endif
+  # @LOCALMOD-END
   OPTIONAL_DIRS := $(findstring lldb,$(ONLY_TOOLS))
-  PARALLEL_DIRS := $(filter-out lldb,$(ONLY_TOOLS))
+  PARALLEL_DIRS := $(filter-out lldb subzero,$(ONLY_TOOLS)) # @LOCALMOD
 endif
 
 # These libraries build as dynamic libraries (.dylib /.so), they can only be

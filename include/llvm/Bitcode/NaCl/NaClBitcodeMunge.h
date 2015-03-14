@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Test harness for generating a PNaCl bitcode memory buffer from
-// an array, and parse/objdump the resulting contents.
+// an array, and parse/objdump/compress the resulting contents.
 //
 // Generates a bitcode memory buffer from an array containing 1 or
 // more PNaCl records. Used to test errors in PNaCl bitcode.
@@ -139,6 +139,8 @@ protected:
   std::string FatalBuffer;
   // The stream to write the fatal message to.
   raw_string_ostream FatalStream;
+  // The stack of maximum abbreviation indices allowed by block enter record.
+  SmallVector<uint64_t, 3> AbbrevIndexLimitStack;
 
   // Records that an error occurred, and returns stream to print error
   // message to.
@@ -197,7 +199,8 @@ public:
   /// Creates a bitcode munger, based on the given array of values.
   NaClObjDumpMunger(const uint64_t Records[], size_t RecordsSize,
                     uint64_t RecordTerminator)
-      : NaClBitcodeMunger(Records, RecordsSize, RecordTerminator) {}
+      : NaClBitcodeMunger(Records, RecordsSize, RecordTerminator),
+        RunAsDeathTest(false) {}
 
   /// Runs function NaClObjDump on the sequence of records associated
   /// with the instance. The memory buffer containing the bitsequence
@@ -213,6 +216,18 @@ public:
     uint64_t NoMunges[] = {0};
     return runTestWithFlags(TestName, NoMunges, 0, AddHeader, NoRecords,
                             NoAssembly);
+  }
+
+  /// Returns true if running as death test.
+  bool getRunAsDeathTest() const {
+    return RunAsDeathTest;
+  }
+
+  /// Sets death test flag. When true, output will be redirected to
+  /// the errs() (rather than buffered) so that the test can be
+  /// debugged.
+  void setRunAsDeathTest(bool NewValue) {
+    RunAsDeathTest = NewValue;
   }
 
   /// Same as above except it runs function NaClObjDump with flags
@@ -260,13 +275,18 @@ public:
                         size_t MungesSize) {
     return runTestWithFlags(TestName, Munges, MungesSize, true, true, true);
   }
+
+private:
+  // Flag to redirect dump stream if running death test.
+  bool RunAsDeathTest;
+
 };
 
 // Class to run tests for function NaClParseBitcodeFile.
 class NaClParseBitcodeMunger : public NaClBitcodeMunger {
 public:
   NaClParseBitcodeMunger(const uint64_t Records[], size_t RecordsSize,
-                    uint64_t RecordTerminator)
+                         uint64_t RecordTerminator)
       : NaClBitcodeMunger(Records, RecordsSize, RecordTerminator) {}
 
   /// Runs function llvm::NaClParseBitcodeFile, and puts error messages
@@ -278,6 +298,22 @@ public:
   bool runTest(const char* TestName, bool VerboseErrors) {
     uint64_t NoMunges[] = {0};
     return runTest(TestName, NoMunges, 0, VerboseErrors);
+  }
+};
+
+// Class to run tests for NaClBitcodeCompressor.compress().
+class NaClCompressMunger : public NaClBitcodeMunger {
+public:
+  NaClCompressMunger(const uint64_t Records[], size_t RecordsSize,
+                     uint64_t RecordTerminator)
+      : NaClBitcodeMunger(Records, RecordsSize, RecordTerminator) {}
+
+  bool runTest(const char* TestName, const uint64_t Munges[],
+               size_t MungesSize);
+
+  bool runTest(const char* TestName) {
+    uint64_t NoMunges[] = {0};
+    return runTest(TestName, NoMunges, 0);
   }
 };
 

@@ -669,10 +669,12 @@ static int32_t ABBREV_INDEX_NOT_SPECIFIED = -1;
 
 /// The formatter used for dumping records in ObjDumpStream.
 class RecordTextFormatter : public TextFormatter {
+  RecordTextFormatter(const RecordTextFormatter&) = delete;
+  RecordTextFormatter &operator=(const RecordTextFormatter&) = delete;
 public:
-  /// The address write width used to print the number of
-  /// bytes in the record bit address, when printing records.
-  static const unsigned AddressWriteWidth = 8;
+  /// The address write width used to print a bit address, when
+  /// printing records.
+  static const unsigned AddressWriteWidth = 10;
 
   explicit RecordTextFormatter(ObjDumpStream *ObjDump);
 
@@ -686,22 +688,10 @@ public:
   /// Returns text corresponding to an empty label column.
   std::string GetEmptyLabelColumn();
 
-  // Converts the given start bit to the corresponding address to
-  // print. That is, generate "Bit/8:Bit%8" value.
-  static std::string RecordAddress(uint64_t Bit, unsigned MinByteWidth);
-
-  // Returns the record address (when printing records) associated with
-  // the given bit.
-  static std::string RecordAddress(uint64_t Bit) {
-    return RecordAddress(Bit, AddressWriteWidth);
-  }
-
 protected:
   void WriteLineIndents() override;
 
 private:
-  // The object dumper this formatter is associated with.
-  ObjDumpStream *ObjDump;
   // The address label associated with the current line.
   std::string Label;
   // The open brace '<' for a record.
@@ -718,6 +708,9 @@ private:
   StartClusteringDirective StartCluster;
   // End clustering tokens.
   FinishClusteringDirective FinishCluster;
+
+  // Generates an address label with padding to match AddressWriteWidth;
+  std::string getBitAddress(uint64_t Bit);
 };
 
 /// Implements a stream to print out bitcode records, assembly code,
@@ -816,50 +809,40 @@ public:
   /// then returns the comments stream. In general, warnings will be
   /// printed after the next record, unless a call to Flush is made.
   raw_ostream &Warning() {
-    return Warning(LastKnownBit);
+    return WarningAt(LastKnownBit);
   }
 
   /// Prints "Warning(Bit/8:Bit%8): " onto the comments stream, and
   /// then returns the comments stream. In general, warnings will be
   /// printed after the next record, unless a call to Flush is made.
-  raw_ostream &Warning(uint64_t Bit) {
+  raw_ostream &WarningAt(uint64_t Bit) {
     LastKnownBit = Bit;
-    return PrintMessagePrefix("Warning", Bit);
+    return naclbitc::ErrorAt(Comments(), naclbitc::Warning, Bit);
   }
 
-  /// Prints "Error(Bit/8:Bit%8): " onto the comments stream, records
-  /// that an error has occurred, and then returns the comments
-  /// stream. In general errors will be printed after the next record,
-  /// unless a call to Flush is made.
+  /// Prints "Error(Bit/8:Bit%8): " onto the comments stream using the
+  /// last know bit position of the input. Then, it records that an
+  /// error has occurred and returns the comments stream. In general
+  /// errors will be printed after the next record, unless a call to
+  /// Flush is made.
   raw_ostream &Error() {
-    return Error(LastKnownBit);
+    return ErrorAt(LastKnownBit);
   }
 
-  /// Prints "Error(Bit/8:Bit%8): " onto the comments stream, records
-  /// that an error has occurred, and then returns the comments
-  /// stream. In general errors will be printed after the next record,
-  /// unless a call to Flush is made.
-  raw_ostream &Error(uint64_t Bit);
-
-  /// Write a fatal error message to the dump stream, and then
-  /// stop the executable. If any assembly, comments, or errors have
-  /// been buffered, they will be printed first.
-  void Fatal(const std::string &Message) {
-    Fatal(LastKnownBit, Message);
+  /// Prints "Error(Bit/8:Bit%8): " onto the comments stream at the
+  /// given Bit position. Then, it records that an error has occurred
+  /// and returns the comments stream. In general errors will be
+  /// printed after the next record, unless a call to Flush is made.
+  raw_ostream &ErrorAt(uint64_t Bit) {
+    return ErrorAt(naclbitc::Error, Bit);
   }
 
-  /// Write a fatal error message to the dump stream, and then
-  /// stop the executable. If any assembly, comments, or errors have
-  /// been buffered, they will be printed first. Associates fatal error
-  /// Message with the given Bit.
-  void Fatal(uint64_t Bit, const std::string &Message);
-
-  /// Write a fatal error message to the dump stream, and then
-  /// stop the executable. If any assembly, comments, or errors have
-  /// been buffered, they will be printed first, along with the given record.
-  void Fatal(uint64_t Bit,
-             const llvm::NaClBitcodeRecordData &Record,
-             const std::string &Message);
+  /// Prints "Level(Bit/8:Bit%8): " onto the comments stream at the
+  /// given bit position and severity Level.  Then, it records that an
+  /// error has occurred and then returns the comments stream. In
+  /// general errors will be printed after the next record, unless a
+  /// call to Flush is made.
+  raw_ostream &ErrorAt(naclbitc::ErrorLevel Level, uint64_t Bit);
 
   /// Dumps a record (at the given bit), along with all buffered assembly,
   /// comments, and errors, into the objdump stream.
@@ -875,6 +858,11 @@ public:
   /// Dumps the buffered assembly, comments, and errors, without any
   /// corresponding record, into the objdump stream.
   void Flush();
+
+  /// Flushes out the last record and/or error, and then stops
+  /// the executable. Should be called immediately after generating
+  /// the error message using ErrorAt(naclbitc::Fatal,...).
+  void FlushThenQuit();
 
   /// Increments the record indent by one.
   void IncRecordIndent() {
@@ -907,12 +895,6 @@ public:
     return DumpAssembly;
   }
 
-  /// Changes the default assumption that bit addresses start
-  /// at index 0.
-  void SetStartOffset(uint64_t Offset) {
-    StartOffset = Offset;
-  }
-
   /// Changes the maximum number of errors allowed.
   void SetMaxErrors(unsigned NewMax) {
     MaxErrors = NewMax;
@@ -933,22 +915,9 @@ public:
   }
 
   /// Changes the internal state, to assume one is processing a record
-  /// at the given bit. Used by Error() and Fatal(Message) to fill in
-  /// the corresponding bit to associate with the error message.
+  /// at the given bit.
   void SetRecordBitAddress(uint64_t Bit) {
     LastKnownBit = Bit;
-  }
-
-  // Converts the given start bit to the corresponding address to
-  // print. That is, generate "Bit/8:Bit%8" value.
-  std::string ObjDumpAddress(uint64_t Bit, unsigned MinByteWidth=1) {
-    return RecordFormatter.RecordAddress(Bit + StartOffset, MinByteWidth);
-  }
-
-  // Returns the record address (when printing records) associated with
-  // the given bit.
-  std::string RecordAddress(uint64_t Bit) {
-    return RecordFormatter.RecordAddress(Bit + StartOffset);
   }
 
 private:
@@ -964,9 +933,6 @@ private:
   unsigned MaxErrors;
   // The number of columns available to print bitcode records.
   unsigned RecordWidth;
-  // The number of bits to add to the record bit address, to correct
-  // the record bit address passed to the write routines.
-  uint64_t StartOffset;
   // The buffer for assembly to be printed during the next write.
   std::string AssemblyBuffer;
   // The stream to buffer assembly into the assembly buffer.
@@ -992,11 +958,6 @@ private:
     RecordBuffer.clear();
     AssemblyBuffer.clear();
     MessageBuffer.clear();
-  }
-
-  // Returns the message stream with 'Label(Bit/8:Bit%8): '.
-  raw_ostream &PrintMessagePrefix(const char *Label, uint64_t Bit) {
-    return Comments() << Label << "(" << ObjDumpAddress(Bit) << "): ";
   }
 };
 
