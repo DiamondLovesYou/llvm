@@ -47,6 +47,7 @@ void llvm::PNaClABISimplifyAddPreOptPasses(PassManagerBase &PM) {
   // allowed to export "__pnacl_pso_root".
   const char *SymbolsToPreserve[] = { "_start", "__pnacl_pso_root" };
   PM.add(createInternalizePass(SymbolsToPreserve, true));
+  PM.add(createInternalizeUsedGlobalsPass());
 
   // Expand out computed gotos (indirectbr and blockaddresses) into switches.
   PM.add(createExpandIndirectBrPass());
@@ -153,6 +154,9 @@ void llvm::PNaClABISimplifyAddPostOptPasses(PassManagerBase &PM) {
   // ReplacePtrsWithInts assumes that getelementptr instructions and
   // ConstantExprs have already been expanded out.
   PM.add(createReplacePtrsWithIntsPass());
+
+  // Convert struct reg function params to struct* byval
+  PM.add(createSimplifyStructRegSignaturesPass());
 
   // The atomic cmpxchg instruction returns a struct, and is rewritten to an
   // intrinsic as a post-opt pass, we therefore need to expand struct regs.
