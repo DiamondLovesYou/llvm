@@ -107,19 +107,15 @@ Pass *createPruneEHPass();
 /// createInternalizePass - This pass loops over all of the functions in the
 /// input module, internalizing all globals (functions and variables) it can.
 ////
-/// The symbols in \p ExportList are never internalized. If \p IgnoreLLVMUsed is
-/// true, @llvm.used is ignored (ie symbols referenced by @llvm.used are
-/// internalized)
+/// The symbols in \p ExportList are never internalized.
 ///
 /// The symbol in DSOList are internalized if it is safe to drop them from
 /// the symbol table.
 ///
 /// Note that commandline options that are used with the above function are not
 /// used now!
-ModulePass *createInternalizePass(ArrayRef<const char *> ExportList, const bool IgnoreLLVMUsed = false);
+ModulePass *createInternalizePass(ArrayRef<const char *> ExportList);
 /// createInternalizePass - Same as above, but with an empty exportList.
-ModulePass *createInternalizePass(const bool IgnoreLLVMUsed);
-/// createInternalizePass - Same as above, but using -internalize-ignore-llvm-used.
 ModulePass *createInternalizePass();
 
 //===----------------------------------------------------------------------===//

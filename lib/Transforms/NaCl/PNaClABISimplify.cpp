@@ -46,7 +46,7 @@ void llvm::PNaClABISimplifyAddPreOptPasses(PassManagerBase &PM) {
   // pexe is only allowed to export "_start", whereas a PNaCl PSO is only
   // allowed to export "__pnacl_pso_root".
   const char *SymbolsToPreserve[] = { "_start", "__pnacl_pso_root" };
-  PM.add(createInternalizePass(SymbolsToPreserve, true));
+  PM.add(createInternalizePass(SymbolsToPreserve));
 
   // Expand out computed gotos (indirectbr and blockaddresses) into switches.
   PM.add(createExpandIndirectBrPass());
