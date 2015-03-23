@@ -52,13 +52,23 @@ APIList("internalize-public-api-list", cl::value_desc("list"),
         cl::desc("A list of symbol names to preserve"),
         cl::CommaSeparated);
 
+static cl::opt<bool>
+IgnoreLLVMUsedOpt("internalize-ignore-llvm-used",
+                  cl::desc("Ignore @llvm.used when internalizing"),
+                  cl::init(false));
+
 namespace {
   class InternalizePass : public ModulePass {
     std::set<std::string> ExternalNames;
+    const bool IgnoreLLVMUsed = false; // @LOCALMOD
   public:
     static char ID; // Pass identification, replacement for typeid
+
     explicit InternalizePass();
-    explicit InternalizePass(ArrayRef<const char *> ExportList);
+    // @LOCALMOD-BEGIN
+    explicit InternalizePass(const bool IgnoreLLVMUsed_);
+    explicit InternalizePass(ArrayRef<const char *> ExportList, const bool IgnoreLLVMUsed_);
+    // @LOCALMOD-END
     void LoadFile(const char *Filename);
     bool runOnModule(Module &M) override;
 
@@ -72,16 +82,33 @@ namespace {
 char InternalizePass::ID = 0;
 INITIALIZE_PASS(InternalizePass, "internalize",
                 "Internalize Global Symbols", false, false)
-
-InternalizePass::InternalizePass() : ModulePass(ID) {
+// @LOCALMOD-BEGIN
+InternalizePass::InternalizePass()
+  : ModulePass(ID)
+  , IgnoreLLVMUsed(IgnoreLLVMUsedOpt)
+{
   initializeInternalizePassPass(*PassRegistry::getPassRegistry());
   if (!APIFile.empty())           // If a filename is specified, use it.
     LoadFile(APIFile.c_str());
   ExternalNames.insert(APIList.begin(), APIList.end());
 }
 
-InternalizePass::InternalizePass(ArrayRef<const char *> ExportList)
-    : ModulePass(ID) {
+InternalizePass::InternalizePass(const bool IgnoreLLVMUsed_)
+  : ModulePass(ID)
+  , IgnoreLLVMUsed(IgnoreLLVMUsed_)
+{
+// @LOCALMOD-END
+  initializeInternalizePassPass(*PassRegistry::getPassRegistry());
+  if (!APIFile.empty())           // If a filename is specified, use it.
+    LoadFile(APIFile.c_str());
+  ExternalNames.insert(APIList.begin(), APIList.end());
+}
+// @LOCALMOD-BEGIN
+InternalizePass::InternalizePass(ArrayRef<const char *> ExportList, const bool IgnoreLLVMUsed_)
+  : ModulePass(ID)
+  , IgnoreLLVMUsed(IgnoreLLVMUsed_)
+{
+// @LOCALMOD-END
   initializeInternalizePassPass(*PassRegistry::getPassRegistry());
   for(ArrayRef<const char *>::const_iterator itr = ExportList.begin();
         itr != ExportList.end(); itr++) {
@@ -137,7 +164,10 @@ bool InternalizePass::runOnModule(Module &M) {
   bool Changed = false;
 
   SmallPtrSet<GlobalValue *, 8> Used;
-  collectUsedGlobalVariables(M, Used, false);
+  // @LOCALMOD-BEGIN
+  if (!IgnoreLLVMUsed)
+    collectUsedGlobalVariables(M, Used, false);
+  // @LOCALMOD-END
 
   // We must assume that globals in llvm.used have a reference that not even
   // the linker can see, so we don't internalize them.
@@ -217,8 +247,16 @@ bool InternalizePass::runOnModule(Module &M) {
   return Changed;
 }
 
-ModulePass *llvm::createInternalizePass() { return new InternalizePass(); }
-
-ModulePass *llvm::createInternalizePass(ArrayRef<const char *> ExportList) {
-  return new InternalizePass(ExportList);
+// @LOCALMOD-BEGIN
+ModulePass *llvm::createInternalizePass() {
+  return new InternalizePass();
 }
+
+ModulePass *llvm::createInternalizePass(const bool IgnoreLLVMUsed) {
+  return new InternalizePass(IgnoreLLVMUsed);
+}
+
+ModulePass *llvm::createInternalizePass(ArrayRef<const char *> ExportList, const bool IgnoreLLVMUsed) {
+  return new InternalizePass(ExportList, IgnoreLLVMUsed);
+}
+// @LOCALMOD-END
