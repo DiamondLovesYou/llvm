@@ -48,14 +48,12 @@
 #include "llvm/Bitcode/NaCl/NaClCompressBlockDist.h"
 #include "llvm/Bitcode/NaCl/NaClReaderWriter.h"
 
-using namespace llvm;
-
 namespace {
 
 using namespace llvm;
 
-/// Error - All bitcode analysis errors go through this function,
-/// making this a good place to breakpoint if debugging.
+// Generates an error message when outside parsing, and no
+// corresponding bit position is known.
 static bool Error(const std::string &Err) {
   errs() << Err << "\n";
   return true;
@@ -211,6 +209,11 @@ public:
   // Returns the number of abbreviations associated with the block.
   unsigned GetNumberAbbreviations() const {
     return Abbrevs.size();
+  }
+
+  // Returns true if there is an application abbreviation.
+  bool hasApplicationAbbreviations() const {
+    return Abbrevs.size() > naclbitc::FIRST_APPLICATION_ABBREV;
   }
 
   /// Returns the abbreviation associated with the given abbreviation
@@ -445,6 +448,7 @@ private:
 /// Defines a map from block ID's to the corresponding abbreviation
 /// map to use.
 typedef DenseMap<unsigned, BlockAbbrevs*> BlockAbbrevsMapType;
+typedef std::pair<unsigned, BlockAbbrevs*> BlockAbbrevsMapElmtType;
 
 /// Parses the bitcode file, analyzes it, and generates the
 /// corresponding lists of global abbreviations to use in the
@@ -471,11 +475,6 @@ public:
   }
 
   virtual ~NaClAnalyzeParser() {}
-
-  virtual bool Error(const std::string &Message) {
-    // Use local error routine so that all errors are treated uniformly.
-    return ::Error(Message);
-  }
 
   virtual bool ParseBlock(unsigned BlockID);
 
@@ -523,11 +522,6 @@ protected:
   }
 
 public:
-  virtual bool Error(const std::string &Message) {
-    // Use local error routine so that all errors are treated uniformly.
-    return ::Error(Message);
-  }
-
   virtual bool ParseBlock(unsigned BlockID) {
     NaClBlockAnalyzeParser Parser(BlockID, this);
     return Parser.ParseThisBlock();
@@ -1202,16 +1196,9 @@ public:
       : NaClBitcodeParser(Cursor),
         Flags(Flags),
         BlockAbbrevsMap(BlockAbbrevsMap),
-        Writer(Writer),
-        FoundFirstBlockInfo(false)
-  {}
+        Writer(Writer) {}
 
   virtual ~NaClBitcodeCopyParser() {}
-
-  virtual bool Error(const std::string &Message) {
-    // Use local error routine so that all errors are treated uniformly.
-    return ::Error(Message);
-  }
 
   virtual bool ParseBlock(unsigned BlockID);
 
@@ -1222,11 +1209,6 @@ public:
 
   // The bitstream to copy the compressed bitcode into.
   NaClBitstreamWriter &Writer;
-
-  // True if we have already found the first block info block.
-  // Used to make sure we don't use abbreviations until we
-  // have put them into the bitcode file.
-  bool FoundFirstBlockInfo;
 };
 
 class NaClBlockCopyParser : public NaClBitcodeParser {
@@ -1258,11 +1240,6 @@ protected:
         Context(EnclosingParser->Context)
   {}
 
-  virtual bool Error(const std::string &Message) {
-    // Use local error routine so that all errors are treated uniformly.
-    return ::Error(Message);
-  }
-
   /// Returns the set of (global) block abbreviations defined for the
   /// given block ID.
   BlockAbbrevs *GetGlobalAbbrevs(unsigned BlockID) {
@@ -1290,48 +1267,52 @@ protected:
       Selector = NaClBitcodeSelectorAbbrev();
     Context->Writer.EnterSubblock(BlockID, Selector);
 
-    // Note: We must dump module abbreviations as local
-    // abbreviations, because they are in a yet to be
-    // dumped BlockInfoBlock.
-    if (!Context->Flags.RemoveAbbreviations
-        && BlockID == naclbitc::MODULE_BLOCK_ID) {
-      BlockAbbrevs* Abbrevs = GetGlobalAbbrevs(naclbitc::MODULE_BLOCK_ID);
-      for (unsigned i = 0; i < Abbrevs->GetNumberAbbreviations(); ++i) {
-        Context->Writer.EmitAbbrev(Abbrevs->GetIndexedAbbrev(i)->Copy());
+    if (BlockID != naclbitc::MODULE_BLOCK_ID
+        || Context->Flags.RemoveAbbreviations)
+      return;
+
+    // To keep things simple, we dump all abbreviations immediately
+    // inside the module block. Start by dumping module abbreviations
+    // as local abbreviations.
+    BlockAbbrevs* Abbrevs = GetGlobalAbbrevs(naclbitc::MODULE_BLOCK_ID);
+    for (unsigned i = Abbrevs->GetFirstApplicationAbbreviation();
+         i < Abbrevs->GetNumberAbbreviations(); ++i) {
+      Context->Writer.EmitAbbrev(Abbrevs->GetIndexedAbbrev(i)->Copy());
+    }
+
+    // Insert the block info block, if needed, so that nested blocks
+    // will have defined abbreviations.
+    bool HasNonmoduleAbbrevs = false;
+    for (const BlockAbbrevsMapElmtType &Pair : Context->BlockAbbrevsMap) {
+      if (Pair.second == nullptr ||
+          !Pair.second->hasApplicationAbbreviations()) continue;
+      if (Pair.first != naclbitc::MODULE_BLOCK_ID) {
+        HasNonmoduleAbbrevs = true;
+        break;
       }
     }
-  }
+    if (!HasNonmoduleAbbrevs)
+      return;
 
-  virtual void ExitBlock() {
+    Context->Writer.EnterBlockInfoBlock();
+    for (const BlockAbbrevsMapElmtType &Pair : Context->BlockAbbrevsMap) {
+      unsigned BlockID = Pair.first;
+      // Don't emit module abbreviations, since they have been
+      // emitted as local abbreviations.
+      if (BlockID == naclbitc::MODULE_BLOCK_ID)
+        continue;
+      BlockAbbrevs *Abbrevs = Pair.second;
+      if (Abbrevs == nullptr) continue;
+      for (unsigned i = Abbrevs->GetFirstApplicationAbbreviation();
+           i < Abbrevs->GetNumberAbbreviations(); ++i) {
+        Context->Writer.EmitBlockInfoAbbrev(BlockID,
+                                            Abbrevs->GetIndexedAbbrev(i));
+      }
+    }
     Context->Writer.ExitBlock();
   }
 
-  virtual void ProcessBlockInfo() {
-    assert(!Context->FoundFirstBlockInfo &&
-           "Input bitcode has more that one BlockInfoBlock");
-    Context->FoundFirstBlockInfo = true;
-
-    // Generate global abbreviations within a blockinfo block.
-    Context->Writer.EnterBlockInfoBlock();
-    if (!Context->Flags.RemoveAbbreviations) {
-      for (BlockAbbrevsMapType::const_iterator
-               Iter = Context->BlockAbbrevsMap.begin(),
-               IterEnd = Context->BlockAbbrevsMap.end();
-           Iter != IterEnd; ++Iter) {
-        unsigned BlockID = Iter->first;
-        // Don't emit module abbreviations, since they have been
-        // emitted as local abbreviations.
-        if (BlockID == naclbitc::MODULE_BLOCK_ID) continue;
-
-        BlockAbbrevs *Abbrevs = Iter->second;
-        if (Abbrevs == 0) continue;
-        for (unsigned i = Abbrevs->GetFirstApplicationAbbreviation();
-             i < Abbrevs->GetNumberAbbreviations(); ++i) {
-          NaClBitCodeAbbrev *Abbrev = Abbrevs->GetIndexedAbbrev(i);
-          Context->Writer.EmitBlockInfoAbbrev(BlockID, Abbrev);
-        }
-      }
-    }
+  virtual void ExitBlock() {
     Context->Writer.ExitBlock();
   }
 
