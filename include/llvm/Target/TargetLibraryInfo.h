@@ -375,6 +375,10 @@ namespace llvm {
       isascii,
       /// int isdigit(int c);
       isdigit,
+      /// void *je_mallocx(size_t size, int flags);
+      je_mallocx,
+      /// void *je_sdallocx(void *ptr, size_t size, int flags)
+      je_sdallocx,
       /// long int labs(long int j);
       labs,
       /// int lchown(const char *path, uid_t owner, gid_t group);
@@ -691,6 +695,7 @@ namespace llvm {
       vsscanf,
       /// ssize_t write(int fildes, const void *buf, size_t nbyte);
       write,
+
 
       NumLibFuncs
     };

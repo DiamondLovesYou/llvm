@@ -198,6 +198,8 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "iprintf",
     "isascii",
     "isdigit",
+    "je_mallocx",
+    "je_sdallocx",
     "labs",
     "lchown",
     "ldexp",

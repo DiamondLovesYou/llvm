@@ -66,7 +66,8 @@ static const AllocFnsTy AllocationFnData[] = {
   {LibFunc::realloc,             ReallocLike, 2, 1,  -1},
   {LibFunc::reallocf,            ReallocLike, 2, 1,  -1},
   {LibFunc::strdup,              StrDupLike,  1, -1, -1},
-  {LibFunc::strndup,             StrDupLike,  2, 1,  -1}
+  {LibFunc::strndup,             StrDupLike,  2, 1,  -1},
+  {LibFunc::je_mallocx,          MallocLike,  2, 0,  -1}
   // TODO: Handle "int posix_memalign(void **, size_t, size_t)"
 };
 
@@ -339,6 +340,8 @@ const CallInst *llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
            TLIFn == LibFunc::ZdaPvm ||              // delete[](void*, ulong)
            TLIFn == LibFunc::ZdaPvRKSt9nothrow_t)   // delete[](void*, nothrow)
     ExpectedNumParams = 2;
+  else if (TLIFn == LibFunc::je_sdallocx)
+    ExpectedNumParams = 3;
   else
     return nullptr;
 

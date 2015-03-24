@@ -288,6 +288,9 @@ void initializeMachineCombinerPass(PassRegistry &);
 void initializeLoadCombinePass(PassRegistry&);
 void initializeRewriteSymbolsPass(PassRegistry&);
 
+// Specific to the rust-lang llvm branch:
+void initializeNullCheckEliminationPass(PassRegistry&);
+
 // @LOCALMOD-BEGIN
 void initializeAddPNaClExternalDeclsPass(PassRegistry&);
 void initializeAllocateDataSegmentPass(PassRegistry&);
