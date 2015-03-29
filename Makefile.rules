@@ -627,6 +627,11 @@ ifndef KEEP_SYMBOLS
   Strip := $(PLATFORMSTRIPOPTS)
   StripWarnMsg := "(without symbols)"
   Install.StripFlag += -s
+# @LOCALMOD-BEGIN
+  ifeq ($(HOST_OS), $(filter $(HOST_OS), NativeClient))
+    Install.StripFlag += --strip-program="$(NACL_SDK_ROOT)/toolchain/linux_pnacl/bin/pnacl-strip"
+  endif
+# @LOCALMOD-END
 endif
 
 # By default, strip dead symbols at link time

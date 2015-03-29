@@ -15,6 +15,9 @@ PARALLEL_DIRS = Utils Instrumentation Scalar InstCombine IPO Vectorize Hello Obj
 ifeq ($(PNACL_BROWSER_TRANSLATOR),1)
   PARALLEL_DIRS := $(filter-out Hello, $(PARALLEL_DIRS))
 endif
+ifeq ($(HOST_OS), $(filter $(HOST_OS),NativeClient))
+  PARALLEL_DIRS := $(filter-out Hello, $(PARALLEL_DIRS))
+endif
 # @LOCALMOD-END
 
 include $(LEVEL)/Makefile.config

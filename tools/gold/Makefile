@@ -10,7 +10,7 @@
 LEVEL := ../..
 LIBRARYNAME := LLVMgold
 # @LOCALMOD-BEGIN
-ifneq ($(HOST_OS),NativeClient)
+ifneq ($(HOST_OS),$(filter $(HOST_OS),NativeClient))
   LINK_LIBS_IN_SHARED := 1
   SHARED_LIBRARY := 1
   LOADABLE_MODULE := 1

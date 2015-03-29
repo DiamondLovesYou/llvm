@@ -11,7 +11,7 @@ LEVEL := ../..
 LIBRARYNAME := LTO
 LINK_COMPONENTS := all-targets core lto mc mcdisassembler support
 # @LOCALMOD-BEGIN
-ifneq ($(HOST_OS),NativeClient)
+ifneq ($(HOST_OS), $(filter $(HOST_OS), NativeClient))
   LINK_LIBS_IN_SHARED := 1
   SHARED_LIBRARY := 1
 endif
