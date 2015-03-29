@@ -241,7 +241,7 @@ int show_main(int argc, const char *argv[]) {
 }
 
 #if defined(__native_client__)
-extern "C" int nacl_main(int argc, char *rargv[]) {
+extern "C" int main(int argc, char *rargv[]) {
   const char **argv = (const char**) rargv;
 #else
 int main(int argc, const char *argv[]) {
