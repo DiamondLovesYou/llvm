@@ -449,6 +449,9 @@ ifeq ($(HOST_OS),MingW)
   endif
 endif
 
+ifneq ($(HOST_OS),NativeClient)
+  CXX.Flags     += -Woverloaded-virtual
+endif
 CPP.BaseFlags += $(CPP.Defines)
 AR.Flags      := cru
 
@@ -624,6 +627,11 @@ ifndef KEEP_SYMBOLS
   Strip := $(PLATFORMSTRIPOPTS)
   StripWarnMsg := "(without symbols)"
   Install.StripFlag += -s
+# @LOCALMOD-BEGIN
+  ifeq ($(HOST_OS), $(filter $(HOST_OS), NativeClient))
+    Install.StripFlag += --strip-program="$(NACL_SDK_ROOT)/toolchain/linux_pnacl/bin/pnacl-strip"
+  endif
+# @LOCALMOD-END
 endif
 
 # By default, strip dead symbols at link time
@@ -638,7 +646,7 @@ ifndef NO_DEAD_STRIP
   ifeq ($(HOST_OS),Darwin)
     LD.Flags += -Wl,-dead_strip
   else
-    ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
+    ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW NativeClient))
       LD.Flags += -Wl,--gc-sections
     endif
   endif
@@ -663,12 +671,6 @@ ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
     endif
   endif
 endif
-
-#@LOCALMOD-BEGIN
-ifeq ($(PNACL_BROWSER_TRANSLATOR),1)
-  CPP.Flags += -DPNACL_BROWSER_TRANSLATOR
-endif
-# @LOCALMOD-END
 
 #----------------------------------------------------------
 # Options To Invoke Tools
@@ -1416,13 +1418,20 @@ else
 $(ToolBuildPath): $(ToolDir)/.dir
 endif
 
+ifeq ($(HOST_OS),NativeClient)
+  LIBC_SUPPLEMENT := -lglibc-compat
+else
+  LIBC_SUPPLEMENT :=
+endif
+
 ifdef CODESIGN_TOOLS
 TOOL_CODESIGN_IDENTITY ?= -
 
 $(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
 	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
 	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
-	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
+	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS) \
+	$(LIBC_SUPPLEMENT)
 	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
           $(StripWarnMsg)
 	$(Echo) ======= Code-Signing $(BuildMode) Executable $(TOOLNAME)
@@ -1431,7 +1440,8 @@ else
 $(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
 	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
 	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
-	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
+	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS) \
+	$(LIBC_SUPPLEMENT)
 	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
           $(StripWarnMsg)
 endif

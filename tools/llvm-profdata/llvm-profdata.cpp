@@ -240,7 +240,12 @@ int show_main(int argc, const char *argv[]) {
                              ShowFunction, OS);
 }
 
+#if defined(__native_client__)
+extern "C" int main(int argc, char *rargv[]) {
+  const char **argv = (const char**) rargv;
+#else
 int main(int argc, const char *argv[]) {
+#endif
   // Print a stack trace if we signal out.
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);

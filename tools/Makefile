@@ -81,10 +81,22 @@ ifneq ($(ENABLE_SHARED),1)
     PARALLEL_DIRS := $(filter-out bugpoint-passes, \
                         $(PARALLEL_DIRS))
   endif
+# @LOCALMOD-BEGIN
+  ifeq ($(HOST_OS),$(filter $(HOST_OS),NativeClient))
+    PARALLEL_DIRS := $(filter-out bugpoint-passes, \
+                        $(PARALLEL_DIRS))
+  endif
+# @LOCALMOD-END
 endif
 
 ifneq (,$(filter go,$(BINDINGS_TO_BUILD)))
   PARALLEL_DIRS += llvm-go
 endif
+
+# @LOCALMOD-BEGIN
+ifeq ($(HOST_OS),NativeClient)
+  PARALLEL_DIRS := $(filter-out llvm-c-test, $(PARALLEL_DIRS))
+endif
+# @LOCALMOD-END
 
 include $(LEVEL)/Makefile.common

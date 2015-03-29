@@ -216,7 +216,13 @@ static void EvaluateOps(unsigned short Elt, unsigned short Vals[],
 }
 
 
+// @LOCALMOD-BEGIN
+#if defined(__native_client__)
+int main(int argc, char *argv[]) {
+#else
 int main() {
+#endif
+// @LOCALMOD-END
   // Seed the table with accesses to the LHS and RHS.
   ShufTab[0x0123].Cost = 0;
   ShufTab[0x0123].Op = nullptr;

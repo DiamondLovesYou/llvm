@@ -109,6 +109,8 @@ static void RegisterHandler(int Signal) {
             &RegisteredSignalInfo[NumRegisteredSignals].SA);
   RegisteredSignalInfo[NumRegisteredSignals].SigNo = Signal;
   ++NumRegisteredSignals;
+#else
+  (void) SignalHandler;
 #endif // (__native_client__)
 }
 

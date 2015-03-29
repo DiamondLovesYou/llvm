@@ -253,6 +253,7 @@ int llc_main(int argc, char **argv) {
 
 #if defined(PNACL_BROWSER_TRANSLATOR)
   install_fatal_error_handler(getSRPCErrorHandler(), nullptr);
+  install_fatal_error_handler(getSRPCErrorHandler(), NULL);
 #endif
 
   // Initialize targets first, so that --version shows registered targets.

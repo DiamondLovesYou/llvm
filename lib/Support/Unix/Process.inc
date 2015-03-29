@@ -58,7 +58,9 @@ using namespace llvm;
 using namespace sys;
 
 static std::pair<TimeValue, TimeValue> getRUsageTimes() {
-#if defined(HAVE_GETRUSAGE)
+// @LOCALMOD-BEGIN
+#if defined(HAVE_GETRUSAGE) && !defined(__native_client__)
+// @LOCALMOD-END
   struct rusage RU;
   ::getrusage(RUSAGE_SELF, &RU);
   return std::make_pair(
@@ -71,7 +73,7 @@ static std::pair<TimeValue, TimeValue> getRUsageTimes() {
           static_cast<TimeValue::NanoSecondsType>(
               RU.ru_stime.tv_usec * TimeValue::NANOSECONDS_PER_MICROSECOND)));
 #else
-#warning Cannot get usage times on this platform
+//#warning Cannot get usage times on this platform
   return std::make_pair(TimeValue(), TimeValue());
 #endif
 }
@@ -83,6 +85,8 @@ unsigned Process::getPageSize() {
   static const int page_size = ::getpagesize();
 #elif defined(HAVE_SYSCONF)
   static long page_size = ::sysconf(_SC_PAGE_SIZE);
+#elif defined(__native_client__)
+  long page_size = 65536;
 #else
 #warning Cannot get the page size on this machine
 #endif
@@ -127,7 +131,7 @@ void Process::GetTimeUsage(TimeValue &elapsed, TimeValue &user_time,
 // their operation. To prevent the disk from filling up, this function
 // does what's necessary to prevent their generation.
 void Process::PreventCoreFiles() {
-#if HAVE_SETRLIMIT
+#if HAVE_SETRLIMIT && !defined(__pnacl__) // @LOCALMOD
   struct rlimit rlim;
   rlim.rlim_cur = rlim.rlim_max = 0;
   setrlimit(RLIMIT_CORE, &rlim);

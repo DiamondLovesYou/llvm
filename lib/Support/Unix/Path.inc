@@ -19,6 +19,11 @@
 #include "Unix.h"
 #include <limits.h>
 #include <stdio.h>
+// @LOCALMOD-BEGIN
+#if defined(__native_client__) && !defined(PNACL_BROWSER_TRANSLATOR)
+#include <stdlib.h>
+#endif
+// @LOCALMOD-END
 #if HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -171,6 +176,11 @@ std::string getMainExecutable(const char *argv0, void *MainAddr) {
   // @LOCALMOD-BEGIN
 #elif defined(__native_client__)
   // Nothing.
+#if !defined(PNACL_BROWSER_TRANSLATOR)
+  const char *arg0 = getenv("ARG0");
+  if (arg0)
+    return arg0;
+#endif
   // @LOCALMOD-END
 #else
 #error GetMainExecutable is not implemented on this host yet.
@@ -192,13 +202,13 @@ std::error_code current_path(SmallVectorImpl<char> &result) {
   result.clear();
   // @LOCALMOD-START NaCl doesn't have paths, and the translator returns an
   //                 error for getcwd below. Return a dummy path instead.
-#if defined(__native_client__)
+#if defined(PNACL_BROWSER_TRANSLATOR)
   result.reserve(2);
   result.set_size(2);
   result[0] = '/';
   result[1] = '\0';
   return std::error_code();
-#else // !defined(__native_client__)
+#else // !defined(PNACL_BROWSER_TRANSLATOR)
   // @LOCALMOD-END
   const char *pwd = ::getenv("PWD");
   llvm::sys::fs::file_status PWDStatus, DotStatus;

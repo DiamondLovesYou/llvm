@@ -64,7 +64,7 @@ ifneq ($(CLANG_SRC_ROOT),)
 endif
 
 ifneq ($(SUBZERO_SRC_ROOT),)
-  PROJ_SRC_DIR  := $(patsubst $(LLVM_SRC_ROOT)/tools/subzero%,$(SUBZERO_SRC_ROOT)%,$(PROJ_SRC_DIR))
+#  PROJ_SRC_DIR  := $(patsubst $(LLVM_SRC_ROOT)/tools/subzero%,$(SUBZERO_SRC_ROOT)%,$(PROJ_SRC_DIR))
 endif
 
 prefix          := @prefix@

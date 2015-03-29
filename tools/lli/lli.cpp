@@ -366,7 +366,15 @@ static void addCygMingExtraModule(ExecutionEngine *EE,
 //===----------------------------------------------------------------------===//
 // main Driver function
 //
+// @LOCALMOD-BEGIN
+#if defined(__native_client__)
+extern char **environ;
+int main(int argc, char **argv) {
+  char * const *envp = environ;
+#else
 int main(int argc, char **argv, char * const *envp) {
+#endif
+// @LOCALMOD-END
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
 

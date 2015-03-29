@@ -32,6 +32,11 @@ ifeq ($(BUILD_DIRS_ONLY),1)
 else
   DIRS := lib/Support lib/TableGen utils lib/IR lib tools/llvm-shlib \
           tools/llvm-config tools docs cmake unittests
+# @LOCALMOD-BEGIN
+  ifeq ($(HOST_OS), $(filter-out $(HOST_OS),NativeClient))
+    DIRS := $(filter-out unittests, $(DIRS))
+  endif
+# @LOCALMOD-END
   OPTIONAL_DIRS := projects bindings
 endif
 

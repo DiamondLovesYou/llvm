@@ -16,6 +16,11 @@
 //===          is guaranteed to work on *all* UNIX variants.
 //===----------------------------------------------------------------------===//
 
+// @LOCALMOD-BEGIN
+#if defined(__native_client__) && !defined(PNACL_BROWSER_TRANSLATOR)
+#include <spawn.h>
+#endif
+// @LOCALMOD-END
 #include "Unix.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Compiler.h"
@@ -136,7 +141,7 @@ static void TimeOutHandler(int Sig) {
 
 static void SetMemoryLimits (unsigned size)
 {
-#if HAVE_SYS_RESOURCE_H && HAVE_GETRLIMIT && HAVE_SETRLIMIT
+#if HAVE_SYS_RESOURCE_H && HAVE_GETRLIMIT && HAVE_SETRLIMIT && !defined(__pnacl__) // @LOCALMOD
   struct rlimit r;
   __typeof__ (r.rlim_cur) limit = (__typeof__ (r.rlim_cur)) (size) * 1048576;
 
@@ -175,6 +180,15 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
     return false;
   }
 
+// @LOCALMOD-BEGIN
+#if defined(__native_client__) && !defined(PNACL_BROWSER_TRANSLATOR) && !defined(__pnacl__)
+  int child = spawnve(P_NOWAIT, Program.begin(), (char**) args, (char**) envp);
+  if (child < 0) {
+    MakeErrMsg(ErrMsg, "Couldn't spawn");
+    return false;
+  }
+#else
+// @LOCALMOD-END
   // If this OS has posix_spawn and there is no memory limit being implied, use
   // posix_spawn.  It is more efficient than fork/exec.
 #ifdef HAVE_POSIX_SPAWN
@@ -300,6 +314,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
     default:
       break;
   }
+#endif
 
   PI.Pid = child;
 
@@ -321,6 +336,9 @@ ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
   if (WaitUntilTerminates) {
     SecondsToWait = 0;
   } else if (SecondsToWait) {
+// @LOCALMOD-BEGIN
+#if !defined(__native_client__)
+// @LOCALMOD-END
     // Install a timeout handler.  The handler itself does nothing, but the
     // simple fact of having a handler at all causes the wait below to return
     // with EINTR, unlike if we used SIG_IGN.
@@ -329,6 +347,9 @@ ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
     sigemptyset(&Act.sa_mask);
     sigaction(SIGALRM, &Act, &Old);
     alarm(SecondsToWait);
+// @LOCALMOD-BEGIN
+#endif
+// @LOCALMOD-END
   } else if (SecondsToWait == 0)
     WaitPidOptions = WNOHANG;
 
@@ -346,12 +367,18 @@ ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
       return WaitResult;
     } else {
       if (SecondsToWait && errno == EINTR) {
+// @LOCALMOD-BEGIN
+#if !defined(__native_client__)
+// @LOCALMOD-END
         // Kill the child.
         kill(PI.Pid, SIGKILL);
 
         // Turn off the alarm and restore the signal handler
         alarm(0);
         sigaction(SIGALRM, &Old, nullptr);
+// @LOCALMOD-BEGIN
+#endif
+// @LOCALMOD-END
 
         // Wait for child to die
         if (wait(&status) != ChildPid)
@@ -369,11 +396,17 @@ ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
     }
   }
 
+// @LOCALMOD-BEGIN
+#if !defined(__native_client__)
+// @LOCALMOD-END
   // We exited normally without timeout, so turn off the timer.
   if (SecondsToWait && !WaitUntilTerminates) {
     alarm(0);
     sigaction(SIGALRM, &Old, nullptr);
   }
+// @LOCALMOD-BEGIN
+#endif
+// @LOCALMOD-END
 
   // Return the proper exit status. Detect error conditions
   // so we can return -1 for them and set ErrMsg informatively.
@@ -443,11 +476,13 @@ llvm::sys::writeFileWithEncoding(StringRef FileName, StringRef Contents,
 }
 
 bool llvm::sys::argumentsFitWithinSystemLimits(ArrayRef<const char*> Args) {
+// @LOCALMOD-BEGIN
 #if defined(__native_client__)
   static long ArgMax = -1;
 #else // !__native_client__
   static long ArgMax = sysconf(_SC_ARG_MAX);
 #endif // __native_client__
+// @LOCALMOD-END
 
   // System says no practical limit.
   if (ArgMax == -1)
