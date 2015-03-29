@@ -141,7 +141,7 @@ static void TimeOutHandler(int Sig) {
 
 static void SetMemoryLimits (unsigned size)
 {
-#if HAVE_SYS_RESOURCE_H && HAVE_GETRLIMIT && HAVE_SETRLIMIT
+#if HAVE_SYS_RESOURCE_H && HAVE_GETRLIMIT && HAVE_SETRLIMIT && !defined(__pnacl__) // @LOCALMOD
   struct rlimit r;
   __typeof__ (r.rlim_cur) limit = (__typeof__ (r.rlim_cur)) (size) * 1048576;
 
@@ -181,7 +181,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
   }
 
 // @LOCALMOD-BEGIN
-#if defined(__native_client__) && !defined(PNACL_BROWSER_TRANSLATOR)
+#if defined(__native_client__) && !defined(PNACL_BROWSER_TRANSLATOR) && !defined(__pnacl__)
   int child = spawnve(P_NOWAIT, Program.begin(), (char**) args, (char**) envp);
   if (child < 0) {
     MakeErrMsg(ErrMsg, "Couldn't spawn");
@@ -329,8 +329,6 @@ ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
 #if defined(HAVE_SYS_WAIT_H) && !defined(PNACL_BROWSER_TRANSLATOR)
   // @LOCALMOD-END
   struct sigaction Act, Old;
-#endif
-// @LOCALMOD-END
   assert(PI.Pid && "invalid pid to wait on, process not started?");
 
   int WaitPidOptions = 0;

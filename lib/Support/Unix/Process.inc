@@ -159,7 +159,7 @@ void Process::GetTimeUsage(TimeValue &elapsed, TimeValue &user_time,
 // their operation. To prevent the disk from filling up, this function
 // does what's necessary to prevent their generation.
 void Process::PreventCoreFiles() {
-#if HAVE_SETRLIMIT
+#if HAVE_SETRLIMIT && !defined(__pnacl__) // @LOCALMOD
   struct rlimit rlim;
   rlim.rlim_cur = rlim.rlim_max = 0;
   setrlimit(RLIMIT_CORE, &rlim);
