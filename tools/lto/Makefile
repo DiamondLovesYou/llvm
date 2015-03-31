@@ -10,14 +10,17 @@
 LEVEL := ../..
 LIBRARYNAME := LTO
 LINK_COMPONENTS := all-targets core lto mc mcdisassembler support
+
+EXPORTED_SYMBOL_FILE = $(PROJ_SRC_DIR)/lto.exports
+
+include $(LEVEL)/Makefile.config
+
 # @LOCALMOD-BEGIN
 ifneq ($(HOST_OS), $(filter $(HOST_OS), NativeClient))
   LINK_LIBS_IN_SHARED := 1
   SHARED_LIBRARY := 1
 endif
 # @LOCALMOD-END
-
-EXPORTED_SYMBOL_FILE = $(PROJ_SRC_DIR)/lto.exports
 
 include $(LEVEL)/Makefile.common
 

@@ -122,17 +122,16 @@ cross-compile-build-tools:
 	$(Verb) if [ ! -f BuildTools/Makefile ]; then \
           $(MKDIR) BuildTools; \
 	  cd BuildTools ; \
-	  CFLAGS="$(BUILD_CFLAGS)" ; \
-	  CXXFLAGS="$(BUILD_CXXFLAGS)" ; \
-	  LDFLAGS="$(BUILD_LDFLAGS)" ; \
-	  AR=$(BUILD_AR) ; \
-	  AS=$(BUILD_AS) ; \
-	  LD=$(BUILD_LD) ; \
-	  CC=$(BUILD_CC) ; \
-	  CXX=$(BUILD_CXX) ; \
 	  unset SDKROOT ; \
 	  unset UNIVERSAL_SDK_PATH ; \
-	  configure_opts= ; \
+	  configure_opts="CFLAGS=$(BUILD_CFLAGS)" ; \
+	  configure_opts="$$configure_opts CXXFLAGS=$(BUILD_CXXFLAGS)" ; \
+	  configure_opts="$$configure_opts LDFLAGS=$(BUILD_LDFLAGS)" ; \
+	  configure_opts="$$configure_opts AR=$(BUILD_AR)" ; \
+	  configure_opts="$$configure_opts AS=$(BUILD_AS)" ; \
+	  configure_opts="$$configure_opts LD=$(BUILD_LD)" ; \
+	  configure_opts="$$configure_opts CC=$(BUILD_CC)" ; \
+	  configure_opts="$$configure_opts CXX=$(BUILD_CXX)" ; \
 	  if test "$(ENABLE_LIBCPP)" -ne 0 ; then \
 	    configure_opts="$$configure_opts --enable-libcpp"; \
 	  fi; \

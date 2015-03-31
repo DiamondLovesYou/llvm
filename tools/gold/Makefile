@@ -9,6 +9,14 @@
 
 LEVEL := ../..
 LIBRARYNAME := LLVMgold
+
+EXPORTED_SYMBOL_FILE = $(PROJ_SRC_DIR)/gold.exports
+
+# Include this here so we can get the configuration of the targets
+# that have been configured for construction. We have to do this
+# early so we can set up LINK_COMPONENTS before including Makefile.rules
+include $(LEVEL)/Makefile.config
+
 # @LOCALMOD-BEGIN
 ifneq ($(HOST_OS),$(filter $(HOST_OS),NativeClient))
   LINK_LIBS_IN_SHARED := 1
@@ -16,13 +24,6 @@ ifneq ($(HOST_OS),$(filter $(HOST_OS),NativeClient))
   LOADABLE_MODULE := 1
 endif
 # @LOCALMOD-END
-
-EXPORTED_SYMBOL_FILE = $(PROJ_SRC_DIR)/gold.exports
-
-# Include this here so we can get the configuration of the targets
-# that have been configured for construction. We have to do this 
-# early so we can set up LINK_COMPONENTS before including Makefile.rules
-include $(LEVEL)/Makefile.config
 
 LINK_COMPONENTS := $(TARGETS_TO_BUILD) Linker BitWriter IPO
 
