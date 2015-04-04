@@ -371,6 +371,7 @@ public:
   bool isOSNetBSD() const { return false; }
   bool isOSOpenBSD() const { return false; }
   bool isOSFreeBSD() const { return false; }
+  bool isOSDragonFly() const { return false; }
   bool isOSSolaris() const { return false; }
   bool isOSBitrig() const { return false; }
   bool isWindowsMSVCEnvironment() const { return false; }
@@ -394,6 +395,7 @@ public:
   bool isOSNetBSD() const { return false; }
   bool isOSOpenBSD() const { return false; }
   bool isOSFreeBSD() const { return false; }
+  bool isOSDragonFly() const { return false; }
   bool isOSSolaris() const { return false; }
   bool isOSBitrig() const { return false; }
   bool isWindowsMSVCEnvironment() const { return false; }
