@@ -32,6 +32,7 @@ option(SYSTEM_HAS_CCACHE "Use ccache for building" OFF)
 if(SYSTEM_HAS_CCACHE)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
   set(ENV(CCACHE_CPP2) "yes")
+  add_compile_options(-Qunused-arguments)
 endif()
 # @LOCALMOD-END
 
@@ -173,6 +174,7 @@ set(LLVM_ALL_TARGETS
   ARM
   CppBackend
   Hexagon
+  JSBackend # @LOCALMOD
   Mips
   MSP430
   NVPTX
