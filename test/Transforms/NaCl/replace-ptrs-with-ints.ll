@@ -416,6 +416,7 @@ define void @debug_declare(i32 %val) {
 define void @debug_value(i32 %val, i8* %ptr) {
   tail call void @llvm.dbg.value(metadata !{i32 %val}, i64 1, metadata !1, metadata !14)
   tail call void @llvm.dbg.value(metadata !{i8* %ptr}, i64 2, metadata !1, metadata !14)
+  tail call void @llvm.dbg.value(metadata !{i8* null}, i64 2, metadata !1, metadata !14)
   ret void
 }
 ; CHECK: define void @debug_value(i32 %val, i32 %ptr) {

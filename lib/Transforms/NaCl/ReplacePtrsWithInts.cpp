@@ -286,6 +286,9 @@ void FunctionConverter::eraseReplacedInstructions() {
 static void ConvertMetadataOperand(FunctionConverter *FC,
                                    IntrinsicInst *Call, int Index) {
   MetadataAsValue *MDVal = cast<MetadataAsValue>(Call->getArgOperand(Index));
+  if (!isa<MDNode>(MDVal->getMetadata())) {
+    return;
+  }
   MDNode *MD = cast<MDNode>(MDVal->getMetadata());
   if (MD->getNumOperands() != 1)
     return;
