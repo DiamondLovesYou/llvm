@@ -35,40 +35,46 @@ public:
   }
 
   virtual bool runOnModule(Module &M);
+};
 
-  /// Rewrite an intrinsic to something different.
-  class IntrinsicRewriter {
-  public:
-    Function *function() const { return F; }
-    /// Called once per \p Call of the Intrinsic Function.
-    void rewriteCall(CallInst *Call) { doRewriteCall(Call); }
+class RewriteLLVMDebugTrapIntrinsic : public ModulePass {
+public:
+  static char ID;
+  RewriteLLVMDebugTrapIntrinsic() : ModulePass(ID) {
+    // This is a module pass because this makes it easier to access uses
+    // of global intrinsic functions.
+    initializeRewriteLLVMDebugTrapIntrinsicPass(*PassRegistry::getPassRegistry());
+  }
 
-  protected:
-    IntrinsicRewriter(Module &M, Intrinsic::ID IntrinsicID)
-        : F(Intrinsic::getDeclaration(&M, IntrinsicID)) {}
-    virtual ~IntrinsicRewriter() {}
-    /// This pure virtual method must be defined by implementors, and
-    /// will be called by rewriteCall.
-    virtual void doRewriteCall(CallInst *Call) = 0;
+  virtual bool runOnModule(Module &M);
+};
 
-    Function *F;
+/// Rewrite an intrinsic to something different.
+class IntrinsicRewriter {
+public:
+  Function *function() const { return F; }
+  /// Called once per \p Call of the Intrinsic Function.
+  void rewriteCall(CallInst *Call) { doRewriteCall(Call); }
 
-  private:
-    IntrinsicRewriter() LLVM_DELETED_FUNCTION;
-    IntrinsicRewriter(const IntrinsicRewriter &) LLVM_DELETED_FUNCTION;
-    IntrinsicRewriter &operator=(
-        const IntrinsicRewriter &) LLVM_DELETED_FUNCTION;
-  };
+protected:
+  IntrinsicRewriter(Module &M, Intrinsic::ID IntrinsicID)
+    : F(Intrinsic::getDeclaration(&M, IntrinsicID)) {}
+  virtual ~IntrinsicRewriter() {}
+  /// This pure virtual method must be defined by implementors, and
+  /// will be called by rewriteCall.
+  virtual void doRewriteCall(CallInst *Call) = 0;
+
+  Function *F;
 
 private:
-  /// Visit all uses of a Function, rewrite it using the \p Rewriter,
-  /// and then delete the Call. Later delete the Function from the
-  /// Module. Returns true if the Module was changed.
-  bool visitUses(IntrinsicRewriter &Rewriter);
+  IntrinsicRewriter() LLVM_DELETED_FUNCTION;
+  IntrinsicRewriter(const IntrinsicRewriter &) LLVM_DELETED_FUNCTION;
+  IntrinsicRewriter &operator=(
+    const IntrinsicRewriter &) LLVM_DELETED_FUNCTION;
 };
 
 /// Rewrite a Call to nothing.
-class ToNothing : public RewriteLLVMIntrinsics::IntrinsicRewriter {
+class ToNothing : public IntrinsicRewriter {
 public:
   ToNothing(Module &M, Intrinsic::ID IntrinsicID)
       : IntrinsicRewriter(M, IntrinsicID) {}
@@ -81,7 +87,7 @@ protected:
 };
 
 /// Rewrite a Call to a ConstantInt of the same type.
-class ToConstantInt : public RewriteLLVMIntrinsics::IntrinsicRewriter {
+class ToConstantInt : public IntrinsicRewriter {
 public:
   ToConstantInt(Module &M, Intrinsic::ID IntrinsicID, uint64_t Value)
       : IntrinsicRewriter(M, IntrinsicID), Value(Value),
@@ -98,30 +104,41 @@ private:
   uint64_t Value;
   Type *RetType;
 };
+
+class ToAnotherIntrinsic : public IntrinsicRewriter {
+public:
+  ToAnotherIntrinsic(Module &M, Intrinsic::ID From, Intrinsic::ID To)
+    : IntrinsicRewriter(M, From),
+      To(Intrinsic::getDeclaration(&M, To)) { }
+  virtual ~ToAnotherIntrinsic() {}
+
+protected:
+  virtual void doRewriteCall(CallInst *Call) {
+    SmallVector<Value*, 16> Args;
+    for (Value *A : Call->arg_operands()) {
+      Args.push_back(A);
+    }
+    CallInst *NewCall = CallInst::Create(To, Args,
+                                         "", Call);
+    Call->replaceAllUsesWith(NewCall);
+  }
+private:
+  Function *To;
+};
+
+
 }
 
 char RewriteLLVMIntrinsics::ID = 0;
 INITIALIZE_PASS(RewriteLLVMIntrinsics, "rewrite-llvm-intrinsic-calls",
                 "Rewrite LLVM intrinsic calls to simpler expressions", false,
                 false)
+char RewriteLLVMDebugTrapIntrinsic::ID = 0;
+INITIALIZE_PASS(RewriteLLVMDebugTrapIntrinsic, "rewrite-llvm-debugtrap-intrinsic",
+                "Rewrite lingering @llvm.debugtrap uses", false,
+                false)
 
-bool RewriteLLVMIntrinsics::runOnModule(Module &M) {
-  // Replace all uses of the @llvm.flt.rounds intrinsic with the constant
-  // "1" (round-to-nearest). Until we add a second intrinsic like
-  // @llvm.set.flt.round it is impossible to have a rounding mode that is
-  // not the initial rounding mode (round-to-nearest). We can remove
-  // this rewrite after adding a set() intrinsic.
-  ToConstantInt FltRoundsRewriter(M, Intrinsic::flt_rounds, 1);
-
-  // Remove all @llvm.prefetch intrinsics.
-  ToNothing PrefetchRewriter(M, Intrinsic::prefetch);
-  ToNothing AssumeRewriter(M, Intrinsic::assume);
-
-  return visitUses(FltRoundsRewriter) | visitUses(PrefetchRewriter)
-    | visitUses(AssumeRewriter);
-}
-
-bool RewriteLLVMIntrinsics::visitUses(IntrinsicRewriter &Rewriter) {
+static bool visitUses(IntrinsicRewriter &Rewriter) {
   Function *F = Rewriter.function();
   SmallVector<CallInst *, 64> Calls;
   for (User *U : F->users()) {
@@ -145,6 +162,33 @@ bool RewriteLLVMIntrinsics::visitUses(IntrinsicRewriter &Rewriter) {
   return !Calls.empty();
 }
 
+bool RewriteLLVMIntrinsics::runOnModule(Module &M) {
+  // Replace all uses of the @llvm.flt.rounds intrinsic with the constant
+  // "1" (round-to-nearest). Until we add a second intrinsic like
+  // @llvm.set.flt.round it is impossible to have a rounding mode that is
+  // not the initial rounding mode (round-to-nearest). We can remove
+  // this rewrite after adding a set() intrinsic.
+  ToConstantInt FltRoundsRewriter(M, Intrinsic::flt_rounds, 1);
+
+  // Remove all @llvm.prefetch intrinsics.
+  ToNothing PrefetchRewriter(M, Intrinsic::prefetch);
+  ToNothing AssumeRewriter(M, Intrinsic::assume);
+
+  return visitUses(FltRoundsRewriter) | visitUses(PrefetchRewriter)
+    | visitUses(AssumeRewriter);
+}
+
+
+
 ModulePass *llvm::createRewriteLLVMIntrinsicsPass() {
+  return new RewriteLLVMIntrinsics();
+}
+
+bool RewriteLLVMDebugTrapIntrinsic::runOnModule(Module &M) {
+  ToAnotherIntrinsic DebugTrapRewriter(M, Intrinsic::debugtrap, Intrinsic::trap);
+  return visitUses(DebugTrapRewriter);
+}
+
+ModulePass *llvm::createRewriteLLVMDebugTrapIntrinsicPass() {
   return new RewriteLLVMIntrinsics();
 }

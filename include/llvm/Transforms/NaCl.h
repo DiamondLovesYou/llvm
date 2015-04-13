@@ -60,6 +60,7 @@ ModulePass *createPNaClSjLjEHPass();
 ModulePass *createReplacePtrsWithIntsPass();
 ModulePass *createResolveAliasesPass();
 ModulePass *createRewriteAtomicsPass();
+ModulePass *createRewriteLLVMDebugTrapIntrinsicPass();
 ModulePass *createRewriteLLVMIntrinsicsPass();
 ModulePass *createRewritePNaClLibraryCallsPass();
 ModulePass *createSimplifyStructRegSignaturesPass();

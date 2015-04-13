@@ -331,6 +331,7 @@ void initializeReplacePtrsWithIntsPass(PassRegistry&);
 void initializeResolveAliasesPass(PassRegistry&);
 void initializeResolvePNaClIntrinsicsPass(PassRegistry&);
 void initializeRewriteAtomicsPass(PassRegistry&);
+void initializeRewriteLLVMDebugTrapIntrinsicPass(PassRegistry&);
 void initializeRewriteLLVMIntrinsicsPass(PassRegistry&);
 void initializeRewritePNaClLibraryCallsPass(PassRegistry&);
 void initializeSandboxIndirectCallsPass(PassRegistry&);
