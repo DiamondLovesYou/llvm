@@ -218,6 +218,7 @@ FilesToConfig := \
   llvm.spec \
   include/llvm/Config/config.h \
   include/llvm/Config/llvm-config.h \
+  include/llvm/Config/SZTargets.def \
   include/llvm/Config/Targets.def \
   include/llvm/Config/AsmPrinters.def \
   include/llvm/Config/AsmParsers.def \
