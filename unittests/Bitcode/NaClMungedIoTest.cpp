@@ -11,26 +11,11 @@
 // For class NaClMungedBitcode, tests reading initial sequence of records and
 // writing out munged set of bitcode records.
 
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/Bitcode/NaCl/NaClBitcodeMungeUtils.h"
-#include "llvm/Bitcode/NaCl/NaClBitcodeMunge.h"
+#include "NaClMungeTest.h"
 
-#include "gtest/gtest.h"
+namespace naclmungetest {
 
 using namespace llvm;
-
-namespace {
-
-static const uint64_t Terminator = 0x5768798008978675LL;
-
-#define ARRAY_ARGS(name) name, array_lengthof(name), Terminator
-
-std::string stringify(NaClMungedBitcode &MungedBitcode) {
-  std::string Buffer;
-  raw_string_ostream StrBuf(Buffer);
-  MungedBitcode.print(StrBuf);
-  return StrBuf.str();
-}
 
 typedef SmallVector<char, 1024> TextBuffer;
 
@@ -38,10 +23,17 @@ typedef SmallVector<char, 1024> TextBuffer;
 // the text buffer. Returns a corresponding memory buffer containing
 // the munged bitcode records.
 std::unique_ptr<MemoryBuffer> writeMungedBitcode(
-    NaClMungedBitcode &Bitcode, TextBuffer &Buffer) {
-  Bitcode.write(Buffer, /* AddHeader = */ true);
+    NaClMungedBitcode &Bitcode, TextBuffer &Buffer,
+    NaClMungedBitcode::WriteFlags &Flags) {
+  Bitcode.write(Buffer, /* AddHeader = */ true, Flags);
   StringRef Input(Buffer.data(), Buffer.size());
   return MemoryBuffer::getMemBuffer(Input, "Test", false);
+}
+
+std::unique_ptr<MemoryBuffer> writeMungedBitcode(
+    NaClMungedBitcode &Bitcode, TextBuffer &Buffer) {
+  NaClMungedBitcode::WriteFlags Flags;
+  return writeMungedBitcode(Bitcode, Buffer, Flags);
 }
 
 // Write out the bitcode, parse it back, and return the resulting
@@ -77,8 +69,8 @@ const uint64_t Records[] = {
 
 // Show a more readable form of what the program is.
 TEST(NaClMungedIoTest, TestDumpingBitcode) {
-  NaClObjDumpMunger DumpMunger(ARRAY_ARGS(Records));
-  EXPECT_TRUE(DumpMunger.runTest("Display assembly"));
+  NaClObjDumpMunger DumpMunger(ARRAY_TERM(Records));
+  EXPECT_TRUE(DumpMunger.runTest());
   EXPECT_EQ(
       "       0:0|<65532, 80, 69, 88, 69, 1, 0,|Magic Number: 'PEXE' (80, 69, "
       "88, 69)\n"
@@ -115,7 +107,7 @@ TEST(NaClMungedIoTest, TestDumpingBitcode) {
 // Test that we can write out bitcode, and then read it back in.
 TEST(NaClMungedIoTest, TestWriteThenRead) {
   // Create munged bitcode for the given records.
-  NaClMungedBitcode Bitcode(ARRAY_ARGS(Records));
+  NaClMungedBitcode Bitcode(ARRAY_TERM(Records));
 
   // The expected output when stringifying this input.
   const std::string ExpectedRecords(
@@ -149,7 +141,7 @@ TEST(NaClMungedIoTest, TestWriteThenRead) {
 // be divisible by 4.
 TEST(NaClMungedIoTest, TestTruncatedNonalignedBitcode) {
   // Created an example of a truncated bitcode file.
-  NaClMungedBitcode Bitcode(ARRAY_ARGS(Records));
+  NaClMungedBitcode Bitcode(ARRAY_TERM(Records));
   for (size_t i = 2, e = Bitcode.getBaseRecords().size(); i < e; ++i)
     Bitcode.remove(i);
 
@@ -160,9 +152,15 @@ TEST(NaClMungedIoTest, TestTruncatedNonalignedBitcode) {
       stringify(Bitcode));
 
   // Show that we can't write the bitcode correctly.
-  TextBuffer Buffer;
-  EXPECT_DEATH(writeMungedBitcode(Bitcode, Buffer),
-               ".*Unflushed data remaining.*");
+  TextBuffer WriteBuffer;
+  std::string LogBuffer;
+  raw_string_ostream StrBuf(LogBuffer);
+  NaClMungedBitcode::WriteFlags Flags;
+  Flags.setErrStream(StrBuf);
+  writeMungedBitcode(Bitcode, WriteBuffer, Flags);
+  EXPECT_EQ(
+      "Error (Block 8): Missing close block.\n",
+      StrBuf.str());
 }
 
-} // end of anonymous namespace
+} // end of namespace naclmungetest
